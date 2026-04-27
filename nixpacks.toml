@@ -5,7 +5,7 @@ nixPkgs = ["nodejs_20", "pnpm-9_x"]
 cmds = ["npm install -g corepack@latest && corepack enable", "pnpm install --no-frozen-lockfile"]
 
 [phases.build]
-cmds = ["pnpm build"]
+cmds = ["pnpm vite build", "pnpm exec esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist"]
 
 [start]
-cmd = "pnpm start"
+cmd = "node dist/index.js"
