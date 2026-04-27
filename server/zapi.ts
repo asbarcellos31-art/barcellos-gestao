@@ -12,9 +12,12 @@ import { getDb } from "./db";
 import { whatsappEnvios } from "../drizzle/schema";
 import mysql from "mysql2/promise";
 
-// ── Configuração fixa da Evolution API ──────────────────────────────────────
-const EVOLUTION_BASE_URL = "http://31.97.85.41:8080";
-const EVOLUTION_API_KEY  = "barcellos-evolution-key-2024";
+// ── Configuração da Evolution API (lê do ambiente) ──────────────────────────
+const EVOLUTION_BASE_URL = (process.env.EVOLUTION_API_URL || "http://31.97.85.41:8080").replace(/\/+$/, "");
+const EVOLUTION_API_KEY  = process.env.EVOLUTION_API_KEY || "barcellos-evolution-key-2024";
+
+console.log("[Evolution API] URL configurada:", EVOLUTION_BASE_URL);
+console.log("[Evolution API] Key configurada:", EVOLUTION_API_KEY ? "***presente***" : "VAZIA");
 
 // Instâncias disponíveis
 export const INSTANCIAS = {
@@ -280,12 +283,14 @@ export async function enviarMensagemWhatsapp(
 export async function verificarConexaoEvolution(instancia: string): Promise<{ conectado: boolean; erro?: string }> {
   try {
     const url = `${EVOLUTION_BASE_URL}/instance/fetchInstances`;
+    console.log(`[Evolution] Tentando: GET ${url} (instancia: ${instancia})`);
     const resp = await fetch(url, {
       method: "GET",
       headers: { "apikey": EVOLUTION_API_KEY },
     });
     
     if (!resp.ok) {
+      console.error(`[Evolution] Resposta não OK: ${resp.status}`);
       return { conectado: false, erro: `Status ${resp.status}` };
     }
     
@@ -300,6 +305,7 @@ export async function verificarConexaoEvolution(instancia: string): Promise<{ co
     const conectado = inst.instance?.status === "open" || !!inst.instance?.owner;
     return { conectado };
   } catch (err: any) {
+    console.error(`[Evolution] ERRO em verificarConexaoEvolution:`, err.message, err.cause?.message || "");
     return { conectado: false, erro: err.message };
   }
 }
