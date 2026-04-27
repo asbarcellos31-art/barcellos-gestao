@@ -1,0 +1,63 @@
+CREATE TABLE `clientes` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`cpf` varchar(20),
+	`nome` varchar(255) NOT NULL,
+	`produtos` text,
+	`vendedor` varchar(100),
+	`status` varchar(20) DEFAULT 'Ativo',
+	`valorTotalComissao` decimal(15,2),
+	`valorComissao` decimal(15,2),
+	`percentualComissao` decimal(10,4),
+	`dataNascimento` date,
+	`telefone` varchar(30),
+	`email` varchar(255),
+	`endereco` text,
+	`cidade` varchar(100),
+	`estado` varchar(2),
+	`observacao` text,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `clientes_id` PRIMARY KEY(`id`),
+	CONSTRAINT `clientes_cpf_unique` UNIQUE(`cpf`)
+);
+--> statement-breakpoint
+CREATE TABLE `sinistros` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`protocolo` varchar(50),
+	`cpfSegurado` varchar(20),
+	`nomeSegurado` varchar(255),
+	`produto` varchar(255),
+	`dataOcorrencia` date,
+	`dataAbertura` date,
+	`valorCapital` decimal(15,2),
+	`valorRecebido` decimal(15,2),
+	`status` varchar(50) DEFAULT 'ABERTO',
+	`tipoBeneficio` varchar(100),
+	`beneficiario` varchar(255),
+	`cpfBeneficiario` varchar(20),
+	`corretor` varchar(100),
+	`observacao` text,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `sinistros_id` PRIMARY KEY(`id`)
+);
+--> statement-breakpoint
+CREATE TABLE `vendas` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`mes` int NOT NULL,
+	`ano` int NOT NULL,
+	`cpfCliente` varchar(20),
+	`nomeCliente` varchar(255),
+	`produto` varchar(255),
+	`corretor` varchar(100),
+	`dataVenda` date,
+	`valorPremio` decimal(15,2),
+	`valorComissao` decimal(15,2),
+	`percentualComissao` decimal(10,4),
+	`status` varchar(50) DEFAULT 'ATIVA',
+	`proposta` varchar(50),
+	`observacao` text,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `vendas_id` PRIMARY KEY(`id`)
+);
