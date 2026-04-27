@@ -293,7 +293,15 @@ export async function listarInadimplentes(mes?: number, ano?: number, status?: s
   const params: unknown[] = [];
   if (mes) { whereClause.push('i.mes = ?'); params.push(mes); }
   if (ano) { whereClause.push('i.ano = ?'); params.push(ano); }
-  if (status) { whereClause.push('i.status = ?'); params.push(status); }
+  if (status) {
+    if (status === 'PENDENTE') {
+      // PENDENTE pode estar como NULL no banco (registros antigos) ou como string 'PENDENTE'
+      whereClause.push("(i.status IS NULL OR i.status = '' OR i.status = 'PENDENTE')");
+    } else {
+      whereClause.push('i.status = ?');
+      params.push(status);
+    }
+  }
   if (busca) { whereClause.push('(i.nome LIKE ? OR i.cpf LIKE ?)'); params.push(`%${busca}%`, `%${busca}%`); }
   if (formaPagamento) { whereClause.push('i.formaPagamento = ?'); params.push(formaPagamento); }
   const whereSQL = whereClause.length > 0 ? 'WHERE ' + whereClause.join(' AND ') : '';
