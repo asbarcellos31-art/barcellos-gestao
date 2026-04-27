@@ -1656,14 +1656,14 @@ export default function Clientes() {
               <div className="space-y-1">
                 <Label>Origem</Label>
                 <Select
-                  value={form.origemId ? String(form.origemId) : ""}
-                  onValueChange={(v) => setForm({ ...form, origemId: v ? Number(v) : null })}
+                  value={form.origemId ? String(form.origemId) : "__none__"}
+                  onValueChange={(v) => setForm({ ...form, origemId: v && v !== "__none__" ? Number(v) : null })}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione a origem" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Sem origem</SelectItem>
+                    <SelectItem value="__none__">Sem origem</SelectItem>
                     {(origensData as any[]).map((o: any) => (
                       <SelectItem key={o.id} value={String(o.id)}>
                         <span className="flex items-center gap-2">
