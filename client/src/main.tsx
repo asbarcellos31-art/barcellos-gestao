@@ -43,6 +43,17 @@ const trpcClient = trpc.createClient({
     httpBatchLink({
       url: "/api/trpc",
       transformer: superjson,
+      headers() {
+        // Envia o token salvo no localStorage como Authorization Bearer
+        // para que protectedProcedure / adminProcedure no backend funcionem.
+        if (typeof window === "undefined") return {};
+        try {
+          const token = window.localStorage.getItem("barcellos_app_token");
+          return token ? { Authorization: `Bearer ${token}` } : {};
+        } catch {
+          return {};
+        }
+      },
       fetch(input, init) {
         return globalThis.fetch(input, {
           ...(init ?? {}),
