@@ -10,7 +10,7 @@
     "check": "tsc --noEmit",
     "format": "prettier --write .",
     "test": "vitest run",
-    "db:push": "db:push": "echo 'db:push skipped during build'"
+    "db:push": "echo skipped"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.693.0",
