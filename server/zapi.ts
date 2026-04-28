@@ -171,7 +171,9 @@ export async function enviarVideoEvolution(
           number: numero,
           // Evolution API v2.x: campos no nível raiz
           mediatype: "video",
+          mimetype: "video/mp4",
           media: videoUrl,
+          fileName: "video.mp4",
           caption: caption,
           delay: 1200,
         }),
@@ -224,6 +226,22 @@ export async function enviarMidiaEvolution(
     const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 segundos de timeout
     
     try {
+      // Determina mimetype e nome do arquivo baseado no tipo
+      const mimetypeMap: Record<string, string> = {
+        image: "image/jpeg",
+        video: "video/mp4",
+        document: "application/pdf",
+        audio: "audio/mpeg",
+      };
+      const extMap: Record<string, string> = {
+        image: "jpg",
+        video: "mp4",
+        document: "pdf",
+        audio: "mp3",
+      };
+      const mimetype = mimetypeMap[mediaType] || "application/octet-stream";
+      const fileName = `arquivo.${extMap[mediaType] || "bin"}`;
+
       const resp = await fetch(url, {
         method: "POST",
         headers: {
@@ -234,7 +252,9 @@ export async function enviarMidiaEvolution(
           number: numero,
           // Evolution API v2.x: campos no nível raiz
           mediatype: mediaType,
+          mimetype,
           media: mediaUrl,
+          fileName,
           caption: caption,
           delay: 1200,
         }),
