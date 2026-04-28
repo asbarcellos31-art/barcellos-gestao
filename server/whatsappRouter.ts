@@ -865,23 +865,41 @@ export const whatsappRouter = router({
       // 2. Aguardar um momento para a instância processar o logout
       await new Promise((r) => setTimeout(r, 1500));
 
-      // 3. Solicitar QR Code
-      const resp = await fetch(
-        `${EVOLUTION_BASE_URL}/instance/connect/${input.instancia}`,
-        { headers: { apikey: EVOLUTION_API_KEY } }
-      );
-
-      if (!resp.ok) {
-        const body = await resp.text();
-        throw new Error(`Erro ao gerar QR Code: ${body.substring(0, 200)}`);
-      }
-
-      const data = await resp.json() as any;
+      // 3. Solicitar QR Code — v2 pode retornar {count:0} no primeiro request
+      // se a instância ainda está iniciando. Tentamos até 5 vezes com delay.
+      let base64: string | null = null;
+      let ultimaResposta: any = null;
       
-      // A Evolution API retorna em data.base64 (ja com prefixo data:image/png;base64,)
-      let base64 = data.base64;
-      if (!base64 || base64.length === 0) {
-        throw new Error(`QR Code vazio. Resposta: ${JSON.stringify(data).substring(0, 200)}`);
+      for (let tentativa = 1; tentativa <= 5; tentativa++) {
+        const resp = await fetch(
+          `${EVOLUTION_BASE_URL}/instance/connect/${input.instancia}`,
+          { headers: { apikey: EVOLUTION_API_KEY } }
+        );
+
+        if (!resp.ok) {
+          const body = await resp.text();
+          throw new Error(`Erro ao gerar QR Code: ${body.substring(0, 200)}`);
+        }
+
+        const data = await resp.json() as any;
+        ultimaResposta = data;
+        
+        // Tenta extrair o QR code: campo "base64" (v1/v2), "qrcode.base64" (v2 alternativo) ou "code"
+        const qr = data.base64 || data.qrcode?.base64 || data.qrcode?.code || data.code;
+        
+        if (qr && typeof qr === 'string' && qr.length > 100) {
+          base64 = qr;
+          break;
+        }
+        
+        // Se chegou aqui é porque a v2 retornou {count: 0} ou similar - aguarda e tenta novamente
+        if (tentativa < 5) {
+          await new Promise((r) => setTimeout(r, 2000));
+        }
+      }
+      
+      if (!base64) {
+        throw new Error(`QR Code vazio após 5 tentativas. Última resposta: ${JSON.stringify(ultimaResposta).substring(0, 200)}`);
       }
       
       // Se ja tem o prefixo, retorna direto. Se nao, adiciona.
