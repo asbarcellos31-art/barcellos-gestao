@@ -64,6 +64,18 @@ export interface BlocoBotao {
   tipoBotao: BotaoTipo;
   texto: string;
   url: string;
+  // Customização visual (opcionais — fallback pra padrão se não definidos)
+  corFundo?: string;        // ex: "#25d366"
+  corTexto?: string;        // ex: "#ffffff"
+  fonte?: string;           // ex: "Arial, sans-serif"
+  tamanhoFonte?: string;    // ex: "15px"
+  paddingVertical?: string; // ex: "12px"
+  paddingHorizontal?: string; // ex: "28px"
+  borderRadius?: string;    // ex: "6px"
+  fontWeight?: string;      // "400", "600", "700"
+  larguraTotal?: boolean;   // se true, botão ocupa toda largura
+  alinhamento?: "left" | "center" | "right";
+  mostrarIcone?: boolean;   // se false, não mostra emoji
 }
 
 export interface BlocoRodape {
@@ -132,19 +144,29 @@ export function gerarHtmlDeBlocos(
       }
 
       case "botao": {
-        const cores: Record<BotaoTipo, { bg: string }> = {
+        const coresPadrao: Record<BotaoTipo, { bg: string }> = {
           whatsapp: { bg: "#25d366" },
           site:     { bg: "#1e3a5f" },
           link:     { bg: "#6366f1" },
         };
-        const cor = cores[b.tipoBotao];
-        const icone = b.tipoBotao === "whatsapp"
+        const corFundo = b.corFundo || coresPadrao[b.tipoBotao].bg;
+        const corTexto = b.corTexto || "#ffffff";
+        const fonte = b.fonte || "Arial, sans-serif";
+        const tamanhoFonte = b.tamanhoFonte || "15px";
+        const padV = b.paddingVertical || "12px";
+        const padH = b.paddingHorizontal || "28px";
+        const radius = b.borderRadius || "6px";
+        const weight = b.fontWeight || "600";
+        const alinhamento = b.alinhamento || "center";
+        const fullWidth = b.larguraTotal ? "display:block;width:100%;box-sizing:border-box;" : "display:inline-block;";
+        const mostrarIcone = b.mostrarIcone !== false; // padrão true
+        const icone = mostrarIcone ? (b.tipoBotao === "whatsapp"
           ? `<span style="margin-right:8px;">💬</span>`
           : b.tipoBotao === "site"
           ? `<span style="margin-right:8px;">🌐</span>`
-          : `<span style="margin-right:8px;">🔗</span>`;
-        return `<div style="text-align:center;margin:20px 0;">
-  <a href="${b.url}" style="display:inline-block;background:${cor.bg};color:#fff;text-decoration:none;padding:12px 28px;border-radius:6px;font-size:15px;font-weight:600;">${icone}${b.texto}</a>
+          : `<span style="margin-right:8px;">🔗</span>`) : "";
+        return `<div style="text-align:${alinhamento};margin:20px 0;">
+  <a href="${b.url}" style="${fullWidth}background:${corFundo};color:${corTexto};text-decoration:none;padding:${padV} ${padH};border-radius:${radius};font-size:${tamanhoFonte};font-weight:${weight};font-family:${fonte};">${icone}${b.texto}</a>
 </div>`;
       }
 
@@ -669,6 +691,223 @@ function BlocoEditor({ bloco, index, total, onChange, onRemove, onMoveUp, onMove
               }
               className="text-sm font-mono"
             />
+
+            {/* Painel de personalização visual */}
+            <details className="border border-indigo-200 rounded-md bg-indigo-50/40 mt-2">
+              <summary className="cursor-pointer text-xs font-semibold text-indigo-800 px-2 py-1.5 hover:bg-indigo-100/60 select-none">
+                🎨 Personalizar aparência do botão
+              </summary>
+              <div className="p-2 space-y-2 border-t border-indigo-200 bg-white">
+                {/* Cores */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-[11px] text-muted-foreground">Cor de fundo</Label>
+                    <div className="flex gap-1 items-center mt-0.5">
+                      <input
+                        type="color"
+                        value={bloco.corFundo || (bloco.tipoBotao === "whatsapp" ? "#25d366" : bloco.tipoBotao === "site" ? "#1e3a5f" : "#6366f1")}
+                        onChange={e => onChange({ ...bloco, corFundo: e.target.value })}
+                        className="w-8 h-7 rounded border border-gray-300 cursor-pointer"
+                      />
+                      <Input
+                        value={bloco.corFundo || ""}
+                        onChange={e => onChange({ ...bloco, corFundo: e.target.value })}
+                        placeholder="auto"
+                        className="text-xs h-7 font-mono"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-[11px] text-muted-foreground">Cor do texto</Label>
+                    <div className="flex gap-1 items-center mt-0.5">
+                      <input
+                        type="color"
+                        value={bloco.corTexto || "#ffffff"}
+                        onChange={e => onChange({ ...bloco, corTexto: e.target.value })}
+                        className="w-8 h-7 rounded border border-gray-300 cursor-pointer"
+                      />
+                      <Input
+                        value={bloco.corTexto || ""}
+                        onChange={e => onChange({ ...bloco, corTexto: e.target.value })}
+                        placeholder="#ffffff"
+                        className="text-xs h-7 font-mono"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Fonte e tamanho */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-[11px] text-muted-foreground">Fonte</Label>
+                    <select
+                      value={bloco.fonte || ""}
+                      onChange={e => onChange({ ...bloco, fonte: e.target.value })}
+                      className="w-full text-xs h-7 border border-gray-300 rounded px-1 bg-white"
+                    >
+                      <option value="">Padrão (Arial)</option>
+                      <option value="Arial, sans-serif">Arial</option>
+                      <option value="Helvetica, Arial, sans-serif">Helvetica</option>
+                      <option value="'Times New Roman', Times, serif">Times New Roman</option>
+                      <option value="Georgia, serif">Georgia</option>
+                      <option value="Verdana, Geneva, sans-serif">Verdana</option>
+                      <option value="Tahoma, Geneva, sans-serif">Tahoma</option>
+                      <option value="'Courier New', Courier, monospace">Courier New</option>
+                      <option value="'Trebuchet MS', Helvetica, sans-serif">Trebuchet MS</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Label className="text-[11px] text-muted-foreground">Tamanho do texto</Label>
+                    <select
+                      value={bloco.tamanhoFonte || ""}
+                      onChange={e => onChange({ ...bloco, tamanhoFonte: e.target.value })}
+                      className="w-full text-xs h-7 border border-gray-300 rounded px-1 bg-white"
+                    >
+                      <option value="">Padrão (15px)</option>
+                      <option value="12px">12px (pequeno)</option>
+                      <option value="14px">14px</option>
+                      <option value="15px">15px</option>
+                      <option value="16px">16px</option>
+                      <option value="18px">18px</option>
+                      <option value="20px">20px</option>
+                      <option value="24px">24px (grande)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Padding */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-[11px] text-muted-foreground">Altura (padding cima/baixo)</Label>
+                    <select
+                      value={bloco.paddingVertical || ""}
+                      onChange={e => onChange({ ...bloco, paddingVertical: e.target.value })}
+                      className="w-full text-xs h-7 border border-gray-300 rounded px-1 bg-white"
+                    >
+                      <option value="">Padrão (12px)</option>
+                      <option value="6px">6px (compacto)</option>
+                      <option value="8px">8px</option>
+                      <option value="10px">10px</option>
+                      <option value="12px">12px</option>
+                      <option value="14px">14px</option>
+                      <option value="16px">16px</option>
+                      <option value="20px">20px (grande)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Label className="text-[11px] text-muted-foreground">Largura (padding lados)</Label>
+                    <select
+                      value={bloco.paddingHorizontal || ""}
+                      onChange={e => onChange({ ...bloco, paddingHorizontal: e.target.value })}
+                      className="w-full text-xs h-7 border border-gray-300 rounded px-1 bg-white"
+                    >
+                      <option value="">Padrão (28px)</option>
+                      <option value="12px">12px (compacto)</option>
+                      <option value="16px">16px</option>
+                      <option value="20px">20px</option>
+                      <option value="24px">24px</option>
+                      <option value="28px">28px</option>
+                      <option value="36px">36px</option>
+                      <option value="48px">48px (largo)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Estilo */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-[11px] text-muted-foreground">Cantos (arredondado)</Label>
+                    <select
+                      value={bloco.borderRadius || ""}
+                      onChange={e => onChange({ ...bloco, borderRadius: e.target.value })}
+                      className="w-full text-xs h-7 border border-gray-300 rounded px-1 bg-white"
+                    >
+                      <option value="">Padrão (6px)</option>
+                      <option value="0">Quadrado (0)</option>
+                      <option value="4px">Pouco (4px)</option>
+                      <option value="6px">Normal (6px)</option>
+                      <option value="10px">Médio (10px)</option>
+                      <option value="20px">Bem arredondado (20px)</option>
+                      <option value="999px">Pílula</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Label className="text-[11px] text-muted-foreground">Peso da fonte</Label>
+                    <select
+                      value={bloco.fontWeight || ""}
+                      onChange={e => onChange({ ...bloco, fontWeight: e.target.value })}
+                      className="w-full text-xs h-7 border border-gray-300 rounded px-1 bg-white"
+                    >
+                      <option value="">Padrão (semi-bold)</option>
+                      <option value="400">Normal</option>
+                      <option value="500">Médio</option>
+                      <option value="600">Semi-bold</option>
+                      <option value="700">Negrito</option>
+                      <option value="800">Extra negrito</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Alinhamento e largura total */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-[11px] text-muted-foreground">Alinhamento</Label>
+                    <select
+                      value={bloco.alinhamento || "center"}
+                      onChange={e => onChange({ ...bloco, alinhamento: e.target.value as "left" | "center" | "right" })}
+                      className="w-full text-xs h-7 border border-gray-300 rounded px-1 bg-white"
+                    >
+                      <option value="left">Esquerda</option>
+                      <option value="center">Centro</option>
+                      <option value="right">Direita</option>
+                    </select>
+                  </div>
+                  <div className="flex flex-col">
+                    <Label className="text-[11px] text-muted-foreground">Opções</Label>
+                    <div className="flex gap-3 mt-1">
+                      <label className="flex items-center gap-1 text-[11px] cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={!!bloco.larguraTotal}
+                          onChange={e => onChange({ ...bloco, larguraTotal: e.target.checked })}
+                        />
+                        Largura total
+                      </label>
+                      <label className="flex items-center gap-1 text-[11px] cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={bloco.mostrarIcone !== false}
+                          onChange={e => onChange({ ...bloco, mostrarIcone: e.target.checked })}
+                        />
+                        Mostrar ícone
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Botão resetar */}
+                <button
+                  type="button"
+                  onClick={() => onChange({
+                    ...bloco,
+                    corFundo: undefined,
+                    corTexto: undefined,
+                    fonte: undefined,
+                    tamanhoFonte: undefined,
+                    paddingVertical: undefined,
+                    paddingHorizontal: undefined,
+                    borderRadius: undefined,
+                    fontWeight: undefined,
+                    larguraTotal: undefined,
+                    alinhamento: undefined,
+                    mostrarIcone: undefined,
+                  })}
+                  className="w-full text-[11px] py-1 px-2 rounded border border-gray-300 bg-gray-50 hover:bg-gray-100 text-gray-600"
+                >
+                  ↺ Restaurar padrão
+                </button>
+              </div>
+            </details>
           </div>
         );
 
