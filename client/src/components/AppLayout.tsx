@@ -70,19 +70,28 @@ export default function AppLayout({ children }: AppLayoutProps) {
   // Enquanto permissões ainda carregam, não ocultar nenhum item do menu
   const canSee = (modulo: string) => !isLoggedIn || permsLoading || isAdmin || podeVer(modulo);
 
-  // Badge de timer ativo: verifica localStorage a cada 2s
+  // Badge de timer ativo: verifica localStorage a cada 1s para mostrar cronômetro
   const [timerAtivoNaSidebar, setTimerAtivoNaSidebar] = useState(false);
+  const [timerSegundos, setTimerSegundos] = useState(0);
   useEffect(() => {
     const check = () => {
       try {
         const saved = localStorage.getItem('timer-ativo');
-        if (!saved) { setTimerAtivoNaSidebar(false); return; }
+        if (!saved) { setTimerAtivoNaSidebar(false); setTimerSegundos(0); return; }
         const data = JSON.parse(saved);
-        setTimerAtivoNaSidebar(!!(data && !data.pausado && data.startedAt));
-      } catch { setTimerAtivoNaSidebar(false); }
+        const ativo = !!(data && !data.pausado && data.startedAt);
+        setTimerAtivoNaSidebar(ativo);
+        if (ativo) {
+          const segundosAcumulados = typeof data.segundosAcumulados === 'number' ? data.segundosAcumulados : 0;
+          const decorrido = Math.floor((Date.now() - data.startedAt) / 1000);
+          setTimerSegundos(segundosAcumulados + decorrido);
+        } else {
+          setTimerSegundos(0);
+        }
+      } catch { setTimerAtivoNaSidebar(false); setTimerSegundos(0); }
     };
     check();
-    const interval = setInterval(check, 2000);
+    const interval = setInterval(check, 1000); // 1s para cronômetro fluido
     return () => clearInterval(interval);
   }, [appUser?.id]);
 
@@ -196,7 +205,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
 
           {/* Gestão do Tempo - PRIMEIRO ITEM */}
           {canSee("gestao-tempo") && (
-            <NavItem href="/gestao-tempo" label="Gestão do Tempo" icon={Clock} location={location} sidebarOpen={sidebarOpen} onClick={handleNavClick} badge={timerAtivoNaSidebar} />
+            <NavItem href="/gestao-tempo" label="Gestão do Tempo" icon={Clock} location={location} sidebarOpen={sidebarOpen} onClick={handleNavClick} badge={timerAtivoNaSidebar} badgeSegundos={timerSegundos} />
           )}
 
           {/* Dashboard Geral */}
@@ -679,11 +688,19 @@ export default function AppLayout({ children }: AppLayoutProps) {
 
 // Componente auxiliar para item de nav simples
 function NavItem({
-  href, label, icon: Icon, location, sidebarOpen, onClick, badge
+  href, label, icon: Icon, location, sidebarOpen, onClick, badge, badgeSegundos
 }: {
-  href: string; label: string; icon: React.ElementType; location: string; sidebarOpen: boolean; onClick?: () => void; badge?: boolean;
+  href: string; label: string; icon: React.ElementType; location: string; sidebarOpen: boolean; onClick?: () => void; badge?: boolean; badgeSegundos?: number;
 }) {
   const active = location === href;
+  // Formata segundos como HH:MM:SS ou MM:SS se < 1h
+  const formatTime = (s: number) => {
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+    return `${m}:${String(sec).padStart(2, '0')}`;
+  };
   return (
     <Link href={href} onClick={onClick}>
       <div
@@ -692,7 +709,7 @@ function NavItem({
           active ? "text-white shadow-md" : "text-blue-200 hover:bg-white/10 hover:text-white"
         )}
         style={active ? { background: "linear-gradient(90deg, #4a7bc8, #3d6bb5)" } : {}}
-        title={!sidebarOpen ? label : undefined}
+        title={!sidebarOpen ? (badge && badgeSegundos !== undefined ? `${label} — ${formatTime(badgeSegundos)}` : label) : undefined}
       >
         <div className="relative flex-shrink-0">
           <Icon className="w-4 h-4" />
@@ -707,7 +724,9 @@ function NavItem({
           <span className="flex items-center gap-2 flex-1 min-w-0">
             {label}
             {badge && (
-              <span className="ml-auto text-[10px] font-semibold text-green-400 animate-pulse">● ativo</span>
+              <span className="ml-auto text-[10px] font-mono font-bold text-green-400 tabular-nums" title="Tempo da tarefa em andamento">
+                {badgeSegundos !== undefined ? formatTime(badgeSegundos) : '● ativo'}
+              </span>
             )}
           </span>
         )}
