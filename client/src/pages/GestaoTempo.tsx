@@ -440,8 +440,53 @@ export default function GestaoTempo() {
   const { data: score } = trpc.gestaoTempo.score.useQuery(
     { appUserId, dataInicio: formatDate(trintaDiasAtras), dataFim: formatDate(hoje) }, { enabled: appUserId > 0 }
   );
-  const { data: relatorioDiario } = trpc.gestaoTempo.relatorioDiario.useQuery(
-    { appUserId, data: dataSelecionada }, { enabled: appUserId > 0 && abaAtiva === "relatorio" }
+  // ─── Relatório por período ───────────────────────────────────────────────────
+  // Tipo de período pré-definido. "personalizado" usa as datas customizadas.
+  type PeriodoTipo = "hoje" | "ontem" | "semana" | "mes" | "mes-passado" | "30dias" | "personalizado";
+  const [periodoTipo, setPeriodoTipo] = useState<PeriodoTipo>("hoje");
+  const [periodoCustomInicio, setPeriodoCustomInicio] = useState<string>(formatDate(hoje));
+  const [periodoCustomFim, setPeriodoCustomFim] = useState<string>(formatDate(hoje));
+
+  // Calcula datas baseado no tipo selecionado
+  const periodoCalc = (() => {
+    const h = new Date();
+    const ano = h.getFullYear();
+    const mes = h.getMonth();
+    switch (periodoTipo) {
+      case "hoje":
+        return { inicio: formatDate(h), fim: formatDate(h) };
+      case "ontem": {
+        const o = new Date(h); o.setDate(h.getDate() - 1);
+        return { inicio: formatDate(o), fim: formatDate(o) };
+      }
+      case "semana": {
+        // Segunda atual (ou domingo dependendo da preferência) até hoje
+        const dia = h.getDay(); // 0=dom, 1=seg
+        const diff = dia === 0 ? 6 : dia - 1; // dias desde segunda
+        const inicio = new Date(h); inicio.setDate(h.getDate() - diff);
+        return { inicio: formatDate(inicio), fim: formatDate(h) };
+      }
+      case "mes": {
+        const inicio = new Date(ano, mes, 1);
+        return { inicio: formatDate(inicio), fim: formatDate(h) };
+      }
+      case "mes-passado": {
+        const inicio = new Date(ano, mes - 1, 1);
+        const fim = new Date(ano, mes, 0); // último dia do mês passado
+        return { inicio: formatDate(inicio), fim: formatDate(fim) };
+      }
+      case "30dias": {
+        const inicio = new Date(h); inicio.setDate(h.getDate() - 29);
+        return { inicio: formatDate(inicio), fim: formatDate(h) };
+      }
+      case "personalizado":
+        return { inicio: periodoCustomInicio, fim: periodoCustomFim };
+    }
+  })();
+
+  const { data: relatorioPeriodo } = trpc.gestaoTempo.relatorioPorPeriodo.useQuery(
+    { appUserId, dataInicio: periodoCalc.inicio, dataFim: periodoCalc.fim },
+    { enabled: appUserId > 0 && abaAtiva === "relatorio" }
   );
 
   // Mutations
@@ -1137,43 +1182,103 @@ export default function GestaoTempo() {
           {/* ─── ABA RELATÓRIO DIÁRIO ─────────────────────────────────────────────────────── */}
           {abaAtiva === "relatorio" && (
             <div className="flex-1 overflow-y-auto p-6">
-              {!relatorioDiario ? (
-                <div className="flex items-center justify-center h-32 text-gray-400">Carregando...</div>
-              ) : (
-                <div className="space-y-6 max-w-2xl mx-auto">
+              <div className="space-y-6 max-w-3xl mx-auto">
+                {/* Seletor de período */}
+                <div className="bg-white rounded-xl border border-gray-200 p-4">
+                  <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
+                    <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-blue-600" /> Período do relatório
+                    </h3>
+                    <div className="text-xs text-gray-500 font-mono">
+                      {periodoCalc.inicio === periodoCalc.fim
+                        ? new Date(periodoCalc.inicio + "T12:00:00").toLocaleDateString('pt-BR')
+                        : `${new Date(periodoCalc.inicio + "T12:00:00").toLocaleDateString('pt-BR')} → ${new Date(periodoCalc.fim + "T12:00:00").toLocaleDateString('pt-BR')}`}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {([
+                      { v: "hoje" as const, label: "Hoje" },
+                      { v: "ontem" as const, label: "Ontem" },
+                      { v: "semana" as const, label: "Esta semana" },
+                      { v: "mes" as const, label: "Este mês" },
+                      { v: "mes-passado" as const, label: "Mês passado" },
+                      { v: "30dias" as const, label: "Últimos 30 dias" },
+                      { v: "personalizado" as const, label: "Personalizado" },
+                    ]).map(opt => (
+                      <button
+                        key={opt.v}
+                        onClick={() => setPeriodoTipo(opt.v)}
+                        className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-all ${
+                          periodoTipo === opt.v
+                            ? "bg-blue-600 text-white"
+                            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  {periodoTipo === "personalizado" && (
+                    <div className="flex gap-3 mt-3 items-end flex-wrap">
+                      <div>
+                        <label className="text-xs text-gray-500 block mb-1">Data início</label>
+                        <input
+                          type="date"
+                          value={periodoCustomInicio}
+                          onChange={e => setPeriodoCustomInicio(e.target.value)}
+                          className="border border-gray-300 rounded px-2 py-1 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500 block mb-1">Data fim</label>
+                        <input
+                          type="date"
+                          value={periodoCustomFim}
+                          onChange={e => setPeriodoCustomFim(e.target.value)}
+                          className="border border-gray-300 rounded px-2 py-1 text-sm"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {!relatorioPeriodo ? (
+                  <div className="flex items-center justify-center h-32 text-gray-400">Carregando...</div>
+                ) : (
+                <>
                   {/* Cards de resumo */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-                      <div className="text-2xl font-bold text-gray-800">{relatorioDiario.totalTarefas}</div>
+                      <div className="text-2xl font-bold text-gray-800">{relatorioPeriodo.totalTarefas}</div>
                       <div className="text-xs text-gray-500 mt-1">Total de tarefas</div>
                     </div>
                     <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-                      <div className="text-2xl font-bold text-green-600">{relatorioDiario.tarefasConcluidas}</div>
+                      <div className="text-2xl font-bold text-green-600">{relatorioPeriodo.tarefasConcluidas}</div>
                       <div className="text-xs text-gray-500 mt-1">Concluídas</div>
                     </div>
                     <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
                       <div className="text-2xl font-bold text-blue-600">
-                        {Math.floor(relatorioDiario.totalSegundos / 3600)}h{String(Math.floor((relatorioDiario.totalSegundos % 3600) / 60)).padStart(2, '0')}m
+                        {Math.floor(relatorioPeriodo.totalSegundos / 3600)}h{String(Math.floor((relatorioPeriodo.totalSegundos % 3600) / 60)).padStart(2, '0')}m
                       </div>
                       <div className="text-xs text-gray-500 mt-1">Tempo total</div>
                     </div>
                     <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
                       <div className="text-2xl font-bold text-purple-600">
-                        {relatorioDiario.totalTarefas > 0 ? Math.round((relatorioDiario.tarefasConcluidas / relatorioDiario.totalTarefas) * 100) : 0}%
+                        {relatorioPeriodo.totalTarefas > 0 ? Math.round((relatorioPeriodo.tarefasConcluidas / relatorioPeriodo.totalTarefas) * 100) : 0}%
                       </div>
                       <div className="text-xs text-gray-500 mt-1">Taxa de conclusão</div>
                     </div>
                   </div>
 
                   {/* Tempo por categoria */}
-                  {relatorioDiario.porCategoria.length > 0 && (
+                  {relatorioPeriodo.porCategoria.length > 0 && (
                     <div className="bg-white rounded-xl border border-gray-200 p-5">
                       <h3 className="text-sm font-semibold text-gray-800 mb-4">Tempo por Categoria</h3>
                       <div className="space-y-3">
-                        {relatorioDiario.porCategoria
+                        {relatorioPeriodo.porCategoria
                           .sort((a, b) => b.totalSeg - a.totalSeg)
                           .map(cat => {
-                            const maxSeg = Math.max(...relatorioDiario.porCategoria.map(c => c.totalSeg));
+                            const maxSeg = Math.max(...relatorioPeriodo.porCategoria.map(c => c.totalSeg));
                             const pct = maxSeg > 0 ? (cat.totalSeg / maxSeg) * 100 : 0;
                             const h = Math.floor(cat.totalSeg / 3600);
                             const m = Math.floor((cat.totalSeg % 3600) / 60);
@@ -1199,14 +1304,43 @@ export default function GestaoTempo() {
                     </div>
                   )}
 
+                  {/* Tempo por dia (gráfico) - só aparece com mais de 1 dia */}
+                  {relatorioPeriodo.porDia.length > 1 && (
+                    <div className="bg-white rounded-xl border border-gray-200 p-5">
+                      <h3 className="text-sm font-semibold text-gray-800 mb-4">Tempo por Dia</h3>
+                      <div className="space-y-2">
+                        {(() => {
+                          const maxDia = Math.max(...relatorioPeriodo.porDia.map(d => d.totalSeg));
+                          return relatorioPeriodo.porDia.map(d => {
+                            const pct = maxDia > 0 ? (d.totalSeg / maxDia) * 100 : 0;
+                            const h = Math.floor(d.totalSeg / 3600);
+                            const m = Math.floor((d.totalSeg % 3600) / 60);
+                            const tempoStr = h > 0 ? `${h}h${String(m).padStart(2,'0')}m` : `${m}m`;
+                            const dataObj = new Date(d.data + "T12:00:00");
+                            const diaStr = dataObj.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', weekday: 'short' });
+                            return (
+                              <div key={d.data} className="flex items-center gap-2">
+                                <div className="text-xs text-gray-600 w-32 flex-shrink-0">{diaStr}</div>
+                                <div className="flex-1 h-5 bg-gray-100 rounded relative overflow-hidden">
+                                  <div className="h-full bg-blue-400 rounded transition-all" style={{ width: `${pct}%` }} />
+                                </div>
+                                <div className="text-xs text-gray-600 w-24 text-right flex-shrink-0 font-mono">{tempoStr} • {d.concluidas}/{d.tarefas}</div>
+                              </div>
+                            );
+                          });
+                        })()}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Tabela de tarefas com tempo */}
-                  {relatorioDiario.tarefas.length > 0 && (
+                  {relatorioPeriodo.tarefas.length > 0 && (
                     <div className="bg-white rounded-xl border border-gray-200 p-5">
                       <h3 className="text-sm font-semibold text-gray-800 mb-4">Detalhamento por Tarefa</h3>
                       <div className="space-y-2">
-                        {relatorioDiario.tarefas
+                        {relatorioPeriodo.tarefas
                           .sort((a, b) => b.tempoExecucaoSeg - a.tempoExecucaoSeg)
-                          .map(t => {
+                          .map((t, idx) => {
                             const h = Math.floor(t.tempoExecucaoSeg / 3600);
                             const m = Math.floor((t.tempoExecucaoSeg % 3600) / 60);
                             const s = t.tempoExecucaoSeg % 60;
@@ -1214,9 +1348,12 @@ export default function GestaoTempo() {
                               ? (h > 0 ? `${h}h${String(m).padStart(2,'0')}m` : m > 0 ? `${m}m${String(s).padStart(2,'0')}s` : `${s}s`)
                               : '—';
                             const cfg = TRIADE_CONFIG[t.triade as "IMPORTANTE" | "URGENTE" | "CIRCUNSTANCIAL"];
+                            const dataObj = t.data ? new Date(t.data + "T12:00:00") : null;
+                            const dataStr = dataObj ? dataObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '—';
                             return (
-                              <div key={t.id} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
+                              <div key={`${t.id}-${t.data}-${idx}`} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
                                 <span className={`w-2 h-2 rounded-full flex-shrink-0 ${cfg?.color ?? 'bg-gray-400'}`} />
+                                <span className="text-xs text-gray-400 font-mono w-12 flex-shrink-0">{dataStr}</span>
                                 <span className="flex-1 text-sm text-gray-700 truncate">{t.titulo}</span>
                                 {t.status === 'CONCLUIDA' && <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />}
                                 <span className="text-xs font-mono text-gray-500 flex-shrink-0">{tempoStr}</span>
@@ -1227,14 +1364,15 @@ export default function GestaoTempo() {
                     </div>
                   )}
 
-                  {relatorioDiario.totalTarefas === 0 && (
+                  {relatorioPeriodo.totalTarefas === 0 && (
                     <div className="text-center py-12 text-gray-400">
                       <BarChart3 className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                      <p className="text-sm">Nenhuma tarefa registrada para este dia.</p>
+                      <p className="text-sm">Nenhuma tarefa registrada neste período.</p>
                     </div>
                   )}
-                </div>
-              )}
+                </>
+                )}
+              </div>
             </div>
           )}
 
