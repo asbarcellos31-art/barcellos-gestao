@@ -107,8 +107,9 @@ export async function enviarMensagemEvolution(
         },
         body: JSON.stringify({
           number: numero,
-          options: { delay: 1200, presence: "composing" },
-          textMessage: { text: mensagem },
+          // Evolution API v2.x: campos no nível raiz, sem wrapper textMessage
+          text: mensagem,
+          delay: 1200,
         }),
         signal: controller.signal,
       });
@@ -168,12 +169,11 @@ export async function enviarVideoEvolution(
         },
         body: JSON.stringify({
           number: numero,
-          options: { delay: 1200, presence: "composing" },
-          mediaMessage: {
-            mediatype: "video",
-            media: videoUrl,
-            caption: caption,
-          },
+          // Evolution API v2.x: campos no nível raiz
+          mediatype: "video",
+          media: videoUrl,
+          caption: caption,
+          delay: 1200,
         }),
         signal: controller.signal,
       });
@@ -232,12 +232,11 @@ export async function enviarMidiaEvolution(
         },
         body: JSON.stringify({
           number: numero,
-          options: { delay: 1200, presence: "composing" },
-          mediaMessage: {
-            mediatype: mediaType,
-            media: mediaUrl,
-            caption: caption,
-          },
+          // Evolution API v2.x: campos no nível raiz
+          mediatype: mediaType,
+          media: mediaUrl,
+          caption: caption,
+          delay: 1200,
         }),
         signal: controller.signal,
       });
@@ -295,14 +294,22 @@ export async function verificarConexaoEvolution(instancia: string): Promise<{ co
     }
     
     const instances = await resp.json() as any[];
-    const inst = instances.find((i: any) => i.instance?.instanceName === instancia);
+    // Evolution v2 retorna array direto, sem wrapper "instance"
+    // Suporta tanto v1 (com wrapper) quanto v2 (sem wrapper) para compatibilidade
+    const inst = instances.find((i: any) => {
+      const name = i.instance?.instanceName ?? i.name ?? i.instanceName;
+      return name === instancia;
+    });
     
     if (!inst) {
       return { conectado: false, erro: "Instância não encontrada" };
     }
     
-    // Considera conectado se status é "open" ou se tem owner (conectado)
-    const conectado = inst.instance?.status === "open" || !!inst.instance?.owner;
+    // v2: campo "connectionStatus" no nível raiz
+    // v1: campo "status" dentro de "instance"
+    const status = inst.connectionStatus ?? inst.instance?.status ?? inst.status;
+    const owner = inst.ownerJid ?? inst.instance?.owner ?? inst.owner;
+    const conectado = status === "open" || !!owner;
     return { conectado };
   } catch (err: any) {
     console.error(`[Evolution] ERRO em verificarConexaoEvolution:`, err.message, err.cause?.message || "");
