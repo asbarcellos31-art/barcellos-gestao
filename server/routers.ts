@@ -4,6 +4,7 @@ import {
   listarTarefasPorData,
   listarTarefasSemData,
   listarTarefasSemana,
+  listarTarefasPorPeriodo,
   criarTarefa,
   atualizarTarefa,
   concluirTarefa,
@@ -1000,6 +1001,57 @@ export const appRouter = router({
             status: t.status,
             duracaoMin: t.duracaoMin ?? 0,
             tempoExecucaoSeg: t.tempoExecucaoSeg ?? 0,
+          })),
+        };
+      }),
+    relatorioPorPeriodo: publicProcedure
+      .input(z.object({
+        appUserId: z.number(),
+        dataInicio: z.string(), // YYYY-MM-DD
+        dataFim: z.string(),    // YYYY-MM-DD
+      }))
+      .query(async ({ input }) => {
+        const tarefas = await listarTarefasPorPeriodo(input.appUserId, input.dataInicio, input.dataFim);
+        const concluidas = tarefas.filter(t => t.status === "CONCLUIDA" || (t.tempoExecucaoSeg ?? 0) > 0);
+        const totalSegundos = tarefas.reduce((acc, t) => acc + (t.tempoExecucaoSeg ?? 0), 0);
+        // Agrupar por categoria
+        const porCategoria: Record<string, { totalSeg: number; tarefas: number }> = {};
+        for (const t of tarefas) {
+          const cat = t.categoria ?? "OUTROS";
+          if (!porCategoria[cat]) porCategoria[cat] = { totalSeg: 0, tarefas: 0 };
+          porCategoria[cat].totalSeg += t.tempoExecucaoSeg ?? 0;
+          porCategoria[cat].tarefas += 1;
+        }
+        // Agrupar por dia
+        const porDia: Record<string, { totalSeg: number; tarefas: number; concluidas: number }> = {};
+        for (const t of tarefas) {
+          const dia = t.data || "sem-data";
+          if (!porDia[dia]) porDia[dia] = { totalSeg: 0, tarefas: 0, concluidas: 0 };
+          porDia[dia].totalSeg += t.tempoExecucaoSeg ?? 0;
+          porDia[dia].tarefas += 1;
+          if (t.status === "CONCLUIDA" || (t.tempoExecucaoSeg ?? 0) > 0) {
+            porDia[dia].concluidas += 1;
+          }
+        }
+        return {
+          dataInicio: input.dataInicio,
+          dataFim: input.dataFim,
+          totalTarefas: tarefas.length,
+          tarefasConcluidas: concluidas.length,
+          totalSegundos,
+          porCategoria: Object.entries(porCategoria).map(([categoria, v]) => ({ categoria, ...v })),
+          porDia: Object.entries(porDia)
+            .map(([data, v]) => ({ data, ...v }))
+            .sort((a, b) => a.data.localeCompare(b.data)),
+          tarefas: tarefas.map(t => ({
+            id: t.id,
+            titulo: t.titulo,
+            categoria: t.categoria ?? "OUTROS",
+            triade: t.triade,
+            status: t.status,
+            duracaoMin: t.duracaoMin ?? 0,
+            tempoExecucaoSeg: t.tempoExecucaoSeg ?? 0,
+            data: t.data,
           })),
         };
       }),
