@@ -31,6 +31,12 @@ import {
   Bold,
   Italic,
   Underline,
+  AlignCenter,
+  AlignRight,
+  List,
+  ListOrdered,
+  Palette,
+  Link2,
 } from "lucide-react";
 
 // ─── Tipos de bloco ───────────────────────────────────────────────────────────
@@ -112,11 +118,9 @@ export function gerarHtmlDeBlocos(
   const renderBloco = (b: Bloco): string => {
     switch (b.tipo) {
       case "texto": {
-        // Conteúdo já pode conter HTML inline (<strong>, <em>, <u>)
-        const linhas = b.conteudo.split("\n").filter(l => l.trim());
-        return linhas
-          .map(l => `<p style="margin:0 0 12px 0;color:#333;font-size:15px;line-height:1.7;">${l}</p>`)
-          .join("\n");
+        // Conteúdo é HTML rico (strong, em, u, span style, ul, ol, a)
+        // Envolvemos num <div> wrapper com estilo padrão para o e-mail
+        return `<div style="margin:0 0 12px 0;color:#333;font-size:15px;line-height:1.7;">${b.conteudo || ""}</div>`;
       }
 
       case "callout": {
@@ -194,13 +198,58 @@ export function gerarHtmlDeBlocos(
 
 // ─── Toolbar de formatação de texto ───────────────────────────────────────────
 
+const FONTES_DISPONIVEIS = [
+  { label: "Padrão", value: "" },
+  { label: "Arial", value: "Arial, sans-serif" },
+  { label: "Helvetica", value: "Helvetica, Arial, sans-serif" },
+  { label: "Times New Roman", value: "'Times New Roman', Times, serif" },
+  { label: "Georgia", value: "Georgia, serif" },
+  { label: "Verdana", value: "Verdana, Geneva, sans-serif" },
+  { label: "Tahoma", value: "Tahoma, Geneva, sans-serif" },
+  { label: "Courier New", value: "'Courier New', Courier, monospace" },
+  { label: "Trebuchet MS", value: "'Trebuchet MS', Helvetica, sans-serif" },
+];
+
+const TAMANHOS_DISPONIVEIS = [
+  { label: "Padrão", value: "" },
+  { label: "10px", value: "10px" },
+  { label: "12px", value: "12px" },
+  { label: "14px", value: "14px" },
+  { label: "16px", value: "16px" },
+  { label: "18px", value: "18px" },
+  { label: "20px", value: "20px" },
+  { label: "24px", value: "24px" },
+  { label: "28px", value: "28px" },
+  { label: "32px", value: "32px" },
+];
+
+const CORES_RAPIDAS = [
+  "#000000", "#374151", "#6b7280", "#dc2626", "#ea580c",
+  "#d97706", "#16a34a", "#0891b2", "#2563eb", "#7c3aed", "#db2777",
+];
+
 /**
  * Aplica ou remove uma tag HTML inline ao redor do texto selecionado
  * no elemento contenteditable referenciado.
  */
 function aplicarFormato(
   ref: React.RefObject<HTMLDivElement | null>,
-  tag: "strong" | "em" | "u",
+  acao: "bold" | "italic" | "underline" | "insertUnorderedList" | "insertOrderedList" | "justifyLeft" | "justifyCenter" | "justifyRight",
+  onChange: (html: string) => void
+) {
+  const el = ref.current;
+  if (!el) return;
+  el.focus();
+
+  document.execCommand(acao, false);
+
+  onChange(el.innerHTML);
+}
+
+function aplicarEstiloInline(
+  ref: React.RefObject<HTMLDivElement | null>,
+  estilo: "fontName" | "fontSize" | "foreColor",
+  valor: string,
   onChange: (html: string) => void
 ) {
   const el = ref.current;
@@ -208,27 +257,46 @@ function aplicarFormato(
   el.focus();
 
   const sel = window.getSelection();
-  if (!sel || sel.rangeCount === 0) return;
+  if (!sel || sel.rangeCount === 0 || sel.getRangeAt(0).collapsed) return;
 
-  const range = sel.getRangeAt(0);
-  if (range.collapsed) return; // nada selecionado
-
-  // Verifica se o texto já está dentro da tag
-  const container = range.commonAncestorContainer;
-  const parentTag = (container.nodeType === Node.TEXT_NODE
-    ? container.parentElement
-    : container as Element);
-  const jaFormatado = parentTag?.closest(tag) !== null;
-
-  if (jaFormatado) {
-    // Remove a formatação: desembrulha o nó
-    document.execCommand("removeFormat");
-  } else {
-    document.execCommand(
-      tag === "strong" ? "bold" : tag === "em" ? "italic" : "underline"
-    );
+  if (estilo === "fontName") {
+    document.execCommand("fontName", false, valor);
+  } else if (estilo === "fontSize") {
+    // Truque para usar tamanho em px: aplica fontSize=7 (placeholder) e depois substitui
+    document.execCommand("fontSize", false, "7");
+    // Acha as tags <font size="7"> e converte para span com font-size em px
+    const fonts = el.querySelectorAll<HTMLElement>('font[size="7"]');
+    fonts.forEach(f => {
+      const span = document.createElement("span");
+      span.style.fontSize = valor;
+      span.innerHTML = f.innerHTML;
+      f.replaceWith(span);
+    });
+  } else if (estilo === "foreColor") {
+    document.execCommand("foreColor", false, valor);
   }
 
+  onChange(el.innerHTML);
+}
+
+function inserirLink(
+  ref: React.RefObject<HTMLDivElement | null>,
+  onChange: (html: string) => void
+) {
+  const el = ref.current;
+  if (!el) return;
+  el.focus();
+
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0 || sel.getRangeAt(0).collapsed) {
+    alert("Selecione o texto que quer transformar em link.");
+    return;
+  }
+
+  const url = prompt("URL do link:", "https://");
+  if (!url) return;
+
+  document.execCommand("createLink", false, url);
   onChange(el.innerHTML);
 }
 
@@ -238,19 +306,20 @@ interface FormatToolbarProps {
 }
 
 function FormatToolbar({ editorRef, onChange }: FormatToolbarProps) {
+  const [showColorPicker, setShowColorPicker] = useState(false);
+
   const btn = (
     icon: React.ReactNode,
-    tag: "strong" | "em" | "u",
-    title: string,
-    shortcut: string
+    acao: "bold" | "italic" | "underline" | "insertUnorderedList" | "insertOrderedList" | "justifyLeft" | "justifyCenter" | "justifyRight",
+    title: string
   ) => (
     <button
       type="button"
       onMouseDown={e => {
-        e.preventDefault(); // impede perda de foco/seleção
-        aplicarFormato(editorRef, tag, onChange);
+        e.preventDefault();
+        aplicarFormato(editorRef, acao, onChange);
       }}
-      title={`${title} (${shortcut})`}
+      title={title}
       className="p-1.5 rounded hover:bg-gray-200 text-gray-600 transition-colors"
     >
       {icon}
@@ -258,11 +327,112 @@ function FormatToolbar({ editorRef, onChange }: FormatToolbarProps) {
   );
 
   return (
-    <div className="flex items-center gap-0.5 px-2 py-1 bg-gray-100 border border-b-0 rounded-t-md">
-      {btn(<Bold className="h-3.5 w-3.5" />, "strong", "Negrito", "Ctrl+B")}
-      {btn(<Italic className="h-3.5 w-3.5" />, "em", "Itálico", "Ctrl+I")}
-      {btn(<Underline className="h-3.5 w-3.5" />, "u", "Sublinhado", "Ctrl+U")}
-      <span className="text-xs text-gray-400 ml-2 select-none">Selecione o texto e clique</span>
+    <div className="flex items-center flex-wrap gap-0.5 px-2 py-1 bg-gray-100 border border-b-0 rounded-t-md">
+      {/* Fonte */}
+      <select
+        onMouseDown={e => e.preventDefault()}
+        onChange={e => {
+          if (e.target.value) {
+            aplicarEstiloInline(editorRef, "fontName", e.target.value, onChange);
+            e.target.value = "";
+          }
+        }}
+        className="text-xs border border-gray-300 rounded px-1 py-0.5 bg-white hover:bg-gray-50 cursor-pointer"
+        title="Tipo de fonte (selecione texto antes)"
+      >
+        {FONTES_DISPONIVEIS.map(f => (
+          <option key={f.value} value={f.value}>{f.label}</option>
+        ))}
+      </select>
+
+      {/* Tamanho */}
+      <select
+        onMouseDown={e => e.preventDefault()}
+        onChange={e => {
+          if (e.target.value) {
+            aplicarEstiloInline(editorRef, "fontSize", e.target.value, onChange);
+            e.target.value = "";
+          }
+        }}
+        className="text-xs border border-gray-300 rounded px-1 py-0.5 bg-white hover:bg-gray-50 cursor-pointer ml-1"
+        title="Tamanho da fonte (selecione texto antes)"
+      >
+        {TAMANHOS_DISPONIVEIS.map(t => (
+          <option key={t.value} value={t.value}>{t.label}</option>
+        ))}
+      </select>
+
+      <div className="w-px h-5 bg-gray-300 mx-1" />
+
+      {/* Negrito, Itálico, Sublinhado */}
+      {btn(<Bold className="h-3.5 w-3.5" />, "bold", "Negrito (Ctrl+B)")}
+      {btn(<Italic className="h-3.5 w-3.5" />, "italic", "Itálico (Ctrl+I)")}
+      {btn(<Underline className="h-3.5 w-3.5" />, "underline", "Sublinhado (Ctrl+U)")}
+
+      <div className="w-px h-5 bg-gray-300 mx-1" />
+
+      {/* Cor do texto */}
+      <div className="relative">
+        <button
+          type="button"
+          onMouseDown={e => {
+            e.preventDefault();
+            setShowColorPicker(!showColorPicker);
+          }}
+          title="Cor do texto"
+          className="p-1.5 rounded hover:bg-gray-200 text-gray-600 transition-colors flex items-center"
+        >
+          <Palette className="h-3.5 w-3.5" />
+        </button>
+        {showColorPicker && (
+          <div className="absolute top-full left-0 mt-1 p-2 bg-white border border-gray-300 rounded shadow-lg z-50 flex flex-wrap gap-1" style={{ width: 140 }}>
+            {CORES_RAPIDAS.map(cor => (
+              <button
+                key={cor}
+                type="button"
+                onMouseDown={e => {
+                  e.preventDefault();
+                  aplicarEstiloInline(editorRef, "foreColor", cor, onChange);
+                  setShowColorPicker(false);
+                }}
+                className="w-6 h-6 rounded border border-gray-300 hover:scale-110 transition-transform"
+                style={{ background: cor }}
+                title={cor}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="w-px h-5 bg-gray-300 mx-1" />
+
+      {/* Listas */}
+      {btn(<List className="h-3.5 w-3.5" />, "insertUnorderedList", "Lista com marcadores")}
+      {btn(<ListOrdered className="h-3.5 w-3.5" />, "insertOrderedList", "Lista numerada")}
+
+      <div className="w-px h-5 bg-gray-300 mx-1" />
+
+      {/* Alinhamento */}
+      {btn(<AlignLeft className="h-3.5 w-3.5" />, "justifyLeft", "Alinhar à esquerda")}
+      {btn(<AlignCenter className="h-3.5 w-3.5" />, "justifyCenter", "Centralizar")}
+      {btn(<AlignRight className="h-3.5 w-3.5" />, "justifyRight", "Alinhar à direita")}
+
+      <div className="w-px h-5 bg-gray-300 mx-1" />
+
+      {/* Link */}
+      <button
+        type="button"
+        onMouseDown={e => {
+          e.preventDefault();
+          inserirLink(editorRef, onChange);
+        }}
+        title="Inserir link"
+        className="p-1.5 rounded hover:bg-gray-200 text-gray-600 transition-colors"
+      >
+        <Link2 className="h-3.5 w-3.5" />
+      </button>
+
+      <span className="text-[10px] text-gray-400 ml-auto select-none hidden sm:inline">Selecione o texto e clique</span>
     </div>
   );
 }
@@ -312,9 +482,9 @@ function RichTextEditor({ value, onChange, placeholder, minRows = 3 }: RichTextE
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.ctrlKey || e.metaKey) {
-      if (e.key === "b") { e.preventDefault(); aplicarFormato(editorRef, "strong", onChange); }
-      if (e.key === "i") { e.preventDefault(); aplicarFormato(editorRef, "em", onChange); }
-      if (e.key === "u") { e.preventDefault(); aplicarFormato(editorRef, "u", onChange); }
+      if (e.key === "b") { e.preventDefault(); aplicarFormato(editorRef, "bold", onChange); }
+      if (e.key === "i") { e.preventDefault(); aplicarFormato(editorRef, "italic", onChange); }
+      if (e.key === "u") { e.preventDefault(); aplicarFormato(editorRef, "underline", onChange); }
     }
   };
 
