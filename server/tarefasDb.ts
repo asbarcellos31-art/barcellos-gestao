@@ -415,3 +415,106 @@ export async function obterScoreProdutividade(appUserId: number, dataInicio: str
     pctCircunstancial: Math.round((circunstancial / total) * 100),
   };
 }
+
+// ─── Listar tarefas FIXAS num período arbitrário (para relatórios) ────────────
+// Não expande recorrências — apenas tarefas com dataAgendada dentro do intervalo
+// e tarefas recorrentes com tempo executado em ocorrências dentro do intervalo.
+export async function listarTarefasPorPeriodo(
+  appUserId: number,
+  dataInicio: string,
+  dataFim: string
+) {
+  const db = await getDb();
+  if (!db) return [];
+
+  // 1) Tarefas com dataAgendada no período (fixas + recorrentes com data)
+  const fixas = await db.select().from(tarefas)
+    .where(and(
+      eq(tarefas.appUserId, appUserId),
+      sql`DATE(${tarefas.dataAgendada}) >= ${dataInicio}`,
+      sql`DATE(${tarefas.dataAgendada}) <= ${dataFim}`
+    ))
+    .orderBy(asc(tarefas.dataAgendada), asc(tarefas.horaAgendada));
+
+  // 2) Ocorrências de tarefas recorrentes no período (com tempo > 0)
+  const ocorrencias = await rawQuery<{
+    tarefa_id: number;
+    data: string;
+    status: string;
+    tempo_execucao_seg: number;
+  }>(
+    `SELECT o.tarefa_id, o.data, o.status, o.tempo_execucao_seg
+     FROM tarefa_ocorrencias o
+     INNER JOIN tarefas t ON t.id = o.tarefa_id
+     WHERE t.app_user_id = ?
+       AND DATE(o.data) >= ?
+       AND DATE(o.data) <= ?
+       AND (o.tempo_execucao_seg > 0 OR o.status = 'CONCLUIDA')`,
+    [appUserId, dataInicio, dataFim]
+  );
+
+  // Buscar dados completos das tarefas das ocorrências
+  const idsRecorrentesComOcorrencia = [
+    ...new Set(ocorrencias.map(o => o.tarefa_id))
+  ].filter(id => !fixas.find(f => f.id === id));
+  
+  const tarefasRecorrentesInfo = idsRecorrentesComOcorrencia.length > 0
+    ? await db.select().from(tarefas)
+        .where(and(
+          eq(tarefas.appUserId, appUserId),
+          sql`${tarefas.id} IN (${sql.raw(idsRecorrentesComOcorrencia.join(','))})`
+        ))
+    : [];
+
+  // Resultado: tarefas com dataAgendada + ocorrências de recorrentes
+  const resultado: Array<{
+    id: number;
+    titulo: string;
+    categoria: string;
+    triade: string;
+    status: string;
+    duracaoMin: number;
+    tempoExecucaoSeg: number;
+    data: string;
+    recorrente: boolean;
+  }> = [];
+
+  // Tarefas fixas
+  for (const t of fixas) {
+    resultado.push({
+      id: t.id,
+      titulo: t.titulo ?? "",
+      categoria: t.categoria ?? "OUTROS",
+      triade: t.triade ?? "C",
+      status: t.status ?? "PENDENTE",
+      duracaoMin: t.duracaoMin ?? 0,
+      tempoExecucaoSeg: t.tempoExecucaoSeg ?? 0,
+      data: toDateStr(t.dataAgendada),
+      recorrente: !!t.recorrente,
+    });
+  }
+
+  // Ocorrências de recorrentes
+  for (const o of ocorrencias) {
+    const t = tarefasRecorrentesInfo.find(x => x.id === o.tarefa_id)
+           || fixas.find(f => f.id === o.tarefa_id);
+    if (!t) continue;
+    // Se já está na lista (fixas) com mesma data, pula
+    const dataOcorrencia = toDateStr(o.data as any);
+    const jaTem = resultado.some(r => r.id === t.id && r.data === dataOcorrencia);
+    if (jaTem) continue;
+    resultado.push({
+      id: t.id,
+      titulo: t.titulo ?? "",
+      categoria: t.categoria ?? "OUTROS",
+      triade: t.triade ?? "C",
+      status: o.status ?? "PENDENTE",
+      duracaoMin: t.duracaoMin ?? 0,
+      tempoExecucaoSeg: o.tempo_execucao_seg ?? 0,
+      data: dataOcorrencia,
+      recorrente: true,
+    });
+  }
+
+  return resultado;
+}
