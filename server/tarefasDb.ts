@@ -1,6 +1,6 @@
 import { getDb } from "./db";
 import { tarefas, tarefaOcorrencias } from "../drizzle/schema";
-import { eq, and, gte, lte, lt, ne, desc, asc, isNull, or, notInArray, sql } from "drizzle-orm";
+import { eq, and, gte, lte, lt, ne, desc, asc, isNull, or, notInArray, inArray, sql } from "drizzle-orm";
 import mysql from "mysql2/promise";
 
 // Pool mysql2 para queries raw
@@ -438,31 +438,31 @@ export async function listarTarefasPorPeriodo(
 
   // 2) Ocorrências de tarefas recorrentes no período (com tempo > 0)
   const ocorrencias = await rawQuery<{
-    tarefa_id: number;
+    tarefaId: number;
     data: string;
     status: string;
-    tempo_execucao_seg: number;
+    tempoExecucaoSeg: number;
   }>(
-    `SELECT o.tarefa_id, o.data, o.status, o.tempo_execucao_seg
+    `SELECT o.tarefaId, o.data, o.status, o.tempoExecucaoSeg
      FROM tarefa_ocorrencias o
-     INNER JOIN tarefas t ON t.id = o.tarefa_id
-     WHERE t.app_user_id = ?
+     INNER JOIN tarefas t ON t.id = o.tarefaId
+     WHERE t.appUserId = ?
        AND DATE(o.data) >= ?
        AND DATE(o.data) <= ?
-       AND (o.tempo_execucao_seg > 0 OR o.status = 'CONCLUIDA')`,
+       AND (o.tempoExecucaoSeg > 0 OR o.status = 'CONCLUIDA')`,
     [appUserId, dataInicio, dataFim]
   );
 
   // Buscar dados completos das tarefas das ocorrências
   const idsRecorrentesComOcorrencia = [
-    ...new Set(ocorrencias.map(o => o.tarefa_id))
+    ...new Set(ocorrencias.map(o => o.tarefaId))
   ].filter(id => !fixas.find(f => f.id === id));
   
   const tarefasRecorrentesInfo = idsRecorrentesComOcorrencia.length > 0
     ? await db.select().from(tarefas)
         .where(and(
           eq(tarefas.appUserId, appUserId),
-          sql`${tarefas.id} IN (${sql.raw(idsRecorrentesComOcorrencia.join(','))})`
+          inArray(tarefas.id, idsRecorrentesComOcorrencia)
         ))
     : [];
 
@@ -496,8 +496,8 @@ export async function listarTarefasPorPeriodo(
 
   // Ocorrências de recorrentes
   for (const o of ocorrencias) {
-    const t = tarefasRecorrentesInfo.find(x => x.id === o.tarefa_id)
-           || fixas.find(f => f.id === o.tarefa_id);
+    const t = tarefasRecorrentesInfo.find(x => x.id === o.tarefaId)
+           || fixas.find(f => f.id === o.tarefaId);
     if (!t) continue;
     // Se já está na lista (fixas) com mesma data, pula
     const dataOcorrencia = toDateStr(o.data as any);
@@ -510,7 +510,7 @@ export async function listarTarefasPorPeriodo(
       triade: t.triade ?? "C",
       status: o.status ?? "PENDENTE",
       duracaoMin: t.duracaoMin ?? 0,
-      tempoExecucaoSeg: o.tempo_execucao_seg ?? 0,
+      tempoExecucaoSeg: o.tempoExecucaoSeg ?? 0,
       data: dataOcorrencia,
       recorrente: true,
     });
