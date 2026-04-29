@@ -1137,7 +1137,7 @@ export default function Clientes() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">
-                  Contribuição Total {filtradoPorVendedor && <span className="text-blue-600 font-medium">(fatia de {filtradoPorVendedor})</span>}
+                  Contribuição Total {filtradoPorVendedor && <span className="text-blue-600 font-medium">(carteira de {filtradoPorVendedor})</span>}
                 </p>
                 <p className="text-base font-bold text-foreground">{fmt(somaContribuicao)}</p>
               </div>
@@ -1153,7 +1153,7 @@ export default function Clientes() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">
-                  Comissão Total {filtradoPorVendedor && <span className="text-blue-600 font-medium">(fatia de {filtradoPorVendedor})</span>}
+                  Comissão Recebida {filtradoPorVendedor && <span className="text-blue-600 font-medium">(fatia de {filtradoPorVendedor})</span>}
                 </p>
                 <p className="text-base font-bold text-orange-600">{fmt(somaComissao)}</p>
               </div>
@@ -1169,7 +1169,7 @@ export default function Clientes() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">
-                  Expectativa Comissão {filtradoPorVendedor && <span className="text-blue-600 font-medium">(fatia de {filtradoPorVendedor})</span>}
+                  Expectativa Comissão {filtradoPorVendedor && <span className="text-blue-600 font-medium">(carteira de {filtradoPorVendedor})</span>}
                 </p>
                 <p className="text-base font-bold text-purple-600">{fmt(somaExpectativaComissao)}</p>
               </div>
@@ -1183,14 +1183,14 @@ export default function Clientes() {
         <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm flex items-start gap-3">
           <div className="text-blue-600 mt-0.5">ℹ️</div>
           <div className="text-blue-900">
-            <span className="font-semibold">Mostrando valores proporcionais de {filtradoPorVendedor}:</span> os totalizadores
-            e colunas de Contribuição/Comissão refletem apenas a fatia que compete a este vendedor (segundo cadastro de % em
-            cliente_vendedores).
+            <span className="font-semibold">Filtrando por {filtradoPorVendedor}:</span>{" "}
+            <b>Contribuição</b> = soma cheia da carteira (cliente paga 100%, independente do vendedor).{" "}
+            <b>Comissão Recebida</b> = valor que a Fernanda já recebeu (proporcional ao % dela em cada cliente).{" "}
+            <b>Expectativa</b> = projeção sobre a contribuição da carteira (taxa cadastrada × contribuição).
             {clientesSemCadastroVendedor > 0 && (
               <span className="block mt-1 text-amber-800">
-                ⚠ <b>{clientesSemCadastroVendedor} cliente(s)</b> aparece(m) com badge "vendedor não cadastrado" — esses estão
-                associados a {filtradoPorVendedor} pelo campo legado mas não têm % em cliente_vendedores; mostramos o valor
-                cheio nesses casos.
+                ⚠ <b>{clientesSemCadastroVendedor} cliente(s)</b> sem % cadastrado em cliente_vendedores aparece(m) com badge laranja —
+                esses são associados a {filtradoPorVendedor} pelo campo antigo. Comissão Recebida nesses casos assume 100%.
               </span>
             )}
           </div>
@@ -1522,21 +1522,17 @@ export default function Clientes() {
                         {(c as any).produtosVinculados || (c.produtos && c.produtos !== "nan" ? c.produtos : null) || "—"}
                       </td>
                       <td className="p-3 text-right font-medium text-foreground">
-                        {filtradoPorVendedor && (c as any).contribuicaoAjustada !== undefined ? (
-                          <span title={`${(c as any).percentualVendedor}% de ${fmt(Number(c.contribuicao || c.valorTotalComissao || 0))}`}>
-                            {fmt((c as any).contribuicaoAjustada)}
-                            {(c as any).percentualVendedor !== 100 && !((c as any).semVendedorCadastrado) && (
-                              <span className="text-[10px] text-blue-600 ml-1">({(c as any).percentualVendedor}%)</span>
-                            )}
-                          </span>
-                        ) : (
-                          c.contribuicao ? fmt(Number(c.contribuicao)) : c.valorTotalComissao ? fmt(Number(c.valorTotalComissao)) : "—"
-                        )}
+                        {/* Contribuição: SEMPRE cheia (cliente paga o valor todo) */}
+                        {c.contribuicao ? fmt(Number(c.contribuicao)) : c.valorTotalComissao ? fmt(Number(c.valorTotalComissao)) : "—"}
                       </td>
                       <td className="p-3 text-right font-medium text-orange-600">
+                        {/* Comissão recebida: proporcional ao % do vendedor quando filtrado */}
                         {filtradoPorVendedor && (c as any).valorComissaoAjustado !== undefined ? (
                           <span title={`${(c as any).percentualVendedor}% de ${fmt(Number(c.valorComissao || 0))}`}>
                             {fmt((c as any).valorComissaoAjustado)}
+                            {(c as any).percentualVendedor !== 100 && !((c as any).semVendedorCadastrado) && (
+                              <span className="text-[10px] text-blue-600 ml-1">({(c as any).percentualVendedor}%)</span>
+                            )}
                           </span>
                         ) : (
                           c.valorComissao ? fmt(Number(c.valorComissao)) : "—"
