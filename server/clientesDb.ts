@@ -1,6 +1,28 @@
 import { getDb } from "./db";
 import { clientes, vendas, sinistros, beneficiariosCRM, crmLeads, crmOrigensLeads, clienteProdutos, produtos as produtosTable } from "../drizzle/schema";
 import { and, asc, desc, eq, like, or, sql } from "drizzle-orm";
+import mysql from "mysql2/promise";
+
+// Pool para queries SQL diretas (necessário em casos onde drizzle não retorna no formato esperado)
+let _pool: mysql.Pool | null = null;
+function getPool(): mysql.Pool {
+  if (!_pool && process.env.DATABASE_URL) {
+    _pool = mysql.createPool({
+      uri: process.env.DATABASE_URL,
+      connectionLimit: 5,
+      waitForConnections: true,
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 10000,
+    });
+  }
+  if (!_pool) throw new Error("DATABASE_URL não configurado");
+  return _pool;
+}
+async function queryPool<T = Record<string, unknown>>(sqlStr: string, params: unknown[] = []): Promise<T[]> {
+  const pool = getPool();
+  const [rows] = await pool.execute(sqlStr, params);
+  return rows as T[];
+}
 
 // ============================================================
 // CLIENTES
@@ -117,56 +139,100 @@ export async function listarClientes(opts?: {
   }));
 
   // ─── PROPORCIONALIDADE POR VENDEDOR ──────────────────────────────────────
-  // Quando filtra por um vendedor específico, ajusta valores ao percentual
-  // que compete a ele em cliente_vendedores. Clientes sem registro em cv
-  // mantêm o valor cheio mas ficam marcados como "vendedor não cadastrado".
+  // Quando filtra por um vendedor específico:
+  //   - Contribuição: VALOR CHEIO (cliente paga 100%, independente do vendedor)
+  //   - Comissão recebida: valorComissao × percentual_dela
+  //   - Expectativa: contribuicao × taxaComissao × percentual_dela
+  // Clientes sem registro em cliente_vendedores: aparecem com badge de aviso
+  // e usam percentual = 100 (não há de onde calcular outra coisa).
   let totalAjustadoContribuicao = 0;
   let totalAjustadoComissao = 0;
   let totalAjustadoExpectativa = 0;
+  let qtdSemCadastroVendedorTotal = 0;
   const vendedorFiltrado = (opts?.vendedor && opts.vendedor !== "todos") ? opts.vendedor : null;
 
-  if (vendedorFiltrado && clienteIds.length > 0) {
-    // Busca percentual de cada cliente listado para esse vendedor
-    const cvRows = await db.execute(sql`
-      SELECT clienteId, percentual
-      FROM cliente_vendedores
-      WHERE clienteId IN (${sql.join(clienteIds.map(id => sql`${id}`), sql`, `)})
-        AND UPPER(nomeVendedor) = UPPER(${vendedorFiltrado})
-    `);
-    const percentualPorCliente: Record<number, number> = {};
-    // drizzle execute retorna [rows, fields] no mysql2
-    const cvList = Array.isArray(cvRows) ? (cvRows[0] as any[]) || [] : [];
-    for (const r of cvList) {
-      percentualPorCliente[Number(r.clienteId)] = parseFloat(String(r.percentual ?? "0"));
+  if (vendedorFiltrado) {
+    // 1) Totais agregados de TODOS os clientes do vendedor (não só os da página)
+    //    Regras:
+    //      Contribuição = soma cheia (cliente paga 100% independente do vendedor)
+    //      Comissão recebida = soma(valorComissao × % do vendedor)
+    //      Expectativa = soma(contribuição × taxaComissao) — NÃO multiplica pelo % do vendedor
+    const totaisAjList = await queryPool<{
+      somaContrib: string; somaComis: string; somaExpect: string; qtdSemCv: number;
+    }>(
+      `SELECT
+        COALESCE(SUM(COALESCE(c.contribuicao, 0)), 0) as somaContrib,
+        COALESCE(SUM(
+          CASE WHEN cv.percentual IS NOT NULL
+            THEN COALESCE(c.valorComissao, 0) * cv.percentual / 100
+            ELSE COALESCE(c.valorComissao, 0)
+          END
+        ), 0) as somaComis,
+        COALESCE(SUM(
+          CASE WHEN c.taxaComissao IS NOT NULL AND c.taxaComissao > 0
+               THEN COALESCE(c.contribuicao, 0) * c.taxaComissao
+               ELSE 0
+          END
+        ), 0) as somaExpect,
+        COUNT(CASE WHEN cv.id IS NULL THEN 1 END) as qtdSemCv
+      FROM clientes c
+      LEFT JOIN cliente_vendedores cv
+        ON cv.clienteId = c.id
+        AND UPPER(cv.nomeVendedor) = UPPER(?)
+      WHERE (
+        UPPER(c.vendedor) = UPPER(?)
+        OR c.id IN (
+          SELECT clienteId FROM cliente_vendedores WHERE UPPER(nomeVendedor) = UPPER(?)
+        )
+      )`,
+      [vendedorFiltrado, vendedorFiltrado, vendedorFiltrado]
+    );
+    if (totaisAjList[0]) {
+      totalAjustadoContribuicao = parseFloat(String(totaisAjList[0].somaContrib ?? "0"));
+      totalAjustadoComissao = parseFloat(String(totaisAjList[0].somaComis ?? "0"));
+      totalAjustadoExpectativa = parseFloat(String(totaisAjList[0].somaExpect ?? "0"));
+      qtdSemCadastroVendedorTotal = Number(totaisAjList[0].qtdSemCv ?? 0);
     }
+    console.log(`[Clientes/listar] Vendedor=${vendedorFiltrado} | Contrib=${totalAjustadoContribuicao.toFixed(2)} | Comis=${totalAjustadoComissao.toFixed(2)} | Expect=${totalAjustadoExpectativa.toFixed(2)} | SemCv=${qtdSemCadastroVendedorTotal}`);
 
-    // Aplica o percentual a cada cliente e marca os sem cadastro
-    for (const c of clientesComProdutos as any[]) {
-      const pct = percentualPorCliente[c.id];
-      const contrib = parseFloat(String(c.contribuicao ?? "0")) || 0;
-      const comis = parseFloat(String(c.valorComissao ?? "0")) || 0;
-      const taxa = parseFloat(String(c.taxaComissao ?? "0")) || 0;
-
-      if (pct !== undefined) {
-        // Tem cv cadastrado: aplica percentual
-        c.semVendedorCadastrado = false;
-        c.percentualVendedor = pct;
-        c.contribuicaoAjustada = contrib * pct / 100;
-        c.valorComissaoAjustado = comis * pct / 100;
-        const expect = (taxa > 0 ? contrib * taxa : comis) * pct / 100;
-        c.expectativaAjustada = expect;
-      } else {
-        // Sem cv cadastrado: mostra valor cheio (alerta visual)
-        c.semVendedorCadastrado = true;
-        c.percentualVendedor = 100;
-        c.contribuicaoAjustada = contrib;
-        c.valorComissaoAjustado = comis;
-        c.expectativaAjustada = taxa > 0 ? contrib * taxa : comis;
+    // 2) Para os clientes EXIBIDOS na página: enriquece com percentual e
+    //    valores ajustados (linha-a-linha na tabela)
+    if (clienteIds.length > 0) {
+      const placeholders = clienteIds.map(() => '?').join(',');
+      const cvList = await queryPool<{ clienteId: number; percentual: string }>(
+        `SELECT clienteId, percentual
+         FROM cliente_vendedores
+         WHERE clienteId IN (${placeholders})
+           AND UPPER(nomeVendedor) = UPPER(?)`,
+        [...clienteIds, vendedorFiltrado]
+      );
+      const percentualPorCliente: Record<number, number> = {};
+      for (const r of cvList) {
+        percentualPorCliente[Number(r.clienteId)] = parseFloat(String(r.percentual ?? "0"));
       }
 
-      totalAjustadoContribuicao += c.contribuicaoAjustada;
-      totalAjustadoComissao += c.valorComissaoAjustado;
-      totalAjustadoExpectativa += c.expectativaAjustada;
+      for (const c of clientesComProdutos as any[]) {
+        const pct = percentualPorCliente[c.id]; // undefined se não tem cv
+        const contrib = parseFloat(String(c.contribuicao ?? "0")) || 0;
+        const comis = parseFloat(String(c.valorComissao ?? "0")) || 0;
+        const taxa = parseFloat(String(c.taxaComissao ?? "0")) || 0;
+        // Expectativa = contribuição × taxa (sem aplicar % do vendedor)
+        const expect = taxa > 0 ? contrib * taxa : 0;
+
+        if (pct !== undefined) {
+          c.semVendedorCadastrado = false;
+          c.percentualVendedor = pct;
+          c.contribuicaoExibida = contrib;              // CHEIA
+          c.valorComissaoAjustado = comis * pct / 100;  // proporcional ao recebido
+          c.expectativaAjustada = expect;               // SEM proporção
+        } else {
+          c.semVendedorCadastrado = true;
+          c.percentualVendedor = 100;
+          c.contribuicaoExibida = contrib;
+          c.valorComissaoAjustado = comis;
+          c.expectativaAjustada = expect;
+        }
+      }
     }
   }
 
@@ -182,9 +248,7 @@ export async function listarClientes(opts?: {
     // Indicadores quando filtra por vendedor específico
     filtradoPorVendedor: vendedorFiltrado,
     // Quantidade de clientes sem cadastro em cliente_vendedores (só quando filtrado)
-    clientesSemCadastroVendedor: vendedorFiltrado
-      ? (clientesComProdutos as any[]).filter(c => c.semVendedorCadastrado).length
-      : 0,
+    clientesSemCadastroVendedor: vendedorFiltrado ? qtdSemCadastroVendedorTotal : 0,
   };
 }
 
