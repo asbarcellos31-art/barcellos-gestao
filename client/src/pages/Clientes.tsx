@@ -357,6 +357,8 @@ export default function Clientes() {
   const somaContribuicao = data?.somaContribuicao || 0;
   const somaComissao = data?.somaComissao || 0;
   const somaExpectativaComissao = data?.somaExpectativaComissao || 0;
+  const filtradoPorVendedor = (data as any)?.filtradoPorVendedor || null;
+  const clientesSemCadastroVendedor = (data as any)?.clientesSemCadastroVendedor || 0;
   const totalPaginas = Math.ceil(total / PAGE_SIZE);
 
   const criarMutation = trpc.clientes.criar.useMutation({
@@ -1134,7 +1136,9 @@ export default function Clientes() {
                 <DollarSign className="h-4 w-4 text-indigo-600" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Contribuição Total</p>
+                <p className="text-xs text-muted-foreground">
+                  Contribuição Total {filtradoPorVendedor && <span className="text-blue-600 font-medium">(fatia de {filtradoPorVendedor})</span>}
+                </p>
                 <p className="text-base font-bold text-foreground">{fmt(somaContribuicao)}</p>
               </div>
             </div>
@@ -1148,7 +1152,9 @@ export default function Clientes() {
                 <TrendingUp className="h-4 w-4 text-orange-600" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Comissão Total</p>
+                <p className="text-xs text-muted-foreground">
+                  Comissão Total {filtradoPorVendedor && <span className="text-blue-600 font-medium">(fatia de {filtradoPorVendedor})</span>}
+                </p>
                 <p className="text-base font-bold text-orange-600">{fmt(somaComissao)}</p>
               </div>
             </div>
@@ -1162,13 +1168,34 @@ export default function Clientes() {
                 <Percent className="h-4 w-4 text-purple-600" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Expectativa Comissão</p>
+                <p className="text-xs text-muted-foreground">
+                  Expectativa Comissão {filtradoPorVendedor && <span className="text-blue-600 font-medium">(fatia de {filtradoPorVendedor})</span>}
+                </p>
                 <p className="text-base font-bold text-purple-600">{fmt(somaExpectativaComissao)}</p>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
+
+      {/* Banner explicativo quando filtra por vendedor */}
+      {filtradoPorVendedor && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm flex items-start gap-3">
+          <div className="text-blue-600 mt-0.5">ℹ️</div>
+          <div className="text-blue-900">
+            <span className="font-semibold">Mostrando valores proporcionais de {filtradoPorVendedor}:</span> os totalizadores
+            e colunas de Contribuição/Comissão refletem apenas a fatia que compete a este vendedor (segundo cadastro de % em
+            cliente_vendedores).
+            {clientesSemCadastroVendedor > 0 && (
+              <span className="block mt-1 text-amber-800">
+                ⚠ <b>{clientesSemCadastroVendedor} cliente(s)</b> aparece(m) com badge "vendedor não cadastrado" — esses estão
+                associados a {filtradoPorVendedor} pelo campo legado mas não têm % em cliente_vendedores; mostramos o valor
+                cheio nesses casos.
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
           {filtroAtivo && (
         <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-2">
@@ -1477,7 +1504,14 @@ export default function Clientes() {
                 ) : (
                   clientesFiltrados.map((c) => (
                     <tr key={c.id} className="border-b hover:bg-muted/30 transition-colors">
-                      <td className="p-3 font-medium">{c.nome}</td>
+                      <td className="p-3 font-medium">
+                        {c.nome}
+                        {filtradoPorVendedor && (c as any).semVendedorCadastrado && (
+                          <span className="ml-2 inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded" title="Cliente sem registro em cliente_vendedores. Mostrando valor cheio.">
+                            ⚠ vendedor não cadastrado
+                          </span>
+                        )}
+                      </td>
                       <td className="p-3 text-muted-foreground font-mono text-xs">{c.cpf || "—"}</td>
                       <td className="p-3">
                         {c.vendedor ? (
@@ -1488,10 +1522,25 @@ export default function Clientes() {
                         {(c as any).produtosVinculados || (c.produtos && c.produtos !== "nan" ? c.produtos : null) || "—"}
                       </td>
                       <td className="p-3 text-right font-medium text-foreground">
-                        {c.contribuicao ? fmt(Number(c.contribuicao)) : c.valorTotalComissao ? fmt(Number(c.valorTotalComissao)) : "—"}
+                        {filtradoPorVendedor && (c as any).contribuicaoAjustada !== undefined ? (
+                          <span title={`${(c as any).percentualVendedor}% de ${fmt(Number(c.contribuicao || c.valorTotalComissao || 0))}`}>
+                            {fmt((c as any).contribuicaoAjustada)}
+                            {(c as any).percentualVendedor !== 100 && !((c as any).semVendedorCadastrado) && (
+                              <span className="text-[10px] text-blue-600 ml-1">({(c as any).percentualVendedor}%)</span>
+                            )}
+                          </span>
+                        ) : (
+                          c.contribuicao ? fmt(Number(c.contribuicao)) : c.valorTotalComissao ? fmt(Number(c.valorTotalComissao)) : "—"
+                        )}
                       </td>
                       <td className="p-3 text-right font-medium text-orange-600">
-                        {c.valorComissao ? fmt(Number(c.valorComissao)) : "—"}
+                        {filtradoPorVendedor && (c as any).valorComissaoAjustado !== undefined ? (
+                          <span title={`${(c as any).percentualVendedor}% de ${fmt(Number(c.valorComissao || 0))}`}>
+                            {fmt((c as any).valorComissaoAjustado)}
+                          </span>
+                        ) : (
+                          c.valorComissao ? fmt(Number(c.valorComissao)) : "—"
+                        )}
                       </td>
                       <td className="p-3 text-right text-purple-600 font-medium">
                         {c.taxaComissao ? fmtPct(c.taxaComissao) : "—"}
