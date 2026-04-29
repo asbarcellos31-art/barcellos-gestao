@@ -20,7 +20,15 @@ export async function listarClientes(opts?: {
     conditions.push(eq(clientes.status, opts.status));
   }
   if (opts?.vendedor && opts.vendedor !== "todos") {
-    conditions.push(eq(clientes.vendedor, opts.vendedor));
+    // Filtra clientes onde:
+    // - Tem o vendedor antigo (campo clientes.vendedor) bate, OU
+    // - Tem registro em cliente_vendedores com esse nome (case-insensitive)
+    conditions.push(sql`(
+      UPPER(${clientes.vendedor}) = UPPER(${opts.vendedor})
+      OR ${clientes.id} IN (
+        SELECT clienteId FROM cliente_vendedores WHERE UPPER(nomeVendedor) = UPPER(${opts.vendedor})
+      )
+    )`);
   }
   if (opts?.origemId) {
     conditions.push(eq(clientes.origemId, opts.origemId));
@@ -108,15 +116,75 @@ export async function listarClientes(opts?: {
     produtosVinculados: produtosPorCliente[c.id] || c.produtos || '',
   }));
 
+  // ─── PROPORCIONALIDADE POR VENDEDOR ──────────────────────────────────────
+  // Quando filtra por um vendedor específico, ajusta valores ao percentual
+  // que compete a ele em cliente_vendedores. Clientes sem registro em cv
+  // mantêm o valor cheio mas ficam marcados como "vendedor não cadastrado".
+  let totalAjustadoContribuicao = 0;
+  let totalAjustadoComissao = 0;
+  let totalAjustadoExpectativa = 0;
+  const vendedorFiltrado = (opts?.vendedor && opts.vendedor !== "todos") ? opts.vendedor : null;
+
+  if (vendedorFiltrado && clienteIds.length > 0) {
+    // Busca percentual de cada cliente listado para esse vendedor
+    const cvRows = await db.execute(sql`
+      SELECT clienteId, percentual
+      FROM cliente_vendedores
+      WHERE clienteId IN (${sql.join(clienteIds.map(id => sql`${id}`), sql`, `)})
+        AND UPPER(nomeVendedor) = UPPER(${vendedorFiltrado})
+    `);
+    const percentualPorCliente: Record<number, number> = {};
+    // drizzle execute retorna [rows, fields] no mysql2
+    const cvList = Array.isArray(cvRows) ? (cvRows[0] as any[]) || [] : [];
+    for (const r of cvList) {
+      percentualPorCliente[Number(r.clienteId)] = parseFloat(String(r.percentual ?? "0"));
+    }
+
+    // Aplica o percentual a cada cliente e marca os sem cadastro
+    for (const c of clientesComProdutos as any[]) {
+      const pct = percentualPorCliente[c.id];
+      const contrib = parseFloat(String(c.contribuicao ?? "0")) || 0;
+      const comis = parseFloat(String(c.valorComissao ?? "0")) || 0;
+      const taxa = parseFloat(String(c.taxaComissao ?? "0")) || 0;
+
+      if (pct !== undefined) {
+        // Tem cv cadastrado: aplica percentual
+        c.semVendedorCadastrado = false;
+        c.percentualVendedor = pct;
+        c.contribuicaoAjustada = contrib * pct / 100;
+        c.valorComissaoAjustado = comis * pct / 100;
+        const expect = (taxa > 0 ? contrib * taxa : comis) * pct / 100;
+        c.expectativaAjustada = expect;
+      } else {
+        // Sem cv cadastrado: mostra valor cheio (alerta visual)
+        c.semVendedorCadastrado = true;
+        c.percentualVendedor = 100;
+        c.contribuicaoAjustada = contrib;
+        c.valorComissaoAjustado = comis;
+        c.expectativaAjustada = taxa > 0 ? contrib * taxa : comis;
+      }
+
+      totalAjustadoContribuicao += c.contribuicaoAjustada;
+      totalAjustadoComissao += c.valorComissaoAjustado;
+      totalAjustadoExpectativa += c.expectativaAjustada;
+    }
+  }
+
   return {
     clientes: clientesComProdutos,
     total: Number(totais?.total || 0),
     ativos: Number(totais?.ativos || 0),
     inativos: Number(totais?.inativos || 0),
-    somaContribuicao: parseFloat(totais?.somaContribuicao || "0"),
-    somaComissao: parseFloat(totais?.somaComissao || "0"),
-    somaExpectativaComissao: parseFloat(totais?.somaExpectativaComissao || "0"),
+    somaContribuicao: vendedorFiltrado ? totalAjustadoContribuicao : parseFloat(totais?.somaContribuicao || "0"),
+    somaComissao: vendedorFiltrado ? totalAjustadoComissao : parseFloat(totais?.somaComissao || "0"),
+    somaExpectativaComissao: vendedorFiltrado ? totalAjustadoExpectativa : parseFloat(totais?.somaExpectativaComissao || "0"),
     vendedores,
+    // Indicadores quando filtra por vendedor específico
+    filtradoPorVendedor: vendedorFiltrado,
+    // Quantidade de clientes sem cadastro em cliente_vendedores (só quando filtrado)
+    clientesSemCadastroVendedor: vendedorFiltrado
+      ? (clientesComProdutos as any[]).filter(c => c.semVendedorCadastrado).length
+      : 0,
   };
 }
 
