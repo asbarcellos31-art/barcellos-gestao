@@ -117,6 +117,16 @@ export default function MensagemDiaria() {
         linhas.push(`${cfg.apelido} ${cfg.emoji} ${d.cpfsNovos}`);
       }
     }
+    linhas.push("");
+
+    // ── CPFs novos no ano (acumulado) ─────────────────────────────────────────
+    linhas.push(`🆔 CPF novos no ano: ${data.cpfsNovosAno}`);
+    for (const cfg of config) {
+      const d = data.porCorretorAno.find(r => r.corretor === cfg.corretor);
+      if (d && d.cpfsNovos > 0) {
+        linhas.push(`${cfg.apelido} ${cfg.emoji} ${d.cpfsNovos}`);
+      }
+    }
 
     return linhas.join("\n");
   }, [data, mes, config]);
