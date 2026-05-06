@@ -333,6 +333,67 @@ export async function obterMetricasMes(mes: number, ano: number) {
   // Meta anual da carteira (não meta de receita de vendas novas)
   const metaAnual = parseFloat(metaAnualRows[0]?.metaCarteira || "0");
 
+  // ── 9.1 COMPARATIVO MENSAL DE VENDAS (todos os meses do ano + ano anterior + meta) ──
+  const [vendasMensaisRows] = await db.execute(sql`
+    SELECT mes,
+      COALESCE(SUM(valorPremio), 0) as totalPremio,
+      COUNT(*) as totalPropostas,
+      COALESCE(SUM(CASE WHEN cpfNovo = 'SIM' THEN 1 ELSE 0 END), 0) as cpfsNovos
+    FROM vendas
+    WHERE ano = ${ano}
+    GROUP BY mes
+    ORDER BY mes
+  `) as any;
+  const [vendasMensaisAntRows] = await db.execute(sql`
+    SELECT mes, COALESCE(SUM(valorPremio), 0) as totalPremio
+    FROM vendas
+    WHERE ano = ${ano - 1}
+    GROUP BY mes
+    ORDER BY mes
+  `) as any;
+  const metasMensaisRows = await db.select().from(metasAnuais)
+    .where(eq(metasAnuais.ano, ano));
+  const vendasMensaisAtual: Record<number, { premio: number; propostas: number; cpfs: number }> = {};
+  for (const r of vendasMensaisRows || []) {
+    vendasMensaisAtual[Number(r.mes)] = {
+      premio: parseFloat(String(r.totalPremio || "0")),
+      propostas: Number(r.totalPropostas || 0),
+      cpfs: Number(r.cpfsNovos || 0),
+    };
+  }
+  const vendasMensaisAnterior: Record<number, number> = {};
+  for (const r of vendasMensaisAntRows || []) {
+    vendasMensaisAnterior[Number(r.mes)] = parseFloat(String(r.totalPremio || "0"));
+  }
+  const metasMensaisMap: Record<number, { metaPremio: number; metaPropostas: number; metaCpfs: number }> = {};
+  for (const r of metasMensaisRows) {
+    if (r.mes >= 1 && r.mes <= 12) {
+      metasMensaisMap[r.mes] = {
+        metaPremio: parseFloat(String(r.metaReceita || "0")),
+        metaPropostas: r.metaPropostas || 0,
+        metaCpfs: r.metaCpfs || 0,
+      };
+    }
+  }
+  const comparativoVendasMensal = Array.from({ length: 12 }, (_, i) => {
+    const m = i + 1;
+    const atual = vendasMensaisAtual[m] || { premio: 0, propostas: 0, cpfs: 0 };
+    const anterior = vendasMensaisAnterior[m] || 0;
+    const metaM = metasMensaisMap[m] || { metaPremio: 0, metaPropostas: 0, metaCpfs: 0 };
+    return {
+      mes: m,
+      premio: atual.premio,
+      propostas: atual.propostas,
+      cpfsNovos: atual.cpfs,
+      premioAnoAnterior: anterior,
+      metaPremio: metaM.metaPremio,
+      metaPropostas: metaM.metaPropostas,
+      metaCpfs: metaM.metaCpfs,
+      atingPremio: metaM.metaPremio > 0 ? (atual.premio / metaM.metaPremio) * 100 : 0,
+      variacaoAno: anterior > 0 ? ((atual.premio - anterior) / anterior) * 100 : 0,
+    };
+  });
+
   // ── 10. CUSTOS (apenas despesas pagas, excluindo vínculo ELISIA) ────────────
   // Custo Barcellos = despesas pagas exceto as da Elisia
   const [custosBarcellosRows] = await db.execute(
@@ -390,6 +451,8 @@ export async function obterMetricasMes(mes: number, ano: number) {
     implantadas,
     corretores,
     produtosMaisVendidos,
+    // Comparativo mensal de vendas (todos os 12 meses do ano)
+    comparativoVendasMensal,
     // Inadimplentes
     inadimplentes,
     inadimplentesAcumulados,
