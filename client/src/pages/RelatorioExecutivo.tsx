@@ -564,7 +564,10 @@ export default function RelatorioExecutivo() {
                         </div>
                         <AlertTriangle size={28} className="text-red-300 mt-1" style={{ color: statusColor(pctReceita).border }} />
                       </div>
-                      <StatusPill pct={pctReceita} label={`↓ ${pctReceita.toFixed(1)}% da meta`} />
+                      <StatusPill
+                        pct={pctReceita}
+                        label={`${pctReceita >= 100 ? "↑" : "↓"} ${pctReceita.toFixed(1)}% da meta`}
+                      />
                       {m.receitaAnoAnterior > 0 && (
                         <div className="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500 space-y-0.5">
                           <div>vs {mesNome} {ano - 1}: <strong>{fmtFull(m.receitaAnoAnterior)}</strong></div>
