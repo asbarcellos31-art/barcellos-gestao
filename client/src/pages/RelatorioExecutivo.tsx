@@ -485,24 +485,38 @@ export default function RelatorioExecutivo() {
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 <div className="lg:col-span-2 bg-white rounded-xl shadow-sm p-5">
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-bold text-gray-800">Receita: Comparativo</h3>
+                    <h3 className="font-bold text-gray-800">Vendas {ano}: Mensal vs Meta vs {ano - 1}</h3>
                     <div className="flex items-center gap-3 text-xs text-gray-500">
-                      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-gray-400 inline-block" /> Meta {ano}</span>
-                      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-500 inline-block" /> {mesAbrev}/{String(ano).slice(2)}</span>
-                      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-blue-500 inline-block" /> {mesAbrev}/{String(ano - 1).slice(2)}</span>
+                      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-blue-500 inline-block" /> {ano}</span>
+                      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-blue-300 inline-block" /> {ano - 1}</span>
+                      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-orange-500 inline-block" /> Meta</span>
                     </div>
                   </div>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <BarChart data={dadosReceita} margin={{ top: 20, right: 10, left: 0, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                      <XAxis dataKey="name" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                      <YAxis tickFormatter={v => fmt(v)} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} width={70} />
-                      <Tooltip formatter={(v: number) => fmtFull(v)} />
-                      <Bar dataKey="value" radius={[4, 4, 0, 0]} label={{ position: "top", formatter: (v: number) => fmt(v), fontSize: 11, fontWeight: "bold" }}>
-                        {dadosReceita.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
+                  {m.comparativoVendasMensal && m.comparativoVendasMensal.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={220}>
+                      <BarChart
+                        data={m.comparativoVendasMensal.map((x: any) => ({
+                          mes: MESES_ABREV[x.mes],
+                          [`${ano}`]: x.premio,
+                          [`${ano - 1}`]: x.premioAnoAnterior,
+                          Meta: x.metaPremio,
+                        }))}
+                        margin={{ top: 20, right: 10, left: 0, bottom: 0 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                        <XAxis dataKey="mes" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                        <YAxis tickFormatter={v => fmt(v)} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} width={70} />
+                        <Tooltip formatter={(v: number) => fmtFull(v)} />
+                        <Bar dataKey={`${ano}`} fill="#3b82f6" radius={[3, 3, 0, 0]} />
+                        <Bar dataKey={`${ano - 1}`} fill="#93c5fd" radius={[3, 3, 0, 0]} />
+                        <Bar dataKey="Meta" fill="#f97316" radius={[3, 3, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="h-[220px] flex items-center justify-center text-gray-400 text-sm">
+                      Carregando dados de vendas mensais...
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex flex-col gap-3">
