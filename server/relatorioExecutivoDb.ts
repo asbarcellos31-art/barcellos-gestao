@@ -317,15 +317,21 @@ export async function obterMetricasMes(mes: number, ano: number) {
     .where(and(eq(metasAnuais.ano, ano), eq(metasAnuais.mes, mes)))
     .limit(1);
   const meta = metaRows[0] || null;
-  const metaReceita = parseFloat(meta?.metaReceita || "0");
-  const metaVendas = parseFloat(meta?.metaVendas || "0"); // Meta de prêmio total de vendas (todos os vendedores)
+  // metaCarteira = mensalidade da carteira (compara com receitaReal da carteira/comissão)
+  // metaReceita  = meta de prêmio de vendas NOVAS (compara com totalPremio das vendas do mês)
+  // Usamos metaCarteira como "meta de receita" pois receitaReal é o faturamento da carteira.
+  const metaReceita = parseFloat(meta?.metaCarteira || "0");
+  const metaPremioVendas = parseFloat(meta?.metaReceita || "0"); // meta de R$ vendido no mês (vendas novas)
+  const metaVendas = parseFloat(meta?.metaVendas || "0"); // meta de prêmio total de vendas (todos os vendedores)
+  const metaAngariacao = parseFloat(meta?.metaAngariacao || "0");
   const metaCpfs = meta?.metaCpfs ? parseInt(String(meta.metaCpfs)) : 0;
   const metaPropostas = meta?.metaPropostas ? parseInt(String(meta.metaPropostas)) : 0;
 
   const metaAnualRows = await db.select().from(metasAnuais)
     .where(and(eq(metasAnuais.ano, ano), eq(metasAnuais.mes, 0)))
     .limit(1);
-  const metaAnual = parseFloat(metaAnualRows[0]?.metaReceita || "0");
+  // Meta anual da carteira (não meta de receita de vendas novas)
+  const metaAnual = parseFloat(metaAnualRows[0]?.metaCarteira || "0");
 
   // ── 10. CUSTOS (apenas despesas pagas, excluindo vínculo ELISIA) ────────────
   // Custo Barcellos = despesas pagas exceto as da Elisia
@@ -361,6 +367,11 @@ export async function obterMetricasMes(mes: number, ano: number) {
     // Meta de vendas (prêmio total)
     metaVendas,
     percentualMetaVendas: metaVendas > 0 ? (totalPremio / metaVendas) * 100 : 0,
+    // Meta de prêmio de vendas NOVAS no mês (R$) — para comparar com totalPremio quando relevante
+    metaPremioVendas,
+    percentualMetaPremioVendas: metaPremioVendas > 0 ? (totalPremio / metaPremioVendas) * 100 : 0,
+    // Meta de angariação (vendas novas por mês — R$ recebido como angariação)
+    metaAngariacao,
     // Contas a pagar
     contas,
     // Vendas
