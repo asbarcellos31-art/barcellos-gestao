@@ -14,7 +14,7 @@ import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import {
   ChevronLeft, ChevronRight, Plus, Check, Trash2, Play, Square,
   Pencil, Calendar, GripVertical, X, Clock, BarChart3, Pause,
-  RotateCcw, CheckCircle2, Bell, ChevronDown, ChevronUp,
+  RotateCcw, CheckCircle2, Bell, ChevronDown, ChevronUp, Copy,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -90,9 +90,9 @@ interface TarefaForm {
 const FORM_VAZIO: TarefaForm = { titulo: "", descricao: "", triade: "IMPORTANTE", categoria: "COMERCIAL", duracaoMin: 30, dataAgendada: "", horaAgendada: "", recorrente: false, recorrencia: "", diasSemana: [] };
 
 // ─── COMPONENTE: ITEM ARRASTÁVEL ──────────────────────────────────────────────
-function DraggableItem({ tarefa, onEdit, onDelete, onConcluir, onReabrir, timerAtivo, onTimer }: {
+function DraggableItem({ tarefa, onEdit, onDelete, onDuplicate, onConcluir, onReabrir, timerAtivo, onTimer }: {
   tarefa: { id: number; titulo: string; triade: "IMPORTANTE" | "URGENTE" | "CIRCUNSTANCIAL"; categoria: string; descricao?: string | null; status: string; duracaoMin?: number | null; tempoExecucaoSeg?: number | null; dataAgendada?: string | Date | null };
-  onEdit: () => void; onDelete: () => void; onConcluir: () => void; onReabrir: () => void;
+  onEdit: () => void; onDelete: () => void; onDuplicate: () => void; onConcluir: () => void; onReabrir: () => void;
   timerAtivo: { id: number; segundos: number; pausado: boolean } | null;
   onTimer: () => void;
 }) {
@@ -168,6 +168,9 @@ function DraggableItem({ tarefa, onEdit, onDelete, onConcluir, onReabrir, timerA
         )}
         <button onClick={onEdit} className="p-1 rounded hover:bg-gray-200 text-gray-400" title="Editar">
           <Pencil className="w-3.5 h-3.5" />
+        </button>
+        <button onClick={onDuplicate} className="p-1 rounded hover:bg-purple-100 text-gray-400 hover:text-purple-600" title="Duplicar">
+          <Copy className="w-3.5 h-3.5" />
         </button>
         <button onClick={onDelete} className="p-1 rounded hover:bg-red-100 text-gray-400 hover:text-red-500" title="Excluir">
           <X className="w-3.5 h-3.5" />
@@ -255,10 +258,11 @@ function DroppableDayColumn({ diaStr, tarefasDoDia, onAddTask }: {
 }
 
 // ─── COMPONENTE: ITEM DO BACKLOG (arrastável) ───────────────────────────────
-function BacklogItem({ tarefa, onEdit, onDelete }: {
+function BacklogItem({ tarefa, onEdit, onDelete, onDuplicate }: {
   tarefa: { id: number; titulo: string; triade: string; duracaoMin?: number | null; dataAgendada?: string | Date | null };
   onEdit: () => void;
   onDelete: () => void;
+  onDuplicate: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `task-${tarefa.id}`, data: { tarefaId: tarefa.id },
@@ -283,18 +287,20 @@ function BacklogItem({ tarefa, onEdit, onDelete }: {
         )}
       </div>
       <div className="flex gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
-        <button onClick={onEdit} className="p-0.5 hover:text-blue-600 text-gray-400"><Pencil className="w-3 h-3" /></button>
-        <button onClick={onDelete} className="p-0.5 hover:text-red-500 text-gray-400"><X className="w-3 h-3" /></button>
+        <button onClick={onEdit} className="p-0.5 hover:text-blue-600 text-gray-400" title="Editar"><Pencil className="w-3 h-3" /></button>
+        <button onClick={onDuplicate} className="p-0.5 hover:text-purple-600 text-gray-400" title="Duplicar"><Copy className="w-3 h-3" /></button>
+        <button onClick={onDelete} className="p-0.5 hover:text-red-500 text-gray-400" title="Excluir"><X className="w-3 h-3" /></button>
       </div>
     </div>
   );
 }
 
 // ─── COMPONENTE: ITEM AGENDADO PENDENTE (arrastável) ─────────────────────────
-function PendenteItem({ tarefa, onEdit, onDelete }: {
+function PendenteItem({ tarefa, onEdit, onDelete, onDuplicate }: {
   tarefa: { id: number; titulo: string; triade: "IMPORTANTE" | "URGENTE" | "CIRCUNSTANCIAL"; duracaoMin?: number | null; dataAgendada?: string | Date | null };
   onEdit: () => void;
   onDelete: () => void;
+  onDuplicate: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `task-${tarefa.id}`, data: { tarefaId: tarefa.id },
@@ -318,8 +324,9 @@ function PendenteItem({ tarefa, onEdit, onDelete }: {
         </p>
       </div>
       <div className="flex gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
-        <button onClick={onEdit} className="p-0.5 hover:text-blue-600 text-gray-400"><Pencil className="w-3 h-3" /></button>
-        <button onClick={onDelete} className="p-0.5 hover:text-red-500 text-gray-400"><X className="w-3 h-3" /></button>
+        <button onClick={onEdit} className="p-0.5 hover:text-blue-600 text-gray-400" title="Editar"><Pencil className="w-3 h-3" /></button>
+        <button onClick={onDuplicate} className="p-0.5 hover:text-purple-600 text-gray-400" title="Duplicar"><Copy className="w-3 h-3" /></button>
+        <button onClick={onDelete} className="p-0.5 hover:text-red-500 text-gray-400" title="Excluir"><X className="w-3 h-3" /></button>
       </div>
     </div>
   );
@@ -502,6 +509,34 @@ export default function GestaoTempo() {
   const excluirMut = trpc.gestaoTempo.excluir.useMutation({
     onSuccess: () => { utils.gestaoTempo.listarDia.invalidate(); utils.gestaoTempo.listarSemana.invalidate(); utils.gestaoTempo.listarBacklog.invalidate(); toast.success("Tarefa excluída."); },
   });
+  // ── DUPLICAR TAREFA ──────────────────────────────────────────────────────────
+  const [duplicandoId, setDuplicandoId] = useState<number | null>(null);
+  const [duplicandoTitulo, setDuplicandoTitulo] = useState<string>("");
+  const [duplicarMode, setDuplicarMode] = useState<"mesmo-dia" | "outro-dia" | "sem-data">("mesmo-dia");
+  const [duplicarData, setDuplicarData] = useState<string>(formatDate(hoje));
+  const duplicarMut = trpc.gestaoTempo.duplicar.useMutation({
+    onSuccess: () => {
+      utils.gestaoTempo.listarDia.invalidate();
+      utils.gestaoTempo.listarSemana.invalidate();
+      utils.gestaoTempo.listarBacklog.invalidate();
+      toast.success("Tarefa duplicada!");
+      setDuplicandoId(null);
+    },
+    onError: (e) => toast.error(e.message || "Erro ao duplicar"),
+  });
+  function abrirDuplicar(id: number, titulo: string, dataAgendadaAtual?: string | Date | null) {
+    setDuplicandoId(id);
+    setDuplicandoTitulo(titulo);
+    setDuplicarMode("mesmo-dia");
+    setDuplicarData(dataAgendadaAtual ? toYMD(dataAgendadaAtual) : formatDate(hoje));
+  }
+  function confirmarDuplicar() {
+    if (!duplicandoId) return;
+    const novaData = duplicarMode === "mesmo-dia" ? undefined
+                   : duplicarMode === "sem-data" ? null
+                   : duplicarData;
+    duplicarMut.mutate({ id: duplicandoId, appUserId, novaData });
+  }
 
   // ─── QUERIES E MUTATIONS DE LEMBRETES ───────────────────────────────────────────────────────────────
   const { data: lembretesDia = [] } = trpc.lembretes.listar.useQuery(
@@ -941,6 +976,7 @@ export default function GestaoTempo() {
                                   tarefa={tarefa}
                                   onEdit={() => abrirEdicao(tarefa as typeof tarefasDia[0])}
                                   onDelete={() => excluirMut.mutate({ id: tarefa.id, appUserId })}
+                                  onDuplicate={() => abrirDuplicar(tarefa.id, tarefa.titulo, (tarefa as any).dataAgendada)}
                                   onConcluir={() => {
                                     const dataOc = (tarefa as any)._dataOcorrencia ??
                                       ((tarefa as any).dataAgendada && String((tarefa as any).dataAgendada).substring(0,10) !== dataSelecionada ? dataSelecionada : undefined);
@@ -964,6 +1000,7 @@ export default function GestaoTempo() {
                                       tarefa={tarefa}
                                       onEdit={() => abrirEdicao(tarefa as typeof tarefasDia[0])}
                                       onDelete={() => excluirMut.mutate({ id: tarefa.id, appUserId })}
+                                  onDuplicate={() => abrirDuplicar(tarefa.id, tarefa.titulo, (tarefa as any).dataAgendada)}
                                       onConcluir={() => {
                                         const dataOc = (tarefa as any)._dataOcorrencia ??
                                           ((tarefa as any).dataAgendada && String((tarefa as any).dataAgendada).substring(0,10) !== dataSelecionada ? dataSelecionada : undefined);
@@ -1420,6 +1457,7 @@ export default function GestaoTempo() {
                           tarefa={tarefa}
                           onEdit={() => abrirEdicao(tarefa as unknown as typeof tarefasDia[0])}
                           onDelete={() => excluirMut.mutate({ id: tarefa.id, appUserId })}
+                                  onDuplicate={() => abrirDuplicar(tarefa.id, tarefa.titulo, (tarefa as any).dataAgendada)}
                         />
                       ))}
                     </div>
@@ -1442,6 +1480,7 @@ export default function GestaoTempo() {
                             tarefa={tarefa as typeof tarefasDia[0]}
                             onEdit={() => abrirEdicao(tarefa as unknown as typeof tarefasDia[0])}
                             onDelete={() => excluirMut.mutate({ id: tarefa.id, appUserId })}
+                                  onDuplicate={() => abrirDuplicar(tarefa.id, tarefa.titulo, (tarefa as any).dataAgendada)}
                           />
                         ))}
                       </div>
@@ -1642,6 +1681,72 @@ export default function GestaoTempo() {
               <Button variant="outline" onClick={() => setModalAberto(false)}>Cancelar</Button>
               <Button onClick={salvarTarefa} className="bg-blue-600 hover:bg-blue-700 text-white">
                 {tarefaEditando ? "Salvar" : "Criar Tarefa"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* ── MODAL DUPLICAR TAREFA ───────────────────────────────────── */}
+        <Dialog open={duplicandoId !== null} onOpenChange={(o) => !o && setDuplicandoId(null)}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Duplicar Tarefa</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="bg-gray-50 rounded-lg px-3 py-2 text-sm text-gray-700">
+                <span className="text-gray-500">Tarefa:</span> <span className="font-medium">{duplicandoTitulo}</span>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">Onde criar a cópia?</label>
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer p-2 rounded hover:bg-gray-50">
+                    <input
+                      type="radio"
+                      checked={duplicarMode === "mesmo-dia"}
+                      onChange={() => setDuplicarMode("mesmo-dia")}
+                    />
+                    <span>Mesmo dia da original</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer p-2 rounded hover:bg-gray-50">
+                    <input
+                      type="radio"
+                      checked={duplicarMode === "outro-dia"}
+                      onChange={() => setDuplicarMode("outro-dia")}
+                    />
+                    <span>Outro dia</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer p-2 rounded hover:bg-gray-50">
+                    <input
+                      type="radio"
+                      checked={duplicarMode === "sem-data"}
+                      onChange={() => setDuplicarMode("sem-data")}
+                    />
+                    <span>Sem data (vai para o backlog)</span>
+                  </label>
+                </div>
+
+                {duplicarMode === "outro-dia" && (
+                  <div className="pt-2">
+                    <label className="text-xs text-gray-500 block mb-1">Data da cópia</label>
+                    <input
+                      type="date"
+                      value={duplicarData}
+                      onChange={(e) => setDuplicarData(e.target.value)}
+                      className="border border-gray-300 rounded px-2 py-1.5 text-sm w-full"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="text-xs text-gray-500">
+                💡 A tarefa original permanece intacta. A cópia inicia com tempo zerado e status "Pendente".
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDuplicandoId(null)}>Cancelar</Button>
+              <Button onClick={confirmarDuplicar} disabled={duplicarMut.isPending}>
+                {duplicarMut.isPending ? "Duplicando..." : "Duplicar"}
               </Button>
             </DialogFooter>
           </DialogContent>
