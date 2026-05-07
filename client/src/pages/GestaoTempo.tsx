@@ -510,33 +510,19 @@ export default function GestaoTempo() {
     onSuccess: () => { utils.gestaoTempo.listarDia.invalidate(); utils.gestaoTempo.listarSemana.invalidate(); utils.gestaoTempo.listarBacklog.invalidate(); toast.success("Tarefa excluída."); },
   });
   // ── DUPLICAR TAREFA ──────────────────────────────────────────────────────────
-  const [duplicandoId, setDuplicandoId] = useState<number | null>(null);
-  const [duplicandoTitulo, setDuplicandoTitulo] = useState<string>("");
-  const [duplicarMode, setDuplicarMode] = useState<"mesmo-dia" | "outro-dia" | "sem-data">("mesmo-dia");
-  const [duplicarData, setDuplicarData] = useState<string>(formatDate(hoje));
+  // Abrimos o MESMO modal de edição com os dados pré-preenchidos. O usuário pode
+  // ajustar título, descrição, data, hora, duração, tríade, categoria, etc.
+  // Ao clicar em "Salvar Cópia", chamamos a mutation de criar (não atualizar).
+  const [modoDuplicacao, setModoDuplicacao] = useState(false);
   const duplicarMut = trpc.gestaoTempo.duplicar.useMutation({
     onSuccess: () => {
       utils.gestaoTempo.listarDia.invalidate();
       utils.gestaoTempo.listarSemana.invalidate();
       utils.gestaoTempo.listarBacklog.invalidate();
       toast.success("Tarefa duplicada!");
-      setDuplicandoId(null);
     },
     onError: (e) => toast.error(e.message || "Erro ao duplicar"),
   });
-  function abrirDuplicar(id: number, titulo: string, dataAgendadaAtual?: string | Date | null) {
-    setDuplicandoId(id);
-    setDuplicandoTitulo(titulo);
-    setDuplicarMode("mesmo-dia");
-    setDuplicarData(dataAgendadaAtual ? toYMD(dataAgendadaAtual) : formatDate(hoje));
-  }
-  function confirmarDuplicar() {
-    if (!duplicandoId) return;
-    const novaData = duplicarMode === "mesmo-dia" ? undefined
-                   : duplicarMode === "sem-data" ? null
-                   : duplicarData;
-    duplicarMut.mutate({ id: duplicandoId, appUserId, novaData });
-  }
 
   // ─── QUERIES E MUTATIONS DE LEMBRETES ───────────────────────────────────────────────────────────────
   const { data: lembretesDia = [] } = trpc.lembretes.listar.useQuery(
@@ -611,10 +597,33 @@ export default function GestaoTempo() {
 
   function abrirEdicao(tarefa: typeof tarefasDia[0]) {
     setTarefaEditando(tarefa.id);
+    setModoDuplicacao(false);
     const diasSemanaRaw = (tarefa as any).diasSemana;
     const diasSemana = diasSemanaRaw ? String(diasSemanaRaw).split(",").map(Number).filter(n => !isNaN(n)) : [];
     setForm({
       titulo: tarefa.titulo, descricao: tarefa.descricao ?? "", triade: tarefa.triade, categoria: tarefa.categoria,
+      duracaoMin: tarefa.duracaoMin ?? 30,
+      dataAgendada: tarefa.dataAgendada ? String(tarefa.dataAgendada).substring(0, 10) : "",
+      horaAgendada: tarefa.horaAgendada ?? "",
+      recorrente: (tarefa as any).recorrente ?? false,
+      recorrencia: (tarefa as any).recorrencia ?? "",
+      diasSemana,
+    });
+    setModalAberto(true);
+  }
+
+  // Abre o MESMO modal pré-preenchido com os dados da tarefa, em modo duplicação.
+  // Ao salvar, o backend cria uma nova tarefa (não altera a original).
+  function abrirDuplicacao(tarefa: typeof tarefasDia[0]) {
+    setTarefaEditando(null);     // não está editando uma existente
+    setModoDuplicacao(true);     // mas também não é "Nova Tarefa" pura
+    const diasSemanaRaw = (tarefa as any).diasSemana;
+    const diasSemana = diasSemanaRaw ? String(diasSemanaRaw).split(",").map(Number).filter(n => !isNaN(n)) : [];
+    setForm({
+      titulo: tarefa.titulo,
+      descricao: tarefa.descricao ?? "",
+      triade: tarefa.triade,
+      categoria: tarefa.categoria,
       duracaoMin: tarefa.duracaoMin ?? 30,
       dataAgendada: tarefa.dataAgendada ? String(tarefa.dataAgendada).substring(0, 10) : "",
       horaAgendada: tarefa.horaAgendada ?? "",
@@ -632,12 +641,15 @@ export default function GestaoTempo() {
       : undefined;
     const { diasSemana: _diasSemana, ...formSemDias } = form;
     const payload = { ...formSemDias, duracaoMin: Number(form.duracaoMin), dataAgendada: form.dataAgendada || undefined, horaAgendada: form.horaAgendada || undefined, recorrencia: (form.recorrente && form.recorrencia) ? (form.recorrencia as "DIARIA" | "SEMANAL" | "MENSAL") : undefined, diasSemana: diasSemanaStr };
-    if (tarefaEditando) {
+    if (modoDuplicacao) {
+      // Cria uma nova tarefa com os dados ajustados (não altera a original)
+      criarMut.mutate({ appUserId, ...payload }, { onSuccess: () => toast.success("Cópia criada!") });
+    } else if (tarefaEditando) {
       atualizarMut.mutate({ id: tarefaEditando, appUserId, ...payload }, { onSuccess: () => toast.success("Tarefa atualizada!") });
     } else {
       criarMut.mutate({ appUserId, ...payload });
     }
-    setModalAberto(false); setForm(FORM_VAZIO);
+    setModalAberto(false); setForm(FORM_VAZIO); setModoDuplicacao(false);
   }
 
   function criarRapido(e: React.KeyboardEvent) {
@@ -976,7 +988,7 @@ export default function GestaoTempo() {
                                   tarefa={tarefa}
                                   onEdit={() => abrirEdicao(tarefa as typeof tarefasDia[0])}
                                   onDelete={() => excluirMut.mutate({ id: tarefa.id, appUserId })}
-                                  onDuplicate={() => abrirDuplicar(tarefa.id, tarefa.titulo, (tarefa as any).dataAgendada)}
+                                  onDuplicate={() => abrirDuplicacao(tarefa as any)}
                                   onConcluir={() => {
                                     const dataOc = (tarefa as any)._dataOcorrencia ??
                                       ((tarefa as any).dataAgendada && String((tarefa as any).dataAgendada).substring(0,10) !== dataSelecionada ? dataSelecionada : undefined);
@@ -1000,7 +1012,7 @@ export default function GestaoTempo() {
                                       tarefa={tarefa}
                                       onEdit={() => abrirEdicao(tarefa as typeof tarefasDia[0])}
                                       onDelete={() => excluirMut.mutate({ id: tarefa.id, appUserId })}
-                                  onDuplicate={() => abrirDuplicar(tarefa.id, tarefa.titulo, (tarefa as any).dataAgendada)}
+                                  onDuplicate={() => abrirDuplicacao(tarefa as any)}
                                       onConcluir={() => {
                                         const dataOc = (tarefa as any)._dataOcorrencia ??
                                           ((tarefa as any).dataAgendada && String((tarefa as any).dataAgendada).substring(0,10) !== dataSelecionada ? dataSelecionada : undefined);
@@ -1457,7 +1469,7 @@ export default function GestaoTempo() {
                           tarefa={tarefa}
                           onEdit={() => abrirEdicao(tarefa as unknown as typeof tarefasDia[0])}
                           onDelete={() => excluirMut.mutate({ id: tarefa.id, appUserId })}
-                                  onDuplicate={() => abrirDuplicar(tarefa.id, tarefa.titulo, (tarefa as any).dataAgendada)}
+                                  onDuplicate={() => abrirDuplicacao(tarefa as any)}
                         />
                       ))}
                     </div>
@@ -1480,7 +1492,7 @@ export default function GestaoTempo() {
                             tarefa={tarefa as typeof tarefasDia[0]}
                             onEdit={() => abrirEdicao(tarefa as unknown as typeof tarefasDia[0])}
                             onDelete={() => excluirMut.mutate({ id: tarefa.id, appUserId })}
-                                  onDuplicate={() => abrirDuplicar(tarefa.id, tarefa.titulo, (tarefa as any).dataAgendada)}
+                                  onDuplicate={() => abrirDuplicacao(tarefa as any)}
                           />
                         ))}
                       </div>
@@ -1563,10 +1575,10 @@ export default function GestaoTempo() {
         </DragOverlay>
 
         {/* ─── MODAL DE TAREFA ─────────────────────────────────────────────── */}
-        <Dialog open={modalAberto} onOpenChange={setModalAberto}>
+        <Dialog open={modalAberto} onOpenChange={(open) => { setModalAberto(open); if (!open) { setModoDuplicacao(false); setTarefaEditando(null); } }}>
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>{tarefaEditando ? "Editar Tarefa" : "Nova Tarefa"}</DialogTitle>
+              <DialogTitle>{modoDuplicacao ? "Duplicar Tarefa" : tarefaEditando ? "Editar Tarefa" : "Nova Tarefa"}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div>
@@ -1680,77 +1692,12 @@ export default function GestaoTempo() {
             <DialogFooter>
               <Button variant="outline" onClick={() => setModalAberto(false)}>Cancelar</Button>
               <Button onClick={salvarTarefa} className="bg-blue-600 hover:bg-blue-700 text-white">
-                {tarefaEditando ? "Salvar" : "Criar Tarefa"}
+                {modoDuplicacao ? "Salvar Cópia" : tarefaEditando ? "Salvar" : "Criar Tarefa"}
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
 
-        {/* ── MODAL DUPLICAR TAREFA ───────────────────────────────────── */}
-        <Dialog open={duplicandoId !== null} onOpenChange={(o) => !o && setDuplicandoId(null)}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>Duplicar Tarefa</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 py-2">
-              <div className="bg-gray-50 rounded-lg px-3 py-2 text-sm text-gray-700">
-                <span className="text-gray-500">Tarefa:</span> <span className="font-medium">{duplicandoTitulo}</span>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">Onde criar a cópia?</label>
-                <div className="space-y-1.5">
-                  <label className="flex items-center gap-2 text-sm cursor-pointer p-2 rounded hover:bg-gray-50">
-                    <input
-                      type="radio"
-                      checked={duplicarMode === "mesmo-dia"}
-                      onChange={() => setDuplicarMode("mesmo-dia")}
-                    />
-                    <span>Mesmo dia da original</span>
-                  </label>
-                  <label className="flex items-center gap-2 text-sm cursor-pointer p-2 rounded hover:bg-gray-50">
-                    <input
-                      type="radio"
-                      checked={duplicarMode === "outro-dia"}
-                      onChange={() => setDuplicarMode("outro-dia")}
-                    />
-                    <span>Outro dia</span>
-                  </label>
-                  <label className="flex items-center gap-2 text-sm cursor-pointer p-2 rounded hover:bg-gray-50">
-                    <input
-                      type="radio"
-                      checked={duplicarMode === "sem-data"}
-                      onChange={() => setDuplicarMode("sem-data")}
-                    />
-                    <span>Sem data (vai para o backlog)</span>
-                  </label>
-                </div>
-
-                {duplicarMode === "outro-dia" && (
-                  <div className="pt-2">
-                    <label className="text-xs text-gray-500 block mb-1">Data da cópia</label>
-                    <input
-                      type="date"
-                      value={duplicarData}
-                      onChange={(e) => setDuplicarData(e.target.value)}
-                      className="border border-gray-300 rounded px-2 py-1.5 text-sm w-full"
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div className="text-xs text-gray-500">
-                💡 A tarefa original permanece intacta. A cópia inicia com tempo zerado e status "Pendente".
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setDuplicandoId(null)}>Cancelar</Button>
-              <Button onClick={confirmarDuplicar} disabled={duplicarMut.isPending}>
-                {duplicarMut.isPending ? "Duplicando..." : "Duplicar"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </DndContext>
     </AppLayout>
   );
