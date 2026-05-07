@@ -149,15 +149,15 @@ export async function dispararAniversariantes(): Promise<{ enviados: number; err
   const template = await buscarTemplate(auto.templateId);
   if (!template) return { enviados: 0, erros: 0 };
 
-  // Buscar clientes que fazem aniversário HOJE
-  const hoje = new Date();
+  // Buscar clientes que fazem aniversário HOJE (timezone Brasília — server roda em UTC)
+  const hoje = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
   const dia = hoje.getDate();
   const mes = hoje.getMonth() + 1;
 
   const [clientes]: any = await conn.execute(
     `SELECT nome, email, telefone, celular FROM clientes 
      WHERE DAY(dataNascimento) = ? AND MONTH(dataNascimento) = ?
-     AND (status = 'Ativo' OR status = 'ativo')`,
+     AND LOWER(status) = 'ativo'`,
     [dia, mes]
   );
 

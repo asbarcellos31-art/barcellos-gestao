@@ -199,7 +199,7 @@ router.post("/email-marketing/listas/:id/preview-count", async (req, res) => {
     } else {
       queryStr = `SELECT COUNT(DISTINCT c.id) as total FROM clientes c WHERE c.email IS NOT NULL AND c.email != ''`;
     }
-    if (status === "ativo") queryStr += " AND c.status = 'Ativo'";
+    if (status === "ativo") queryStr += " AND LOWER(c.status) = 'ativo'";
     else if (status === "inativo") queryStr += " AND (c.status IS NULL OR c.status != 'Ativo')";
     if (cidade && cidade.trim()) { queryStr += " AND c.cidade = ?"; params.push(cidade.trim()); }
     if (vendedor && vendedor.trim()) { queryStr += " AND c.vendedor = ?"; params.push(vendedor.trim()); }
@@ -262,7 +262,7 @@ router.post("/email-marketing/listas/:id/importar-base", async (req, res) => {
         WHERE c.email IS NOT NULL AND c.email != ''`;
     }
 
-    if (status === "ativo") { queryStr += " AND c.status = 'Ativo'"; }
+    if (status === "ativo") { queryStr += " AND LOWER(c.status) = 'ativo'"; }
     else if (status === "inativo") { queryStr += " AND (c.status IS NULL OR c.status != 'Ativo')"; }
 
     if (cidade && cidade.trim()) {

@@ -14,7 +14,11 @@ import mysql from "mysql2/promise";
 
 // ── Configuração da Evolution API (lê do ambiente) ──────────────────────────
 const EVOLUTION_BASE_URL = (process.env.EVOLUTION_API_URL || "http://31.97.85.41:8080").replace(/\/+$/, "");
-const EVOLUTION_API_KEY  = process.env.EVOLUTION_API_KEY || "barcellos-evolution-key-2024";
+const EVOLUTION_API_KEY  = process.env.EVOLUTION_API_KEY;
+if (!EVOLUTION_API_KEY) {
+  console.error("[Evolution] FATAL: EVOLUTION_API_KEY não configurada no ambiente");
+  throw new Error("EVOLUTION_API_KEY não configurada");
+}
 
 console.log("[Evolution API] URL configurada:", EVOLUTION_BASE_URL);
 console.log("[Evolution API] Key configurada:", EVOLUTION_API_KEY ? "***presente***" : "VAZIA");

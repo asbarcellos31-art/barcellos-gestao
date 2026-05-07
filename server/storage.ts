@@ -98,6 +98,9 @@ export async function storagePut(
       : Buffer.from(data);
   fs.writeFileSync(localPath, buf);
   const publicBase = process.env.PUBLIC_BASE_URL || "";
+  if (!publicBase) {
+    console.warn("[storage] AVISO: PUBLIC_BASE_URL nao configurada — URLs de uploads sairao sem dominio (links quebrados em emails).");
+  }
   const url = `${publicBase.replace(/\/+$/, "")}/uploads/${key}`;
   return { key, url };
 }

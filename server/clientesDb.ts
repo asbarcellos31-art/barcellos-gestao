@@ -110,7 +110,7 @@ export async function listarClientes(opts?: {
   // Totais
   const [totais] = await db.select({
     total: sql<number>`COUNT(*)`,
-    ativos: sql<number>`SUM(CASE WHEN status = 'Ativo' THEN 1 ELSE 0 END)`,
+    ativos: sql<number>`SUM(CASE WHEN LOWER(status) = 'ativo' THEN 1 ELSE 0 END)`,
     inativos: sql<number>`SUM(CASE WHEN status = 'Inativo' THEN 1 ELSE 0 END)`,
     somaContribuicao: sql<string>`COALESCE(SUM(contribuicao), 0)`,
     // Comissão Total = soma do valorComissao de cada cliente (atualizado pela importação do extrato: comissão + incentivo)
@@ -978,7 +978,7 @@ export async function listarAniversariantes(dia?: number, mes?: number, statusFi
   const diaFiltro = dia ?? hoje.getDate();
   const mesFiltro = mes ?? (hoje.getMonth() + 1);
   let statusClause = "";
-  if (statusFiltro === "Ativo") statusClause = " AND status = 'Ativo'";
+  if (statusFiltro === "Ativo") statusClause = " AND LOWER(status) = 'ativo'";
   else if (statusFiltro === "Inativo") statusClause = " AND status = 'Inativo'";
   const rows = await queryProdPool<{
     id: number; nome: string; cpf: string; dataNascimento: string;
@@ -998,7 +998,7 @@ export async function listarAniversariantesMes(mes?: number, statusFiltro?: stri
   const hoje = new Date();
   const mesFiltro = mes ?? (hoje.getMonth() + 1);
   let statusClause = "";
-  if (statusFiltro === "Ativo") statusClause = " AND status = 'Ativo'";
+  if (statusFiltro === "Ativo") statusClause = " AND LOWER(status) = 'ativo'";
   else if (statusFiltro === "Inativo") statusClause = " AND status = 'Inativo'";
   const rows = await queryProdPool<{
     id: number; nome: string; cpf: string; dataNascimento: string;

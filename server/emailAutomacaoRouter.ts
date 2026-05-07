@@ -84,7 +84,7 @@ router.get("/email-automacoes/aniversariantes-hoje", async (_req, res) => {
       `SELECT nome, email, dataNascimento FROM clientes 
        WHERE email IS NOT NULL AND email != '' 
        AND DAY(dataNascimento) = ? AND MONTH(dataNascimento) = ?
-       AND status = 'ativo'
+       AND LOWER(status) = 'ativo'
        ORDER BY nome`,
       [dia, mes]
     );

@@ -144,10 +144,15 @@ export const whatsappRouter = router({
       const conn = (db as any).session?.client;
       if (!conn) throw new Error("Conexão indisponível");
       // Busca clientes ativos com telefone/celular cadastrado
+      // Status case-insensitive (banco tem 'Ativo' e 'ativo' misturados)
+      // Parênteses garantem precedência correta: pega quem tem celular válido OU telefone válido
       const [clientes]: any = await conn.execute(
         `SELECT nome, cpf, celular, telefone FROM clientes 
-         WHERE status = 'ativo' AND (celular IS NOT NULL OR telefone IS NOT NULL)
-         AND celular != '' OR telefone != ''`
+         WHERE LOWER(status) = 'ativo'
+           AND (
+             (celular IS NOT NULL AND celular != '')
+             OR (telefone IS NOT NULL AND telefone != '')
+           )`
       );
       let importados = 0;
       for (const c of clientes || []) {
@@ -685,7 +690,7 @@ export const whatsappRouter = router({
       }
 
       if (input.status === "ativo") {
-        query += " AND c.status = 'Ativo'";
+        query += " AND LOWER(c.status) = 'ativo'";
       } else if (input.status === "inativo") {
         query += " AND (c.status IS NULL OR c.status != 'Ativo')";
       }
@@ -770,7 +775,7 @@ export const whatsappRouter = router({
       } else {
         query = `SELECT COUNT(DISTINCT c.id) as total FROM clientes c WHERE (${telCondition})`;
       }
-      if (input.status === "ativo") query += " AND c.status = 'Ativo'";
+      if (input.status === "ativo") query += " AND LOWER(c.status) = 'ativo'";
       else if (input.status === "inativo") query += " AND (c.status IS NULL OR c.status != 'Ativo')";
       if (input.cidade) { query += " AND c.cidade = ?"; params.push(input.cidade); }
       if (input.vendedor) { query += " AND c.vendedor = ?"; params.push(input.vendedor); }
@@ -850,7 +855,8 @@ export const whatsappRouter = router({
     .input(z.object({ instancia: z.enum(["whatsapp-1", "whatsapp-2", "whatsapp-3"]) }))
     .mutation(async ({ input }) => {
       const EVOLUTION_BASE_URL = process.env.EVOLUTION_API_URL || "http://31.97.85.41:8080";
-      const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || "barcellos-evolution-key-2024";
+      const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY;
+      if (!EVOLUTION_API_KEY) throw new Error("EVOLUTION_API_KEY não configurada");
 
       // 1. Desconectar a instância para forçar nova conexão
       try {
@@ -921,7 +927,8 @@ export const whatsappRouter = router({
     }))
     .mutation(async ({ input }) => {
       const EVOLUTION_BASE_URL = process.env.EVOLUTION_API_URL || "http://31.97.85.41:8080";
-      const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || "barcellos-evolution-key-2024";
+      const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY;
+      if (!EVOLUTION_API_KEY) throw new Error("EVOLUTION_API_KEY não configurada");
       const INSTANCIA = "whatsapp-2";
 
       const resultados: Array<{
