@@ -305,6 +305,48 @@ export async function criarTarefa(data: {
   });
 }
 
+// ─── DUPLICAR TAREFA ──────────────────────────────────────────────────────────
+// Cria uma cópia idêntica da tarefa (sem o histórico de execução), opcionalmente
+// para outra data ou sem data (backlog).
+export async function duplicarTarefa(
+  id: number,
+  appUserId: number,
+  novaData?: string | null
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB indisponível");
+  // Busca a tarefa original
+  const orig = await db.select().from(tarefas)
+    .where(and(eq(tarefas.id, id), eq(tarefas.appUserId, appUserId)))
+    .limit(1);
+  if (!orig[0]) throw new Error("Tarefa não encontrada");
+  const t = orig[0];
+  // Insere uma cópia. Status reseta para PENDENTE, tempo zerado.
+  // Se novaData === null  -> tarefa sem data (backlog)
+  // Se novaData === undefined -> mantém a data original (duplica no mesmo dia)
+  // Se novaData === "YYYY-MM-DD" -> usa essa data
+  const dataFinal = novaData === null
+    ? null
+    : novaData === undefined
+      ? t.dataAgendada
+      : (novaData as unknown as Date);
+  return db.insert(tarefas).values({
+    appUserId: t.appUserId,
+    titulo: t.titulo,
+    descricao: t.descricao,
+    triade: t.triade,
+    categoria: t.categoria,
+    duracaoMin: t.duracaoMin,
+    dataAgendada: dataFinal,
+    horaAgendada: t.horaAgendada,
+    status: "PENDENTE",
+    tempoExecucaoSeg: 0,
+    recorrente: t.recorrente,
+    recorrencia: t.recorrencia,
+    diasSemana: t.diasSemana,
+  });
+}
+
 // ─── ATUALIZAR TAREFA ─────────────────────────────────────────────────────────
 export async function atualizarTarefa(
   id: number,
