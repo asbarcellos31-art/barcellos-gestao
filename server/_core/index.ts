@@ -43,6 +43,51 @@ async function startServer() {
   const app = express();
   const server = createServer(app);
 
+  // ─── RATE LIMITING (in-memory, simples) ─────────────────────────────────
+  // Protege contra brute-force em login/recuperação e DoS em rotas públicas.
+  // Sem dependência nova — implementação leve e suficiente para escala atual.
+  const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
+  function rateLimitCheck(key: string, max: number, windowMs: number): boolean {
+    const now = Date.now();
+    const entry = rateLimitStore.get(key);
+    if (!entry || entry.resetAt < now) {
+      rateLimitStore.set(key, { count: 1, resetAt: now + windowMs });
+      return true;
+    }
+    if (entry.count >= max) return false;
+    entry.count++;
+    return true;
+  }
+  // Limpa entries expirados a cada 10 min
+  setInterval(() => {
+    const now = Date.now();
+    for (const [k, v] of rateLimitStore.entries()) {
+      if (v.resetAt < now) rateLimitStore.delete(k);
+    }
+  }, 10 * 60 * 1000);
+
+  // Middleware: 100 req/min por IP em rotas API gerais
+  app.use("/api", (req, res, next) => {
+    const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim()
+            || req.socket.remoteAddress
+            || "unknown";
+    if (!rateLimitCheck(`api:${ip}`, 200, 60_000)) {
+      return res.status(429).json({ error: "Muitas requisições. Aguarde um minuto." });
+    }
+    next();
+  });
+
+  // Middleware extra: 5 tentativas por 15min em login/recuperação de senha
+  app.use("/api/trpc/usuarios.login", (req, res, next) => {
+    const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim()
+            || req.socket.remoteAddress
+            || "unknown";
+    if (!rateLimitCheck(`login:${ip}`, 5, 15 * 60_000)) {
+      return res.status(429).json({ error: "Muitas tentativas de login. Aguarde 15 minutos." });
+    }
+    next();
+  });
+
   // Body parser com limite alto para uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
