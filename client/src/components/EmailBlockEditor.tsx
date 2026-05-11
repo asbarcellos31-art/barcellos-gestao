@@ -343,6 +343,8 @@ interface FormatToolbarProps {
 
 function FormatToolbar({ editorRef, onChange }: FormatToolbarProps) {
   const [showColorPicker, setShowColorPicker] = useState(false);
+  const [showFonte, setShowFonte] = useState(false);
+  const [showTamanho, setShowTamanho] = useState(false);
 
   const btn = (
     icon: React.ReactNode,
@@ -362,7 +364,7 @@ function FormatToolbar({ editorRef, onChange }: FormatToolbarProps) {
     </button>
   );
 
-  // Salva a seleção do usuário antes de interagir com o dropdown (que rouba o foco)
+  // Salva a seleção do usuário antes de interagir com dropdowns customizados
   const savedRange = useRef<Range | null>(null);
   function salvarSelecao() {
     const sel = window.getSelection();
@@ -383,41 +385,84 @@ function FormatToolbar({ editorRef, onChange }: FormatToolbarProps) {
 
   return (
     <div className="flex items-center flex-wrap gap-0.5 px-2 py-1 bg-gray-100 border border-b-0 rounded-t-md">
-      {/* Fonte */}
-      <select
-        onFocus={salvarSelecao}
-        onChange={e => {
-          if (e.target.value) {
-            restaurarSelecao();
-            aplicarEstiloInline(editorRef, "fontName", e.target.value, onChange);
-            e.target.value = "";
-          }
-        }}
-        className="text-xs border border-gray-300 rounded px-1 py-0.5 bg-white hover:bg-gray-50 cursor-pointer"
-        title="Tipo de fonte (selecione texto antes)"
-      >
-        {FONTES_DISPONIVEIS.map(f => (
-          <option key={f.value} value={f.value}>{f.label}</option>
-        ))}
-      </select>
+      {/* Fonte — dropdown customizado (substitui <select> que estava com problema) */}
+      <div className="relative">
+        <button
+          type="button"
+          onMouseDown={e => {
+            e.preventDefault();
+            salvarSelecao();
+            setShowFonte(!showFonte);
+            setShowTamanho(false);
+            setShowColorPicker(false);
+          }}
+          title="Tipo de fonte (selecione texto antes)"
+          className="text-xs border border-gray-300 rounded px-2 py-0.5 bg-white hover:bg-gray-50 cursor-pointer flex items-center gap-1"
+        >
+          Fonte <ChevronDown className="h-3 w-3" />
+        </button>
+        {showFonte && (
+          <div className="absolute top-full left-0 mt-1 bg-white border border-gray-300 rounded shadow-lg z-50 max-h-60 overflow-y-auto min-w-[140px]">
+            {FONTES_DISPONIVEIS.map(f => (
+              <button
+                key={f.value}
+                type="button"
+                onMouseDown={e => {
+                  e.preventDefault();
+                  if (f.value) {
+                    restaurarSelecao();
+                    aplicarEstiloInline(editorRef, "fontName", f.value, onChange);
+                  }
+                  setShowFonte(false);
+                }}
+                className="block w-full text-left text-xs px-3 py-1.5 hover:bg-blue-50 hover:text-blue-700"
+                style={f.value ? { fontFamily: f.value } : undefined}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
 
-      {/* Tamanho */}
-      <select
-        onFocus={salvarSelecao}
-        onChange={e => {
-          if (e.target.value) {
-            restaurarSelecao();
-            aplicarEstiloInline(editorRef, "fontSize", e.target.value, onChange);
-            e.target.value = "";
-          }
-        }}
-        className="text-xs border border-gray-300 rounded px-1 py-0.5 bg-white hover:bg-gray-50 cursor-pointer ml-1"
-        title="Tamanho da fonte (selecione texto antes)"
-      >
-        {TAMANHOS_DISPONIVEIS.map(t => (
-          <option key={t.value} value={t.value}>{t.label}</option>
-        ))}
-      </select>
+      {/* Tamanho — dropdown customizado */}
+      <div className="relative ml-1">
+        <button
+          type="button"
+          onMouseDown={e => {
+            e.preventDefault();
+            salvarSelecao();
+            setShowTamanho(!showTamanho);
+            setShowFonte(false);
+            setShowColorPicker(false);
+          }}
+          title="Tamanho da fonte (selecione texto antes)"
+          className="text-xs border border-gray-300 rounded px-2 py-0.5 bg-white hover:bg-gray-50 cursor-pointer flex items-center gap-1"
+        >
+          Tamanho <ChevronDown className="h-3 w-3" />
+        </button>
+        {showTamanho && (
+          <div className="absolute top-full left-0 mt-1 bg-white border border-gray-300 rounded shadow-lg z-50 max-h-60 overflow-y-auto min-w-[100px]">
+            {TAMANHOS_DISPONIVEIS.map(t => (
+              <button
+                key={t.value}
+                type="button"
+                onMouseDown={e => {
+                  e.preventDefault();
+                  if (t.value) {
+                    restaurarSelecao();
+                    aplicarEstiloInline(editorRef, "fontSize", t.value, onChange);
+                  }
+                  setShowTamanho(false);
+                }}
+                className="block w-full text-left text-xs px-3 py-1.5 hover:bg-blue-50 hover:text-blue-700"
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div className="w-px h-5 bg-gray-300 mx-1" />
 
@@ -434,7 +479,10 @@ function FormatToolbar({ editorRef, onChange }: FormatToolbarProps) {
           type="button"
           onMouseDown={e => {
             e.preventDefault();
+            salvarSelecao();
             setShowColorPicker(!showColorPicker);
+            setShowFonte(false);
+            setShowTamanho(false);
           }}
           title="Cor do texto"
           className="p-1.5 rounded hover:bg-gray-200 text-gray-600 transition-colors flex items-center"
@@ -449,6 +497,7 @@ function FormatToolbar({ editorRef, onChange }: FormatToolbarProps) {
                 type="button"
                 onMouseDown={e => {
                   e.preventDefault();
+                  restaurarSelecao();
                   aplicarEstiloInline(editorRef, "foreColor", cor, onChange);
                   setShowColorPicker(false);
                 }}
