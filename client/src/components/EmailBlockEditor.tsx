@@ -261,7 +261,13 @@ function aplicarFormato(
 ) {
   const el = ref.current;
   if (!el) return;
-  el.focus();
+
+  // CORREÇÃO: Só dar focus se realmente perdeu o foco.
+  // el.focus() incondicional reposiciona o cursor e desfaz a seleção do usuário,
+  // fazendo o execCommand falhar silenciosamente (botões "congelados").
+  if (document.activeElement !== el) {
+    el.focus();
+  }
 
   document.execCommand(acao, false);
 
@@ -276,7 +282,11 @@ function aplicarEstiloInline(
 ) {
   const el = ref.current;
   if (!el) return;
-  el.focus();
+
+  // CORREÇÃO: focus só se necessário, pra não perder a seleção
+  if (document.activeElement !== el) {
+    el.focus();
+  }
 
   const sel = window.getSelection();
   if (!sel || sel.rangeCount === 0 || sel.getRangeAt(0).collapsed) return;
@@ -307,7 +317,11 @@ function inserirLink(
 ) {
   const el = ref.current;
   if (!el) return;
-  el.focus();
+
+  // CORREÇÃO: focus só se necessário
+  if (document.activeElement !== el) {
+    el.focus();
+  }
 
   const sel = window.getSelection();
   if (!sel || sel.rangeCount === 0 || sel.getRangeAt(0).collapsed) {
@@ -348,13 +362,33 @@ function FormatToolbar({ editorRef, onChange }: FormatToolbarProps) {
     </button>
   );
 
+  // Salva a seleção do usuário antes de interagir com o dropdown (que rouba o foco)
+  const savedRange = useRef<Range | null>(null);
+  function salvarSelecao() {
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) {
+      savedRange.current = sel.getRangeAt(0).cloneRange();
+    }
+  }
+  function restaurarSelecao() {
+    if (savedRange.current && editorRef.current) {
+      editorRef.current.focus();
+      const sel = window.getSelection();
+      if (sel) {
+        sel.removeAllRanges();
+        sel.addRange(savedRange.current);
+      }
+    }
+  }
+
   return (
     <div className="flex items-center flex-wrap gap-0.5 px-2 py-1 bg-gray-100 border border-b-0 rounded-t-md">
       {/* Fonte */}
       <select
-        onMouseDown={e => e.preventDefault()}
+        onFocus={salvarSelecao}
         onChange={e => {
           if (e.target.value) {
+            restaurarSelecao();
             aplicarEstiloInline(editorRef, "fontName", e.target.value, onChange);
             e.target.value = "";
           }
@@ -369,9 +403,10 @@ function FormatToolbar({ editorRef, onChange }: FormatToolbarProps) {
 
       {/* Tamanho */}
       <select
-        onMouseDown={e => e.preventDefault()}
+        onFocus={salvarSelecao}
         onChange={e => {
           if (e.target.value) {
+            restaurarSelecao();
             aplicarEstiloInline(editorRef, "fontSize", e.target.value, onChange);
             e.target.value = "";
           }
