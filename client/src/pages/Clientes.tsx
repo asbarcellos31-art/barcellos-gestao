@@ -578,10 +578,42 @@ export default function Clientes() {
     toast.success(`${lista.length} aniversariante${lista.length !== 1 ? "s" : ""} exportado${lista.length !== 1 ? "s" : ""}!`);
   };
 
-  const exportarExcel = () => {
-    const XLSX = (window as any).__XLSX__ || (typeof require !== 'undefined' ? require('xlsx') : null);
-    // Usar abordagem CSV com extensão xlsx para compatibilidade
-    const rows = clientesFiltrados.map((c: any) => ({
+  const buscarTodosFiltrados = async (): Promise<any[]> => {
+    const todos: any[] = [];
+    const BATCH = 500;
+    let offset = 0;
+    while (true) {
+      const batch = await utils.clientes.listar.fetch({
+        busca: busca || undefined,
+        status: statusFiltro !== "todos" ? statusFiltro : undefined,
+        vendedor: vendedorFiltro !== "todos" ? vendedorFiltro : undefined,
+        origemId: origemFiltro ?? undefined,
+        idadeMin: idadeMinFiltro ? Number(idadeMinFiltro) : undefined,
+        idadeMax: idadeMaxFiltro ? Number(idadeMaxFiltro) : undefined,
+        valorMin: valorMinFiltro ? Number(valorMinFiltro) : undefined,
+        valorMax: valorMaxFiltro ? Number(valorMaxFiltro) : undefined,
+        dataNascimentoInicio: dataNascInicioFiltro || undefined,
+        dataNascimentoFim: dataNascFimFiltro || undefined,
+        limit: BATCH,
+        offset,
+      });
+      const lote = batch.clientes || [];
+      todos.push(...lote);
+      if (lote.length < BATCH) break;
+      offset += BATCH;
+    }
+    if (produtosFiltro.length === 0) return todos;
+    return todos.filter((c: any) => {
+      const nomes = produtosFiltro.map(id => todosProdutos.find((p: any) => p.id === id)?.descricao || "");
+      return nomes.some(n => (c.produtosVinculados || c.produtos || "").toLowerCase().includes(n.toLowerCase()));
+    });
+  };
+  const exportarExcel = async () => {
+    toast.loading("Buscando todos os clientes filtrados...", { id: "export" });
+    const clientesParaExportar = await buscarTodosFiltrados();
+    toast.dismiss("export");
+    if (clientesParaExportar.length === 0) { toast.error("Nenhum cliente para exportar"); return; }
+    const rows = clientesParaExportar.map((c: any) => ({
       "Nome": c.nome || "",
       "CPF": c.cpf || "",
       "Vendedor": c.vendedor || "",
@@ -618,7 +650,11 @@ export default function Clientes() {
     });
   };
 
-  const exportarPDF = () => {
+  const exportarPDF = async () => {
+    toast.loading("Buscando todos os clientes filtrados...", { id: "exportpdf" });
+    const clientesParaExportar = await buscarTodosFiltrados();
+    toast.dismiss("exportpdf");
+    if (clientesParaExportar.length === 0) { toast.error("Nenhum cliente para exportar"); return; }
     import('jspdf').then(({ default: jsPDF }) => {
       import('jspdf-autotable').then(() => {
         const doc = new (jsPDF as any)({ orientation: 'landscape', unit: 'mm', format: 'a4' });
@@ -627,9 +663,9 @@ export default function Clientes() {
         doc.text('Barcellos Seguros — Base de Clientes', 14, 15);
         doc.setFontSize(9);
         doc.setTextColor(100);
-        doc.text(`Gerado em ${new Date().toLocaleString('pt-BR')} — ${clientesFiltrados.length} clientes`, 14, 22);
+        doc.text(`Gerado em ${new Date().toLocaleString('pt-BR')} — ${clientesParaExportar.length} clientes`, 14, 22);
         const head = [['Nome', 'CPF', 'Vendedor', 'Origem', 'Status', 'Produtos', 'Contribuição', 'Comissão', 'Data Nasc.']];
-        const body = clientesFiltrados.map((c: any) => [
+        const body = clientesParaExportar.map((c: any) => [
           c.nome || '',
           c.cpf || '',
           c.vendedor || '',
