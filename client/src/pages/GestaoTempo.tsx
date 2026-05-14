@@ -457,6 +457,22 @@ export default function GestaoTempo() {
   const { data: score } = trpc.gestaoTempo.score.useQuery(
     { appUserId, dataInicio: formatDate(trintaDiasAtras), dataFim: formatDate(hoje) }, { enabled: appUserId > 0 }
   );
+  // ─── ANTI-TIMER-FANTASMA ────────────────────────────────────────────────
+  // Confere no banco se a tarefa do timer ativo ainda está pendente.
+  // Se foi concluída em outro computador, limpa o cronômetro automaticamente.
+  useEffect(() => {
+    if (!timerAtivo) return;
+    const tarefaNoBanco = [...tarefasDia, ...tarefasSemana, ...backlog].find(t => t.id === timerAtivo.id);
+    if (tarefaNoBanco && (tarefaNoBanco.status === "CONCLUIDA" || tarefaNoBanco.status === "CANCELADA")) {
+      // A tarefa já foi finalizada em outro lugar — matar o timer fantasma
+      localStorage.removeItem('timer-ativo');
+      timerDataRef.current = null;
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+      setTimerAtivo(null);
+      toast.info("O cronômetro foi parado: esta tarefa já foi concluída em outro dispositivo.");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tarefasDia, tarefasSemana, backlog]);
   // ─── Relatório por período ───────────────────────────────────────────────────
   // Tipo de período pré-definido. "personalizado" usa as datas customizadas.
   type PeriodoTipo = "hoje" | "ontem" | "semana" | "mes" | "mes-passado" | "30dias" | "personalizado";
