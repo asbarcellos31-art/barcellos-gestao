@@ -68,6 +68,7 @@ type VendaForm = {
   bairro: string;
   cidade: string;
   cep: string;
+  origemId: number | null;
 };
 const formVazio = (mes: number, ano: number): VendaForm => ({
   mes, ano,
