@@ -445,6 +445,10 @@ export default function GestaoTempo() {
   }, [tarefasDia, tarefasSemana, backlog]);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [tarefaDetalhe, setTarefaDetalhe] = useState<number | null>(null);
+  // Modal de edição de tempo de tarefa concluída
+  const [editTempoTarefa, setEditTempoTarefa] = useState<{ id: number; titulo: string; dataOcorrencia?: string | null } | null>(null);
+  const [editTempoHoras, setEditTempoHoras] = useState("0");
+  const [editTempoMinutos, setEditTempoMinutos] = useState("0");
 
   const semana = getSemana(new Date(dataSelecionada + "T12:00:00"));
   const hoje = new Date();
@@ -765,7 +769,25 @@ export default function GestaoTempo() {
     concluirMut.mutate({ id, appUserId, tempoExecucaoSeg: tempoFinal > 0 ? tempoFinal : undefined, dataOcorrencia: dataOcorrencia ?? undefined });
   }
 
-      function reabrirTarefa(id: number) {
+      // Abre o modal de edição de tempo, pré-preenchido com o tempo atual da tarefa
+  function abrirEdicaoTempo(tarefa: { id: number; titulo: string; tempoExecucaoSeg?: number | null; _dataOcorrencia?: string | null }) {
+    const seg = tarefa.tempoExecucaoSeg ?? 0;
+    setEditTempoHoras(String(Math.floor(seg / 3600)));
+    setEditTempoMinutos(String(Math.floor((seg % 3600) / 60)));
+    setEditTempoTarefa({ id: tarefa.id, titulo: tarefa.titulo, dataOcorrencia: tarefa._dataOcorrencia ?? null });
+  }
+  // Salva o novo tempo (converte horas+minutos para segundos e grava via concluir)
+  function salvarEdicaoTempo() {
+    if (!editTempoTarefa) return;
+    const horas = parseInt(editTempoHoras) || 0;
+    const minutos = parseInt(editTempoMinutos) || 0;
+    const totalSeg = horas * 3600 + minutos * 60;
+    concluirMut.mutate(
+      { id: editTempoTarefa.id, appUserId, tempoExecucaoSeg: totalSeg > 0 ? totalSeg : undefined, dataOcorrencia: editTempoTarefa.dataOcorrencia ?? undefined },
+      { onSuccess: () => { toast.success("Tempo atualizado!"); setEditTempoTarefa(null); } }
+    );
+  }
+  function reabrirTarefa(id: number) {
     console.log('[REABRIR] id:', id, 'appUserId:', appUserId);
     atualizarMut.mutate({ id, appUserId, status: "PENDENTE" }, {
       onSuccess: () => { console.log('[REABRIR] sucesso'); toast.success("Tarefa reaberta."); },
