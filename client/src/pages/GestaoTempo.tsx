@@ -146,7 +146,7 @@ function DraggableItem({ tarefa, onEdit, onDelete, onDuplicate, onConcluir, onRe
         </span>
       )}
 
-      {/* Timer: cronômetro ativo, ou tempo percorrido se concluída, ou 00:00:00 */}
+     {/* Timer: cronômetro ativo, ou tempo percorrido se concluída, ou 00:00:00 */}
       <span className={`text-xs font-mono flex-shrink-0 w-16 text-right ${
         emExecucao ? "text-blue-600" : pausado ? "text-orange-500"
         : isConcluida && tarefa.tempoExecucaoSeg && tarefa.tempoExecucaoSeg > 0 ? "text-green-600"
@@ -158,6 +158,12 @@ function DraggableItem({ tarefa, onEdit, onDelete, onDuplicate, onConcluir, onRe
             ? formatTempo(tarefa.tempoExecucaoSeg)
             : "00:00:00"}
       </span>
+      {/* Botão editar tempo — só aparece em tarefa concluída */}
+      {isConcluida && (
+        <button onClick={onEditarTempo} className="p-1 rounded hover:bg-blue-100 text-gray-400 hover:text-blue-600 flex-shrink-0" title="Editar tempo registrado">
+          <Clock className="w-3.5 h-3.5" />
+        </button>
+      )}
 
       {/* Ações (visíveis no hover no desktop, sempre visíveis no mobile) */}
       <div className="flex items-center gap-0.5 flex-shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
