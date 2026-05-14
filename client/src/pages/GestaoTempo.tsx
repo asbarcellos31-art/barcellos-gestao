@@ -90,9 +90,9 @@ interface TarefaForm {
 const FORM_VAZIO: TarefaForm = { titulo: "", descricao: "", triade: "IMPORTANTE", categoria: "COMERCIAL", duracaoMin: 30, dataAgendada: "", horaAgendada: "", recorrente: false, recorrencia: "", diasSemana: [] };
 
 // ─── COMPONENTE: ITEM ARRASTÁVEL ──────────────────────────────────────────────
-function DraggableItem({ tarefa, onEdit, onDelete, onDuplicate, onConcluir, onReabrir, timerAtivo, onTimer }: {
+function DraggableItem({ tarefa, onEdit, onDelete, onDuplicate, onConcluir, onReabrir, onEditarTempo, timerAtivo, onTimer }: {
   tarefa: { id: number; titulo: string; triade: "IMPORTANTE" | "URGENTE" | "CIRCUNSTANCIAL"; categoria: string; descricao?: string | null; status: string; duracaoMin?: number | null; tempoExecucaoSeg?: number | null; dataAgendada?: string | Date | null };
-  onEdit: () => void; onDelete: () => void; onDuplicate: () => void; onConcluir: () => void; onReabrir: () => void;
+  onEdit: () => void; onDelete: () => void; onDuplicate: () => void; onConcluir: () => void; onReabrir: () => void; onEditarTempo: () => void;
   timerAtivo: { id: number; segundos: number; pausado: boolean } | null;
   onTimer: () => void;
 }) {
