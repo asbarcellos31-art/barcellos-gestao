@@ -1321,9 +1321,31 @@ export default function Vendas() {
                   <Label>Bairro</Label>
                   <Input value={form.bairro} onChange={(e) => setForm({ ...form, bairro: e.target.value })} placeholder="Bairro" />
                 </div>
-                <div className="space-y-1">
+               <div className="space-y-1">
                   <Label>Cidade</Label>
                   <Input value={form.cidade} onChange={(e) => setForm({ ...form, cidade: e.target.value })} placeholder="Cidade-UF" />
+                </div>
+                <div className="col-span-2 space-y-1">
+                  <Label>Origem</Label>
+                  <Select
+                    value={form.origemId ? String(form.origemId) : "__none__"}
+                    onValueChange={(v) => setForm({ ...form, origemId: v && v !== "__none__" ? Number(v) : null })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione a origem" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">Sem origem</SelectItem>
+                      {(origensData as any[]).map((o: any) => (
+                        <SelectItem key={o.id} value={String(o.id)}>
+                          <span className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full inline-block" style={{ background: o.cor }} />
+                            {o.nome}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 
