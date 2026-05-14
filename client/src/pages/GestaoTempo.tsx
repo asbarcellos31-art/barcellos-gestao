@@ -433,22 +433,6 @@ export default function GestaoTempo() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  // ─── ANTI-TIMER-FANTASMA ────────────────────────────────────────────────
-  // Confere no banco se a tarefa do timer ativo ainda está pendente.
-  // Se foi concluída em outro computador, limpa o cronômetro automaticamente.
-  useEffect(() => {
-    if (!timerAtivo) return;
-    const tarefaNoBanco = [...tarefasDia, ...tarefasSemana, ...backlog].find(t => t.id === timerAtivo.id);
-    if (tarefaNoBanco && (tarefaNoBanco.status === "CONCLUIDA" || tarefaNoBanco.status === "CANCELADA")) {
-      // A tarefa já foi finalizada em outro lugar — matar o timer fantasma
-      localStorage.removeItem('timer-ativo');
-      timerDataRef.current = null;
-      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-      setTimerAtivo(null);
-      toast.info("O cronômetro foi parado: esta tarefa já foi concluída em outro dispositivo.");
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tarefasDia, tarefasSemana, backlog]);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [tarefaDetalhe, setTarefaDetalhe] = useState<number | null>(null);
   // Modal de edição de tempo de tarefa concluída
