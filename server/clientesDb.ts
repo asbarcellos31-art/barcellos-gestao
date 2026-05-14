@@ -506,6 +506,8 @@ export async function enviarVendaParaBase(vendaId: number) {
     vendedor: venda.corretor || undefined,
     // Contribuição = valor do prêmio mensal
     contribuicao: venda.valorPremio ? String(venda.valorPremio) : undefined,
+    // Origem: copia a origem da venda para o cliente
+    origemId: (venda as any).origemId || undefined,
   };
   // Remover campos undefined para não sobrescrever dados existentes com null
   const dadosContatoFiltrado = Object.fromEntries(
