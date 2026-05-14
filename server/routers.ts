@@ -434,7 +434,8 @@ export const appRouter = router({
         bairro: z.string().optional().nullable(),
         cidade: z.string().optional().nullable(),
         cep: z.string().optional().nullable(),
-        vendedoresJson: z.string().optional().nullable(),
+       vendedoresJson: z.string().optional().nullable(),
+        origemId: z.number().optional().nullable(),
       }))
       .mutation(({ input }) => criarVenda(input as any)),
     atualizar: publicProcedure
