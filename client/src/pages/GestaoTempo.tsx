@@ -1038,7 +1038,8 @@ export default function GestaoTempo() {
                                       ((tarefa as any).dataAgendada && String((tarefa as any).dataAgendada).substring(0,10) !== dataSelecionada ? dataSelecionada : undefined);
                                     concluirComTimer(tarefa.id, dataOc);
                                   }}
-                                  onReabrir={() => reabrirTarefa(tarefa.id)}
+                                 onReabrir={() => reabrirTarefa(tarefa.id)}
+                                  onEditarTempo={() => abrirEdicaoTempo(tarefa as any)}
                                   timerAtivo={timerAtivo}
                                   onTimer={() => handleTimer(tarefa.id)}
                                 />
@@ -1063,6 +1064,7 @@ export default function GestaoTempo() {
                                         concluirComTimer(tarefa.id, dataOc);
                                       }}
                                       onReabrir={() => reabrirTarefa(tarefa.id)}
+                                      onEditarTempo={() => abrirEdicaoTempo(tarefa as any)}
                                       timerAtivo={timerAtivo}
                                       onTimer={() => handleTimer(tarefa.id)}
                                     />
