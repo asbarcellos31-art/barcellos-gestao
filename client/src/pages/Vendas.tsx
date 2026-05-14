@@ -465,6 +465,8 @@ export default function Vendas() {
 
   // Produtos cadastrados no banco
   const { data: todosProdutos = [] } = trpc.produtos.listar.useQuery();
+  // Origens cadastradas no banco
+  const { data: origensData = [] } = trpc.origens.listar.useQuery();
 
   const abrirNovo = () => {
     setEditandoId(null);
@@ -510,6 +512,7 @@ export default function Vendas() {
       bairro: (v as any).bairro || "",
       cidade: (v as any).cidade || "",
       cep: (v as any).cep || "",
+      origemId: (v as any).origemId || null,
     });
     // Carregar vendedores salvos na venda (vendedoresJson)
     try {
