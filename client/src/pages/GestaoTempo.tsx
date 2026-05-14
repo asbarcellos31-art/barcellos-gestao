@@ -1273,6 +1273,53 @@ export default function GestaoTempo() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+          {/* ─── MODAL EDIÇÃO DE TEMPO DE TAREFA CONCLUÍDA ──────────────────── */}
+          <Dialog open={editTempoTarefa !== null} onOpenChange={open => { if (!open) setEditTempoTarefa(null); }}>
+            <DialogContent className="max-w-sm">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-blue-500" /> Editar Tempo Registrado
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <p className="text-sm text-gray-600">
+                  Ajuste o tempo gasto na tarefa <strong>{editTempoTarefa?.titulo}</strong>.
+                </p>
+                <div className="flex gap-3">
+                  <div className="flex-1">
+                    <Label>Horas</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={24}
+                      value={editTempoHoras}
+                      onChange={e => setEditTempoHoras(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <Label>Minutos</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={59}
+                      value={editTempoMinutos}
+                      onChange={e => setEditTempoMinutos(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setEditTempoTarefa(null)}>Cancelar</Button>
+                <Button
+                  onClick={salvarEdicaoTempo}
+                  disabled={concluirMut.isPending}
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  {concluirMut.isPending ? "Salvando..." : "Salvar Tempo"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           {/* ─── ABA RELATÓRIO DIÁRIO ─────────────────────────────────────────────────────── */}
           {abaAtiva === "relatorio" && (
