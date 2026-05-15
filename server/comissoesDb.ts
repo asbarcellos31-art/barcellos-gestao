@@ -110,25 +110,34 @@ export async function salvarVendedoresCliente(
 // ─── RESUMO POR CORRETOR (usando cliente_vendedores para divisão proporcional) ───
 
 export async function resumoComissoesPorCorretor(mes?: number, ano?: number, vendedor?: string) {
+  // ─── Lógica do extrato de comissão ──────────────────────────────────────
+  // Cada cliente tem UM vendedor "dono" (cv.nomeVendedor). Comissão do extrato é cheia.
+  // Regras de pagamento:
+  //   - Não-ELISIA: recebe 50% da comissão dos clientes dela
+  //   - ELISIA: recebe 100% dos clientes dela + 50% dos clientes dos outros
+  // Por isso o resumo da ELISIA não é GROUP BY simples; calculamos em 2 passos.
+  // Contribuição/Previsão/Comissão são SEMPRE cheias (espelho dos clientes do vendedor).
+  let mesAnoFiltro = "";
+  const params: (string | number)[] = [];
+  if (mes) { mesAnoFiltro += ` AND e.mes = ?`; params.push(mes); }
+  if (ano) { mesAnoFiltro += ` AND e.ano = ?`; params.push(ano); }
+  // 1) Resumo "vendedor dono" — clientes onde o vendedor é responsável
   let query = `
     SELECT 
       cv.nomeVendedor as corretor,
       COUNT(DISTINCT e.cpfCliente) as totalClientes,
       COUNT(*) as totalRegistros,
-      COALESCE(SUM(e.valorBase * cv.percentual / 100), 0) as totalBase,
-      COALESCE(SUM(e.valorComissao * cv.percentual / 100), 0) as totalValorComissao,
-      COALESCE(SUM(e.valorIncentivo * cv.percentual / 100), 0) as totalValorIncentivo,
-      COALESCE(SUM(e.valorComissaoTotal * cv.percentual / 100), 0) as totalComissao,
-      COALESCE(SUM(e.valorBase * cv.percentual / 100 * 0.15), 0) as totalPrevisao15,
-      COALESCE(SUM(e.valorComissaoTotal * cv.percentual / 100), 0) as totalRealizado50
+      COALESCE(SUM(e.valorBase), 0) as totalBase,
+      COALESCE(SUM(e.valorComissao), 0) as totalValorComissao,
+      COALESCE(SUM(e.valorIncentivo), 0) as totalValorIncentivo,
+      COALESCE(SUM(e.valorComissaoTotal), 0) as totalComissao,
+      COALESCE(SUM(e.valorBase * CASE WHEN UPPER(cv.nomeVendedor) = 'ELISIA' THEN 0.30 ELSE 0.15 END), 0) as totalPrevisao15,
+      COALESCE(SUM(e.valorComissaoTotal * CASE WHEN UPPER(cv.nomeVendedor) = 'ELISIA' THEN 1.00 ELSE 0.50 END), 0) as totalRealizado50
     FROM extrato_comissao e
     INNER JOIN clientes c ON LPAD(REGEXP_REPLACE(e.cpfCliente, '[^0-9]', ''), IF(LENGTH(REGEXP_REPLACE(e.cpfCliente, '[^0-9]', '')) <= 11, 11, 14), '0') = LPAD(REGEXP_REPLACE(c.cpf, '[^0-9]', ''), IF(LENGTH(REGEXP_REPLACE(c.cpf, '[^0-9]', '')) <= 11, 11, 14), '0')
     INNER JOIN cliente_vendedores cv ON cv.clienteId = c.id
-    WHERE 1=1
+    WHERE 1=1 ${mesAnoFiltro}
   `;
-  const params: (string | number)[] = [];
-  if (mes) { query += ` AND e.mes = ?`; params.push(mes); }
-  if (ano) { query += ` AND e.ano = ?`; params.push(ano); }
   if (vendedor) { query += ` AND cv.nomeVendedor = ?`; params.push(vendedor); }
   query += ` GROUP BY cv.nomeVendedor ORDER BY totalComissao DESC`;
 
