@@ -228,23 +228,36 @@ export async function detalheCorretorExtrato(vendedor: string, mes?: number, ano
 // ─── MÉTRICAS GERAIS ───────────────────────────────────────────────────────────────────
 
 export async function metricasComissoes(mes?: number, ano?: number, vendedor?: string) {
-  // Total geral = soma da comissão CHEIA do extrato (sem aplicar percentuais).
-  // Isso representa o total que a corretora recebeu da seguradora no período.
+  // Total geral = soma direta do extrato, SEM JOIN com cliente_vendedores
+  // (porque o JOIN multiplica linhas quando o cliente tem mais de um vendedor).
+  // Isso bate com o valor real recebido da seguradora no extrato.
   let query = `
     SELECT 
       COALESCE(SUM(e.valorComissaoTotal), 0) as totalComissao,
-      COUNT(DISTINCT cv.nomeVendedor) as totalCorretores,
       COUNT(DISTINCT e.cpfCliente) as totalClientes,
-      COUNT(*) as totalRegistros
+      COUNT(*) as totalRegistros,
+      (SELECT COUNT(DISTINCT cv.nomeVendedor)
+        FROM cliente_vendedores cv
+        INNER JOIN clientes c ON c.id = cv.clienteId
+        INNER JOIN extrato_comissao e2 ON LPAD(REGEXP_REPLACE(e2.cpfCliente, '[^0-9]', ''), IF(LENGTH(REGEXP_REPLACE(e2.cpfCliente, '[^0-9]', '')) <= 11, 11, 14), '0') = LPAD(REGEXP_REPLACE(c.cpf, '[^0-9]', ''), IF(LENGTH(REGEXP_REPLACE(c.cpf, '[^0-9]', '')) <= 11, 11, 14), '0')
+        WHERE 1=1 ${mes ? `AND e2.mes = ${Number(mes)}` : ''} ${ano ? `AND e2.ano = ${Number(ano)}` : ''}
+      ) as totalCorretores
     FROM extrato_comissao e
-    INNER JOIN clientes c ON LPAD(REGEXP_REPLACE(e.cpfCliente, '[^0-9]', ''), IF(LENGTH(REGEXP_REPLACE(e.cpfCliente, '[^0-9]', '')) <= 11, 11, 14), '0') = LPAD(REGEXP_REPLACE(c.cpf, '[^0-9]', ''), IF(LENGTH(REGEXP_REPLACE(c.cpf, '[^0-9]', '')) <= 11, 11, 14), '0')
-    INNER JOIN cliente_vendedores cv ON cv.clienteId = c.id
     WHERE 1=1
   `;
   const params: (string | number)[] = [];
   if (mes) { query += ` AND e.mes = ?`; params.push(mes); }
   if (ano) { query += ` AND e.ano = ?`; params.push(ano); }
-  if (vendedor) { query += ` AND cv.nomeVendedor = ?`; params.push(vendedor); }
+  // Filtro por vendedor: aplicar só nesta linha quando solicitado
+  if (vendedor) {
+    query += ` AND EXISTS (
+      SELECT 1 FROM cliente_vendedores cv
+      INNER JOIN clientes c ON c.id = cv.clienteId
+      WHERE LPAD(REGEXP_REPLACE(e.cpfCliente, '[^0-9]', ''), IF(LENGTH(REGEXP_REPLACE(e.cpfCliente, '[^0-9]', '')) <= 11, 11, 14), '0') = LPAD(REGEXP_REPLACE(c.cpf, '[^0-9]', ''), IF(LENGTH(REGEXP_REPLACE(c.cpf, '[^0-9]', '')) <= 11, 11, 14), '0')
+        AND cv.nomeVendedor = ?
+    )`;
+    params.push(vendedor);
+  }
 
   const rows = await queryPool<Record<string, unknown>>(query, params);
   const row = rows[0];
