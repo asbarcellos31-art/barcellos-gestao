@@ -224,9 +224,11 @@ export async function detalheCorretorExtrato(vendedor: string, mes?: number, ano
 // ─── MÉTRICAS GERAIS ───────────────────────────────────────────────────────────────────
 
 export async function metricasComissoes(mes?: number, ano?: number, vendedor?: string) {
+  // Total geral = soma da comissão CHEIA do extrato (sem aplicar percentuais).
+  // Isso representa o total que a corretora recebeu da seguradora no período.
   let query = `
     SELECT 
-      COALESCE(SUM(e.valorComissaoTotal * cv.percentual / 100), 0) as totalComissao,
+      COALESCE(SUM(e.valorComissaoTotal), 0) as totalComissao,
       COUNT(DISTINCT cv.nomeVendedor) as totalCorretores,
       COUNT(DISTINCT e.cpfCliente) as totalClientes,
       COUNT(*) as totalRegistros
