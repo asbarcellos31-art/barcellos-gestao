@@ -198,6 +198,13 @@ export async function resumoComissoesPorCorretor(mes?: number, ano?: number, ven
 // ─── DETALHE DOS CLIENTES DE UM CORRETOR ─────────────────────────────────────────
 
 export async function detalheCorretorExtrato(vendedor: string, mes?: number, ano?: number) {
+  // Detalhe linha-a-linha dos clientes do vendedor.
+  // Valores SEMPRE cheios (do extrato). Previsão e Realizado seguem a regra do vendedor:
+  //   - ELISIA: previsão = 30% × base, realizado = 100% × comissão
+  //   - Outros: previsão = 15% × base, realizado = 50% × comissão
+  const isElisia = vendedor.toUpperCase() === 'ELISIA';
+  const pctPrevisao = isElisia ? 0.30 : 0.15;
+  const pctRealizado = isElisia ? 1.00 : 0.50;
   let query = `
     SELECT 
       e.id, e.nomeCliente, e.cpfCliente, e.descricaoProduto,
@@ -205,9 +212,8 @@ export async function detalheCorretorExtrato(vendedor: string, mes?: number, ano
       e.valorComissaoTotal, e.pctComissaoTotal,
       e.competenciaComissionada, e.proposta, e.inscricao, e.mes, e.ano,
       cv.nomeVendedor as vendedor,
-      cv.percentual as percentualVendedor,
-      e.valorBase * cv.percentual / 100 * 0.15 as previsao15,
-      e.valorComissaoTotal * cv.percentual / 100 as realizado50
+      e.valorBase * ${pctPrevisao} as previsao15,
+      e.valorComissaoTotal * ${pctRealizado} as realizado50
     FROM extrato_comissao e
     INNER JOIN clientes c ON LPAD(REGEXP_REPLACE(e.cpfCliente, '[^0-9]', ''), IF(LENGTH(REGEXP_REPLACE(e.cpfCliente, '[^0-9]', '')) <= 11, 11, 14), '0') = LPAD(REGEXP_REPLACE(c.cpf, '[^0-9]', ''), IF(LENGTH(REGEXP_REPLACE(c.cpf, '[^0-9]', '')) <= 11, 11, 14), '0')
     INNER JOIN cliente_vendedores cv ON cv.clienteId = c.id AND cv.nomeVendedor = ?
@@ -217,10 +223,8 @@ export async function detalheCorretorExtrato(vendedor: string, mes?: number, ano
   if (mes) { query += ` AND e.mes = ?`; params.push(mes); }
   if (ano) { query += ` AND e.ano = ?`; params.push(ano); }
   query += ` ORDER BY e.nomeCliente LIMIT 500`;
-
   return queryPool<Record<string, unknown>>(query, params);
 }
-
 // ─── MÉTRICAS GERAIS ───────────────────────────────────────────────────────────────────
 
 export async function metricasComissoes(mes?: number, ano?: number, vendedor?: string) {
