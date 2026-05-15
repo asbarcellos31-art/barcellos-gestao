@@ -142,18 +142,57 @@ export async function resumoComissoesPorCorretor(mes?: number, ano?: number, ven
   query += ` GROUP BY cv.nomeVendedor ORDER BY totalComissao DESC`;
 
   const rows = await queryPool<Record<string, unknown>>(query, params);
-  return rows.map(r => ({
-    corretor: String(r.corretor ?? ""),
-    totalClientes: Number(r.totalClientes),
-    totalRegistros: Number(r.totalRegistros),
-    totalBase: parseFloat(String(r.totalBase ?? "0")),
-    totalValorComissao: parseFloat(String(r.totalValorComissao ?? "0")),
-    totalValorIncentivo: parseFloat(String(r.totalValorIncentivo ?? "0")),
-    totalComissao: parseFloat(String(r.totalComissao ?? "0")),
-    totalPrevisao15: parseFloat(String(r.totalPrevisao15 ?? "0")),
-    totalRealizado50: parseFloat(String(r.totalRealizado50 ?? "0")),
-    isElisia: String(r.corretor ?? "").toUpperCase() === 'ELISIA',
-  }));
+  // 2) ELISIA também ganha: comissão CHEIA dos clientes dela + comissão CHEIA dos clientes dos OUTROS.
+  //    A linha de ELISIA do passo 1 já tem os clientes dela; aqui somamos o que vem dos outros.
+  const queryElisiaOutros = `
+    SELECT
+      COALESCE(SUM(e.valorComissao), 0) as somaComissao,
+      COALESCE(SUM(e.valorIncentivo), 0) as somaIncentivo,
+      COALESCE(SUM(e.valorComissaoTotal), 0) as somaComissaoTotal,
+      COALESCE(SUM(e.valorComissaoTotal * 0.50), 0) as somaRealizadoDeOutros
+    FROM extrato_comissao e
+    INNER JOIN clientes c ON LPAD(REGEXP_REPLACE(e.cpfCliente, '[^0-9]', ''), IF(LENGTH(REGEXP_REPLACE(e.cpfCliente, '[^0-9]', '')) <= 11, 11, 14), '0') = LPAD(REGEXP_REPLACE(c.cpf, '[^0-9]', ''), IF(LENGTH(REGEXP_REPLACE(c.cpf, '[^0-9]', '')) <= 11, 11, 14), '0')
+    INNER JOIN cliente_vendedores cv ON cv.clienteId = c.id
+    WHERE UPPER(cv.nomeVendedor) != 'ELISIA' ${mesAnoFiltro}
+  `;
+  const [elisiaOutros] = await queryPool<Record<string, unknown>>(queryElisiaOutros, params);
+  const acrescimoElisiaComissao = parseFloat(String(elisiaOutros?.somaComissao ?? "0"));
+  const acrescimoElisiaIncentivo = parseFloat(String(elisiaOutros?.somaIncentivo ?? "0"));
+  const acrescimoElisiaComissaoTotal = parseFloat(String(elisiaOutros?.somaComissaoTotal ?? "0"));
+  const acrescimoElisiaRealizado = parseFloat(String(elisiaOutros?.somaRealizadoDeOutros ?? "0"));
+  // Se filtrou só por ELISIA e ela não tem clientes próprios neste mês, garantir que ela apareça
+  const mapeado = rows.map(r => {
+    const isElisia = String(r.corretor ?? "").toUpperCase() === 'ELISIA';
+    return {
+      corretor: String(r.corretor ?? ""),
+      totalClientes: Number(r.totalClientes),
+      totalRegistros: Number(r.totalRegistros),
+      totalBase: parseFloat(String(r.totalBase ?? "0")),
+      totalValorComissao: parseFloat(String(r.totalValorComissao ?? "0")) + (isElisia ? acrescimoElisiaComissao : 0),
+      totalValorIncentivo: parseFloat(String(r.totalValorIncentivo ?? "0")) + (isElisia ? acrescimoElisiaIncentivo : 0),
+      totalComissao: parseFloat(String(r.totalComissao ?? "0")) + (isElisia ? acrescimoElisiaComissaoTotal : 0),
+      totalPrevisao15: parseFloat(String(r.totalPrevisao15 ?? "0")),
+      totalRealizado50: parseFloat(String(r.totalRealizado50 ?? "0")) + (isElisia ? acrescimoElisiaRealizado : 0),
+      isElisia,
+    };
+  });
+  // Se filtrou só ELISIA e ela não apareceu no GROUP BY (não tem clientes próprios), criar a linha
+  if (vendedor && vendedor.toUpperCase() === 'ELISIA' && !mapeado.some(m => m.isElisia)) {
+    mapeado.push({
+      corretor: 'ELISIA',
+      totalClientes: 0,
+      totalRegistros: 0,
+      totalBase: 0,
+      totalValorComissao: acrescimoElisiaComissao,
+      totalValorIncentivo: acrescimoElisiaIncentivo,
+      totalComissao: acrescimoElisiaComissaoTotal,
+      totalPrevisao15: 0,
+      totalRealizado50: acrescimoElisiaRealizado,
+      isElisia: true,
+    });
+  }
+  // Reordenar por totalComissao desc
+  return mapeado.sort((a, b) => b.totalComissao - a.totalComissao);
 }
 
 // ─── DETALHE DOS CLIENTES DE UM CORRETOR ─────────────────────────────────────────
