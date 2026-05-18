@@ -11,6 +11,7 @@ import {
   excluirTarefa,
   duplicarTarefa,
   obterScoreProdutividade,
+  buscarTarefas,
 } from "./tarefasDb";
 import {
   listarUsuarios,
@@ -984,7 +985,9 @@ export const appRouter = router({
     score: publicProcedure
       .input(z.object({ appUserId: z.number(), dataInicio: z.string(), dataFim: z.string() }))
       .query(({ input }) => obterScoreProdutividade(input.appUserId, input.dataInicio, input.dataFim)),
-
+    buscar: publicProcedure
+      .input(z.object({ appUserId: z.number(), termo: z.string() }))
+      .query(({ input }) => buscarTarefas(input.appUserId, input.termo)),
     relatorioDiario: publicProcedure
       .input(z.object({ appUserId: z.number(), data: z.string() }))
       .query(async ({ input }) => {
