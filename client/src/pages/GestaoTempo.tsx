@@ -666,8 +666,10 @@ export default function GestaoTempo() {
       ? form.diasSemana.sort((a, b) => a - b).join(",")
       : undefined;
     const { diasSemana: _diasSemana, ...formSemDias } = form;
-    const payload = { ...formSemDias, duracaoMin: Number(form.duracaoMin), dataAgendada: form.dataAgendada || undefined, horaAgendada: form.horaAgendada || undefined, recorrencia: (form.recorrente && form.recorrencia) ? (form.recorrencia as "DIARIA" | "SEMANAL" | "MENSAL") : undefined, diasSemana: diasSemanaStr };
-    if (modoDuplicacao) {
+// CORREÇÃO: se a data foi apagada, envia "" (vazio) em vez de undefined,
+    // pra o backend saber que tem que ZERAR a data (mover pro backlog).
+    // undefined = "não mexer na data". "" = "limpar a data".
+    const payload = { ...formSemDias, duracaoMin: Number(form.duracaoMin), dataAgendada: form.dataAgendada ?? "", horaAgendada: form.horaAgendada || undefined, recorrencia: (form.recorrente && form.recorrencia) ? (form.recorrencia as "DIARIA" | "SEMANAL" | "MENSAL") : undefined, diasSemana: diasSemanaStr };    if (modoDuplicacao) {
       // Cria uma nova tarefa com os dados ajustados (não altera a original)
       criarMut.mutate({ appUserId, ...payload }, { onSuccess: () => toast.success("Cópia criada!") });
     } else if (tarefaEditando) {
