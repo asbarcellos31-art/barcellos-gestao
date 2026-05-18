@@ -186,6 +186,28 @@ function DraggableItem({ tarefa, onEdit, onDelete, onDuplicate, onConcluir, onRe
   );
 }
 
+// ─── COMPONENTE: TAREFA DENTRO DA COLUNA DE DIA (arrastável) ─────────────────
+function DayColumnTask({ tarefa }: {
+  tarefa: { id: number; titulo: string; triade: "IMPORTANTE" | "URGENTE" | "CIRCUNSTANCIAL"; status: string };
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `task-${tarefa.id}`, data: { tarefaId: tarefa.id },
+  });
+  const cfg = TRIADE_CONFIG[tarefa.triade];
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      style={{ transform: CSS.Translate.toString(transform), opacity: isDragging ? 0.3 : 1 }}
+      className="flex items-center gap-1.5 px-1.5 py-1 rounded bg-white border border-gray-100 shadow-sm text-xs cursor-grab hover:border-blue-300 hover:shadow-md transition-all"
+      title="Arraste para outro dia"
+    >
+      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${cfg.color}`} />
+      <span className="truncate text-gray-700">{tarefa.titulo}</span>
+    </div>
+  );
+}
 // ─── COMPONENTE: COLUNA DE DIA (droppable) ────────────────────────────────────
 function DroppableDayColumn({ diaStr, tarefasDoDia, onAddTask }: {
   diaStr: string;
