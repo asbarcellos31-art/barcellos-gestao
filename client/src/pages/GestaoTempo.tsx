@@ -233,15 +233,9 @@ function DroppableDayColumn({ diaStr, tarefasDoDia, onAddTask }: {
             Soltar aqui
           </div>
         )}
-        {pendentes.map((t) => {
-          const cfg = TRIADE_CONFIG[t.triade];
-          return (
-            <div key={t.id} className="flex items-center gap-1.5 px-1.5 py-1 rounded bg-white border border-gray-100 shadow-sm text-xs">
-              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${cfg.color}`} />
-              <span className="truncate text-gray-700">{t.titulo}</span>
-            </div>
-          );
-        })}
+        {pendentes.map((t) => (
+          <DayColumnTask key={t.id} tarefa={t} />
+        ))}
         {concluidas.length > 0 && (
           <div className="text-xs text-gray-400 text-center pt-1">
             ✅ {concluidas.length} concluída{concluidas.length > 1 ? "s" : ""}
