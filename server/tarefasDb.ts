@@ -369,11 +369,17 @@ export async function atualizarTarefa(
   const db = await getDb();
   if (!db) throw new Error("DB indisponível");
   const { dataAgendada, ...rest } = data;
+  // Se dataAgendada vier vazia ou null, salva como NULL (move pro backlog).
+  // Se vier undefined, mantém o valor atual (não mexe na coluna).
+  let dataParaSalvar: Date | null | undefined = undefined;
+  if (dataAgendada !== undefined) {
+    dataParaSalvar = (dataAgendada === "" || dataAgendada === null) ? null : (dataAgendada as unknown as Date);
+  }
   await db
     .update(tarefas)
     .set({
       ...rest,
-      ...(dataAgendada !== undefined ? { dataAgendada: dataAgendada as unknown as Date } : {}),
+      ...(dataParaSalvar !== undefined ? { dataAgendada: dataParaSalvar } : {}),
     })
     .where(and(eq(tarefas.id, id), eq(tarefas.appUserId, appUserId)));
 }
