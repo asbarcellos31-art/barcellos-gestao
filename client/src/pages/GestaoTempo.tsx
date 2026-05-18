@@ -945,40 +945,91 @@ export default function GestaoTempo() {
                 <p className="text-sm text-gray-400 text-center py-6">Nenhuma tarefa encontrada.</p>
               ) : (
                 <div className="space-y-1">
-                  {resultadosBusca.map((t: any) => {
+                 {resultadosBusca.map((t: any) => {
                     const cfg = TRIADE_CONFIG[t.triade as "IMPORTANTE" | "URGENTE" | "CIRCUNSTANCIAL"];
                     const cat = CATEGORIAS_CONFIG[t.categoria] ?? t.categoria;
                     const dataStr = t.dataAgendada ? formatDateBR(t.dataAgendada) : "Sem data";
                     const tempo = t.tempoExecucaoSeg && t.tempoExecucaoSeg > 0 ? formatTempo(t.tempoExecucaoSeg) : null;
+                    const isConcluida = t.status === "CONCLUIDA";
                     return (
-                      <button
+                      <div
                         key={t.id}
-                        onClick={() => {
-                          // Se tem data, navega pro dia e abre edição
-                          if (t.dataAgendada) {
-                            setDataSelecionada(t.dataAgendada);
-                            setAbaAtiva("dia");
-                          } else {
-                            setAbaAtiva("planejamento");
-                          }
-                          // Abre o modal de edição direto
-                          setTimeout(() => abrirEdicao(t as any), 100);
-                          setBuscaTermo("");
-                        }}
-                        className="w-full flex items-center gap-3 px-3 py-2 rounded hover:bg-blue-50 border border-transparent hover:border-blue-200 transition-all text-left"
+                        className="flex items-center gap-3 px-3 py-2 rounded hover:bg-gray-50 border border-gray-100 transition-all"
                       >
                         <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${cfg?.color ?? "bg-gray-400"}`} />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-gray-800 truncate">{t.titulo}</p>
                           <p className="text-xs text-gray-500 truncate">
                             {cat} · {dataStr}
-                            {t.status === "CONCLUIDA" && <span className="text-green-600 ml-1">✓ Concluída</span>}
+                            {isConcluida && <span className="text-green-600 ml-1">✓ Concluída</span>}
                             {t.status === "CANCELADA" && <span className="text-gray-400 ml-1">Cancelada</span>}
                             {tempo && <span className="ml-1 text-blue-600 font-mono">· {tempo}</span>}
                           </p>
                         </div>
-                        <span className="text-xs text-gray-400 flex-shrink-0">›</span>
-                      </button>
+                        {/* Ações */}
+                        <div className="flex items-center gap-0.5 flex-shrink-0">
+                          {/* Ir pro dia */}
+                          {t.dataAgendada && (
+                            <button
+                              onClick={() => {
+                                setDataSelecionada(t.dataAgendada);
+                                setAbaAtiva("dia");
+                                setBuscaTermo("");
+                              }}
+                              className="p-1.5 rounded hover:bg-blue-100 text-gray-400 hover:text-blue-600"
+                              title="Ir para o dia da tarefa"
+                            >
+                              <Calendar className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {/* Editar */}
+                          <button
+                            onClick={() => { abrirEdicao(t as any); setBuscaTermo(""); }}
+                            className="p-1.5 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-700"
+                            title="Editar tarefa"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          {/* Duplicar */}
+                          <button
+                            onClick={() => { abrirDuplicacao(t as any); setBuscaTermo(""); }}
+                            className="p-1.5 rounded hover:bg-purple-100 text-gray-400 hover:text-purple-600"
+                            title="Duplicar tarefa"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                          {/* Concluir / Reabrir */}
+                          {isConcluida ? (
+                            <button
+                              onClick={() => reabrirTarefa(t.id)}
+                              className="p-1.5 rounded hover:bg-amber-100 text-amber-500 hover:text-amber-700"
+                              title="Reabrir tarefa"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => concluirComTimer(t.id, t._dataOcorrencia ?? undefined)}
+                              className="p-1.5 rounded hover:bg-green-100 text-gray-400 hover:text-green-600"
+                              title="Concluir tarefa"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {/* Excluir */}
+                          <button
+                            onClick={() => {
+                              if (confirm(`Excluir "${t.titulo}"?`)) {
+                                excluirMut.mutate({ id: t.id, appUserId });
+                              }
+                            }}
+                            className="p-1.5 rounded hover:bg-red-100 text-gray-400 hover:text-red-600"
+                            title="Excluir tarefa"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
