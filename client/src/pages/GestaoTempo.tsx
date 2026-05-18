@@ -14,7 +14,7 @@ import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import {
   ChevronLeft, ChevronRight, Plus, Check, Trash2, Play, Square,
   Pencil, Calendar, GripVertical, X, Clock, BarChart3, Pause,
-  RotateCcw, CheckCircle2, Bell, ChevronDown, ChevronUp, Copy,
+  RotateCcw, CheckCircle2, Bell, ChevronDown, ChevronUp, Copy, Search,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -449,8 +449,19 @@ export default function GestaoTempo() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const [activeDragId, setActiveDragId] = useState<string | null>(null);
+ const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [tarefaDetalhe, setTarefaDetalhe] = useState<number | null>(null);
+  // ─── BUSCA GLOBAL ─────────────────────────────────────────────────────────
+  const [buscaTermo, setBuscaTermo] = useState("");
+  const [buscaDebounced, setBuscaDebounced] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setBuscaDebounced(buscaTermo.trim()), 400);
+    return () => clearTimeout(t);
+  }, [buscaTermo]);
+  const { data: resultadosBusca = [], isFetching: buscaCarregando } = trpc.gestaoTempo.buscar.useQuery(
+    { appUserId, termo: buscaDebounced },
+    { enabled: appUserId > 0 && buscaDebounced.length >= 2 }
+  );
   // Modal de edição de tempo de tarefa concluída
   const [editTempoTarefa, setEditTempoTarefa] = useState<{ id: number; titulo: string; dataOcorrencia?: string | null } | null>(null);
   const [editTempoHoras, setEditTempoHoras] = useState("0");
@@ -886,15 +897,94 @@ export default function GestaoTempo() {
             </div>
 
             {/* Abas */}
-            <div className="flex gap-6">
+            <div className="flex items-center gap-6">
               {(["dia", "planejamento", "relatorio"] as const).map((aba) => (
                 <button key={aba} onClick={() => setAbaAtiva(aba)}
                   className={`pb-3 text-sm font-medium border-b-2 transition-colors ${abaAtiva === aba ? "border-blue-600 text-blue-700" : "border-transparent text-gray-500 hover:text-gray-700"}`}>
                   {aba === "dia" ? "Meu Dia" : aba === "planejamento" ? "Planejamento" : "Relatório"}
                 </button>
               ))}
+              {/* Campo de busca global */}
+              <div className="ml-auto mb-2 relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                <input
+                  type="text"
+                  value={buscaTermo}
+                  onChange={e => setBuscaTermo(e.target.value)}
+                  placeholder="Buscar tarefas..."
+                  className="pl-8 pr-7 py-1.5 text-xs border border-gray-200 rounded-md w-56 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200 bg-white"
+                />
+                {buscaTermo && (
+                  <button
+                    onClick={() => setBuscaTermo("")}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+                    title="Limpar busca"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
+          {/* ─── PAINEL DE RESULTADOS DA BUSCA ──────────────────────────────── */}
+          {buscaDebounced.length >= 2 && (
+            <div className="bg-white border-b border-gray-200 px-6 py-4 max-h-96 overflow-y-auto">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                  <Search className="w-3.5 h-3.5 text-blue-500" />
+                  Resultados para "{buscaDebounced}"
+                  {buscaCarregando ? (
+                    <span className="text-xs text-gray-400">buscando...</span>
+                  ) : (
+                    <span className="text-xs text-gray-500">— {resultadosBusca.length} encontradas</span>
+                  )}
+                </h3>
+                <button onClick={() => setBuscaTermo("")} className="text-xs text-blue-600 hover:underline">Fechar</button>
+              </div>
+              {resultadosBusca.length === 0 && !buscaCarregando ? (
+                <p className="text-sm text-gray-400 text-center py-6">Nenhuma tarefa encontrada.</p>
+              ) : (
+                <div className="space-y-1">
+                  {resultadosBusca.map((t: any) => {
+                    const cfg = TRIADE_CONFIG[t.triade as "IMPORTANTE" | "URGENTE" | "CIRCUNSTANCIAL"];
+                    const cat = CATEGORIAS_CONFIG[t.categoria] ?? t.categoria;
+                    const dataStr = t.dataAgendada ? formatDateBR(t.dataAgendada) : "Sem data";
+                    const tempo = t.tempoExecucaoSeg && t.tempoExecucaoSeg > 0 ? formatTempo(t.tempoExecucaoSeg) : null;
+                    return (
+                      <button
+                        key={t.id}
+                        onClick={() => {
+                          // Se tem data, navega pro dia e abre edição
+                          if (t.dataAgendada) {
+                            setDataSelecionada(t.dataAgendada);
+                            setAbaAtiva("dia");
+                          } else {
+                            setAbaAtiva("planejamento");
+                          }
+                          // Abre o modal de edição direto
+                          setTimeout(() => abrirEdicao(t as any), 100);
+                          setBuscaTermo("");
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2 rounded hover:bg-blue-50 border border-transparent hover:border-blue-200 transition-all text-left"
+                      >
+                        <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${cfg?.color ?? "bg-gray-400"}`} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-800 truncate">{t.titulo}</p>
+                          <p className="text-xs text-gray-500 truncate">
+                            {cat} · {dataStr}
+                            {t.status === "CONCLUIDA" && <span className="text-green-600 ml-1">✓ Concluída</span>}
+                            {t.status === "CANCELADA" && <span className="text-gray-400 ml-1">Cancelada</span>}
+                            {tempo && <span className="ml-1 text-blue-600 font-mono">· {tempo}</span>}
+                          </p>
+                        </div>
+                        <span className="text-xs text-gray-400 flex-shrink-0">›</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* ─── ABA MEU DIA ───────────────────────────────────────────────── */}
           {abaAtiva === "dia" && (
