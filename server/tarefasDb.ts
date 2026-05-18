@@ -563,6 +563,43 @@ export async function listarTarefasPorPeriodo(
       recorrente: true,
     });
   }
-
   return resultado;
+}
+// ─── BUSCA GLOBAL DE TAREFAS ──────────────────────────────────────────────────
+// Procura tarefas por nome/título, descrição, categoria, tríade ou status.
+// Retorna até 200 resultados, ordenados pelas mais recentes primeiro.
+export async function buscarTarefas(appUserId: number, termo: string) {
+  const db = await getDb();
+  if (!db) return [];
+  const termoLimpo = termo.trim();
+  if (!termoLimpo) return [];
+  const padrao = `%${termoLimpo}%`;
+  const rows = await rawQuery<{
+    id: number; titulo: string; descricao: string | null;
+    triade: string; categoria: string; status: string;
+    duracaoMin: number | null; tempoExecucaoSeg: number | null;
+    dataAgendada: Date | string | null; horaAgendada: string | null;
+    recorrente: number | boolean; createdAt: Date | string;
+  }>(
+    `SELECT id, titulo, descricao, triade, categoria, status,
+            duracaoMin, tempoExecucaoSeg, dataAgendada, horaAgendada,
+            recorrente, createdAt
+     FROM tarefas
+     WHERE appUserId = ?
+       AND (
+         titulo LIKE ?
+         OR descricao LIKE ?
+         OR categoria LIKE ?
+         OR triade LIKE ?
+         OR status LIKE ?
+       )
+     ORDER BY COALESCE(dataAgendada, createdAt) DESC, id DESC
+     LIMIT 200`,
+    [appUserId, padrao, padrao, padrao, padrao, padrao]
+  );
+  return (rows || []).map(r => ({
+    ...r,
+    dataAgendada: r.dataAgendada ? toDateStr(r.dataAgendada) : null,
+    recorrente: !!r.recorrente,
+  }));
 }
