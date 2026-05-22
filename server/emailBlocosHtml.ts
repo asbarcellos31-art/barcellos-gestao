@@ -53,17 +53,21 @@ ${b.titulo ? `  <p style="margin:0 0 6px 0;font-weight:bold;color:${c.titulo};fo
 
     case "rodape": {
       const siteUrl = b.site ? (b.site.startsWith("http") ? b.site : "https://" + b.site) : "";
-      const waUrl = b.telefone ? `https://wa.me/55${b.telefone.replace(/\D/g, "")}` : "";
-      return `<div style="background:#f8faff;padding:28px 24px;text-align:center;border-top:1px solid #e5eaf5;">
-  <img src="https://d2xsxph8kpxj0f.cloudfront.net/310519663348080686/8JHGDJiU4qZSTzCTFQYFKy/barcellos-logo-transparent_1ecfd1d9.png" alt="${b.empresa}" style="height:52px;display:block;margin:0 auto 14px;max-width:200px">
-  <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:12px;margin-bottom:8px;">
-    ${siteUrl ? `<a href="${siteUrl}" style="font-size:12px;color:#2d4a8a;text-decoration:none;font-weight:600;">\u{1f310} ${b.site}</a>` : ""}
-    ${waUrl ? `<a href="${waUrl}" style="font-size:12px;color:#2d4a8a;text-decoration:none;font-weight:600;">\u{1f4ac} WhatsApp</a>` : ""}
-    ${b.email ? `<a href="mailto:${b.email}" style="font-size:12px;color:#2d4a8a;text-decoration:none;font-weight:600;">\u{1f4e7} ${b.email}</a>` : ""}
-  </div>
-  ${b.endereco ? `<p style="font-size:11px;color:#aaa;margin:4px 0 0;">${b.endereco}</p>` : ""}
-  <p style="font-size:11px;color:#aaa;margin:8px 0 0;">Para cancelar o recebimento, responda com &quot;DESCADASTRAR&quot;.</p>
-</div>`;
+      const telLimpo = b.telefone ? b.telefone.replace(/\D/g, "") : "";
+      const waUrl = telLimpo ? `https://wa.me/55${telLimpo}` : "";
+      return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#f8faff;border-top:1px solid #e5eaf5;">
+  <tr><td align="center" style="padding:28px 24px;">
+    <img src="https://d2xsxph8kpxj0f.cloudfront.net/310519663348080686/8JHGDJiU4qZSTzCTFQYFKy/barcellos-logo-transparent_1ecfd1d9.png" alt="${b.empresa}" style="height:52px;max-width:200px;display:block;margin:0 auto 14px;" width="auto" height="52">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto 8px;"><tr>
+      ${siteUrl ? `<td style="padding:0 8px;"><a href="${siteUrl}" style="font-size:12px;color:#2d4a8a;text-decoration:none;font-weight:600;">\u{1f310} ${b.site}</a></td>` : ""}
+      ${b.telefone ? `<td style="padding:0 8px;"><a href="tel:${telLimpo}" style="font-size:12px;color:#2d4a8a;text-decoration:none;font-weight:600;">\u{1f4de} ${b.telefone}</a></td>` : ""}
+      ${waUrl ? `<td style="padding:0 8px;"><a href="${waUrl}" style="font-size:12px;color:#2d4a8a;text-decoration:none;font-weight:600;">\u{1f4ac} WhatsApp</a></td>` : ""}
+      ${b.email ? `<td style="padding:0 8px;"><a href="mailto:${b.email}" style="font-size:12px;color:#2d4a8a;text-decoration:none;font-weight:600;">\u{1f4e7} ${b.email}</a></td>` : ""}
+    </tr></table>
+    ${b.endereco ? `<p style="font-size:11px;color:#aaa;margin:4px 0 0;">${b.endereco}</p>` : ""}
+    <p style="font-size:11px;color:#aaa;margin:8px 0 0;">Para cancelar o recebimento, responda com &quot;DESCADASTRAR&quot;.</p>
+  </td></tr>
+</table>`;
     }
 
     default:
