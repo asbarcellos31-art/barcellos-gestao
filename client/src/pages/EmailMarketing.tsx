@@ -332,7 +332,7 @@ function TemplatesTab() {
 
   function openNew() {
     setEditing(null);
-    setForm({ nome: "", assunto: "", saudacao: "Olá, {{nome}}!", corpo: "", assinatura: "Atenciosamente,\nEquipe Barcellos Seguros\n(62) 99999-9999 | atendimento@barcellosseguros.com" });
+    setForm({ nome: "", assunto: "", saudacao: "Olá, {{nome}}!", corpo: "", assinatura: "Atenciosamente,\nEquipe Barcellos Seguros\natendimento@barcellosseguros.com" });
     // Inicia com um bloco de texto vazio
     setBlocos([{ id: Math.random().toString(36).slice(2, 9), tipo: "texto", conteudo: "" }]);
     setShowForm(true);
@@ -350,8 +350,7 @@ function TemplatesTab() {
         assunto: t.assunto,
         saudacao: t.saudacao || "Olá, {{nome}}!",
         corpo: "",
-        assinatura: t.assinatura || "Atenciosamente,\nEquipe Barcellos Seguros\n(62) 99999-9999 | atendimento@barcellosseguros.com",
-      });
+assinatura: t.assinatura || "Atenciosamente,\nEquipe Barcellos Seguros\natendimento@barcellosseguros.com",      });
     } else {
       // Formato legado: HTML puro — tenta extrair campos simples
       setBlocos([]);
