@@ -114,6 +114,7 @@ export default function Inadimplentes() {
   // Disparo WhatsApp
   const [modalDisparoWA, setModalDisparoWA] = useState(false);
   const [resultadoDisparoWA, setResultadoDisparoWA] = useState<any>(null);
+  const [instanciaWA, setInstanciaWA] = useState<string>("whatsapp-1");
 
   // Boletos por cliente (key = CPF ou ID string)
   const [boletosPorCliente, setBoletosPorCliente] = useState<Map<string, { base64: string; nomeArquivo: string }>>(new Map());
@@ -1487,6 +1488,32 @@ export default function Inadimplentes() {
                 <p className="text-sm text-muted-foreground">
                   Serão enviadas mensagens de cobrança via WhatsApp para <strong>{selecionados.size}</strong> inadimplente{selecionados.size > 1 ? "s" : ""} selecionado{selecionados.size > 1 ? "s" : ""}.
                 </p>
+
+                {/* Seletor de instância */}
+                <div className="rounded-lg border border-border p-3 space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Remetente (WhatsApp)</p>
+                  {[
+                    { id: "whatsapp-1", label: "(48) 3372-6890", desc: "Inadimplência / contato oficial" },
+                    { id: "whatsapp-2", label: "(48) 99210-8365", desc: "Aniversários / boas-vindas" },
+                    { id: "whatsapp-3", label: "(48) 99225-9899", desc: "Anderson — médicos" },
+                  ].map(inst => (
+                    <label key={inst.id} className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer border transition-colors ${instanciaWA === inst.id ? "bg-green-50 border-green-300" : "border-transparent hover:bg-muted/50"}`}>
+                      <input
+                        type="radio"
+                        name="instancia-wa"
+                        value={inst.id}
+                        checked={instanciaWA === inst.id}
+                        onChange={() => setInstanciaWA(inst.id)}
+                        className="accent-green-600"
+                      />
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">{inst.label}</p>
+                        <p className="text-xs text-muted-foreground">{inst.desc}</p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+
                 {comBoleto > 0 && (
                   <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 text-sm text-blue-800 flex items-center gap-2">
                     <Paperclip className="w-4 h-4 shrink-0" />
@@ -1499,7 +1526,7 @@ export default function Inadimplentes() {
                   <p className="text-xs text-green-600 mt-1">Personalize a mensagem em WhatsApp Marketing → Automações</p>
                 </div>
                 <div className="rounded-lg bg-yellow-50 border border-yellow-200 p-3 text-xs text-yellow-800">
-                  ⚠️ Apenas inadimplentes com telefone cadastrado receberão a mensagem. Certifique-se de que a Z-API está configurada em Configurações → Integrações.
+                  ⚠️ Apenas inadimplentes com telefone cadastrado receberão a mensagem.
                 </div>
               </div>
             );
@@ -1517,7 +1544,7 @@ export default function Inadimplentes() {
                     base64: boletosPorCliente.get(k)!.base64,
                     nomeArquivo: boletosPorCliente.get(k)!.nomeArquivo,
                   }));
-                dispararWhatsapp.mutate({ cpfs: Array.from(selecionados), boletos: boletosParaEnviar });
+                dispararWhatsapp.mutate({ cpfs: Array.from(selecionados), boletos: boletosParaEnviar, instancia: instanciaWA });
                 toast.info(`Disparando WhatsApp para ${selecionados.size} inadimplente${selecionados.size > 1 ? "s" : ""}...`);
               }}
               disabled={dispararWhatsapp.isPending}

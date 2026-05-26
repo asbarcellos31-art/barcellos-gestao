@@ -578,11 +578,12 @@ export const whatsappRouter = router({
         base64: z.string(),
         nomeArquivo: z.string(),
       })).optional(),
+      instancia: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco indisponível");
-      // Usa whatsapp-1 (48 3372-6890) para inadimplência;
+      const instancia = input.instancia || INSTANCIAS.inadimplencia;
 
       // Buscar mensagem configurada
       const [cfgRows]: any = await (db as any).execute(
@@ -635,11 +636,11 @@ export const whatsappRouter = router({
             boleto.base64,
             "document",
             mensagem,
-            INSTANCIAS.inadimplencia,
+            instancia,
             boleto.nomeArquivo,
           );
         } else {
-          resultado = await enviarMensagemEvolution(telefone, mensagem, INSTANCIAS.inadimplencia);
+          resultado = await enviarMensagemEvolution(telefone, mensagem, instancia);
         }
 
         await registrarEnvioWhatsapp({
