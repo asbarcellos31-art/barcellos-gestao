@@ -1,5 +1,5 @@
 import AppLayout from "@/components/AppLayout";
-import { useState, useRef, useMemo } from "react";
+import { useState, useRef, useMemo, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAno } from "@/contexts/AnoContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,6 +22,7 @@ import {
   Upload, Trash2, AlertTriangle, CheckCircle2, Clock, DollarSign,
   Users, Phone, Search, Plus, Pencil, X, FileText, TrendingUp,
   CreditCard, Banknote, ChevronDown, ChevronUp, Download, Mail, RefreshCw, MessageSquare, Paperclip,
+  FileDown, Loader2, Wifi, WifiOff,
 } from "lucide-react";
 
 const MESES = [
@@ -115,6 +116,135 @@ export default function Inadimplentes() {
   const [modalDisparoWA, setModalDisparoWA] = useState(false);
   const [resultadoDisparoWA, setResultadoDisparoWA] = useState<any>(null);
   const [instanciaWA, setInstanciaWA] = useState<string>("whatsapp-1");
+
+  // ── Busca MAG ────────────────────────────────────────────────────────────
+  const MAG_SERVER = "http://localhost:3001";
+  type FaseMag = "verificando" | "sem_servidor" | "aguardando_login" | "pronto" | "processando" | "concluido";
+  const [modalMagAberto, setModalMagAberto] = useState(false);
+  const [faseMag, setFaseMag] = useState<FaseMag>("verificando");
+  const [progressoMag, setProgressoMag] = useState({ atual: 0, total: 0, mensagem: "" });
+  const [sucessosMag, setSucessosMag] = useState(0);
+  const [falhasMag, setFalhasMag] = useState<{ cpf: string; motivo: string }[]>([]);
+  const sseRef = useRef<EventSource | null>(null);
+
+  const fecharModalMag = useCallback(() => {
+    sseRef.current?.close();
+    sseRef.current = null;
+    setModalMagAberto(false);
+    setFaseMag("verificando");
+    setProgressoMag({ atual: 0, total: 0, mensagem: "" });
+  }, []);
+
+  async function abrirModalMag() {
+    setFaseMag("verificando");
+    setModalMagAberto(true);
+    try {
+      const r = await fetch(`${MAG_SERVER}/ping`, { signal: AbortSignal.timeout(3000) });
+      const json = await r.json();
+      if (json.loginStatus === "logado") setFaseMag("pronto");
+      else if (json.loginStatus === "aguardando") setFaseMag("aguardando_login");
+      else setFaseMag("aguardando_login");
+    } catch {
+      setFaseMag("sem_servidor");
+    }
+  }
+
+  async function abrirPortalMag() {
+    try {
+      await fetch(`${MAG_SERVER}/iniciar-sessao`, { method: "POST" });
+      setFaseMag("aguardando_login");
+      iniciarPollingLogin();
+    } catch {
+      toast.error("Não foi possível conectar ao servidor local MAG");
+    }
+  }
+
+  function iniciarPollingLogin() {
+    const t = setInterval(async () => {
+      try {
+        const r = await fetch(`${MAG_SERVER}/status-login`);
+        const json = await r.json();
+        if (json.status === "logado") {
+          clearInterval(t);
+          setFaseMag("pronto");
+        }
+      } catch { clearInterval(t); }
+    }, 2500);
+  }
+
+  async function iniciarBuscaMag() {
+    const cpfsParaBuscar = Array.from(selecionados).filter(k => /^\d/.test(k.replace(/\D/g, "")));
+    if (cpfsParaBuscar.length === 0) {
+      toast.error("Nenhum cliente com CPF selecionado");
+      return;
+    }
+    try {
+      const r = await fetch(`${MAG_SERVER}/iniciar-busca`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cpfs: cpfsParaBuscar }),
+      });
+      const { jobId, erro } = await r.json();
+      if (erro) { toast.error(erro); return; }
+
+      setFaseMag("processando");
+      setProgressoMag({ atual: 0, total: cpfsParaBuscar.length, mensagem: "Iniciando..." });
+      setSucessosMag(0);
+      setFalhasMag([]);
+
+      const source = new EventSource(`${MAG_SERVER}/progresso/${jobId}`);
+      sseRef.current = source;
+
+      source.addEventListener("progresso", (e) => {
+        const d = JSON.parse(e.data);
+        setProgressoMag({ atual: d.atual, total: d.total, mensagem: d.mensagem });
+      });
+
+      source.addEventListener("boleto", (e) => {
+        const { cpf, base64, nomeArquivo } = JSON.parse(e.data);
+        setBoletosPorCliente((prev) => {
+          const next = new Map(prev);
+          next.set(cpf, { base64, nomeArquivo });
+          return next;
+        });
+        setSucessosMag((n) => n + 1);
+      });
+
+      source.addEventListener("falha", (e) => {
+        const d = JSON.parse(e.data);
+        setFalhasMag((prev) => [...prev, d]);
+      });
+
+      source.addEventListener("concluido", (e) => {
+        source.close();
+        sseRef.current = null;
+        setFaseMag("concluido");
+        const d = JSON.parse(e.data);
+        if (d.sucessos > 0) toast.success(`${d.sucessos} boleto${d.sucessos > 1 ? "s" : ""} baixado${d.sucessos > 1 ? "s" : ""} com sucesso!`);
+      });
+
+      source.addEventListener("erro_fatal", (e) => {
+        source.close();
+        sseRef.current = null;
+        const d = JSON.parse(e.data);
+        toast.error("Erro no processamento: " + d.mensagem);
+        setFaseMag("pronto");
+      });
+
+      source.onerror = () => {
+        source.close();
+        sseRef.current = null;
+      };
+    } catch (err: any) {
+      toast.error("Erro ao iniciar busca: " + err.message);
+    }
+  }
+
+  // CPFs disponíveis para busca MAG (clientes selecionados que têm CPF)
+  const cpfsMagSelecionados = useMemo(
+    () => Array.from(selecionados).filter((k) => k.replace(/\D/g, "").length >= 11),
+    [selecionados]
+  );
 
   // Boletos por cliente (key = CPF ou ID string)
   const [boletosPorCliente, setBoletosPorCliente] = useState<Map<string, { base64: string; nomeArquivo: string }>>(new Map());
@@ -248,7 +378,7 @@ export default function Inadimplentes() {
 
   // Inadimplentes com e-mail (para seleção)
   const comEmail = useMemo(() => listaFiltrada.filter(i => (i as any).emailContato), [listaFiltrada]);
-  const todosSelecionados = comEmail.length > 0 && comEmail.every(i => selecionados.has(i.cpf ?? String(i.id)));
+  const todosSelecionados = listaFiltrada.length > 0 && listaFiltrada.every(i => selecionados.has(i.cpf ?? String(i.id)));
 
   function toggleSelecionado(key: string) {
     setSelecionados(prev => {
@@ -263,7 +393,7 @@ export default function Inadimplentes() {
     if (todosSelecionados) {
       setSelecionados(new Set());
     } else {
-      setSelecionados(new Set(comEmail.map(i => i.cpf ?? String(i.id))));
+      setSelecionados(new Set(listaFiltrada.map(i => i.cpf ?? String(i.id))));
     }
   }
 
@@ -819,6 +949,15 @@ export default function Inadimplentes() {
               >
                 <MessageSquare className="w-3 h-3" /> WhatsApp
               </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                className="h-7 text-xs gap-1 bg-orange-500 text-white hover:bg-orange-600"
+                onClick={abrirModalMag}
+                title={cpfsMagSelecionados.length === 0 ? "Selecione clientes com CPF" : `Buscar boletos para ${cpfsMagSelecionados.length} cliente(s)`}
+              >
+                <FileDown className="w-3 h-3" /> MAG ({cpfsMagSelecionados.length})
+              </Button>
               <button
                 className="ml-1 opacity-70 hover:opacity-100"
                 onClick={() => setSelecionados(new Set())}
@@ -878,16 +1017,12 @@ export default function Inadimplentes() {
                           style={{ borderLeftColor: item.status === "PAGO" ? "#22c55e" : item.status === "BOLETO" ? "#3b82f6" : item.status === "EM CONTATO" ? "#eab308" : item.status === "DESISTIU" ? "#ef4444" : item.status === "ESPECIAL" ? "#a855f7" : "#9ca3af" }}
                         >
                           <TableCell className="w-10">
-                            {temEmail ? (
-                              <input
-                                type="checkbox"
-                                checked={isSelecionado}
-                                onChange={() => toggleSelecionado(itemKey)}
-                                className="w-4 h-4 cursor-pointer"
-                              />
-                            ) : (
-                              <span title="Sem e-mail cadastrado" className="text-muted-foreground/30 text-xs">—</span>
-                            )}
+                            <input
+                              type="checkbox"
+                              checked={isSelecionado}
+                              onChange={() => toggleSelecionado(itemKey)}
+                              className="w-4 h-4 cursor-pointer"
+                            />
                           </TableCell>
                           <TableCell className="font-medium max-w-[200px]">
                             <div className="truncate">{item.nome}</div>
@@ -1595,6 +1730,163 @@ export default function Inadimplentes() {
           )}
           <DialogFooter>
             <Button onClick={() => setResultadoDisparoWA(null)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── MODAL: Busca de Boletos MAG ───────────────────────────────────────── */}
+      <Dialog open={modalMagAberto} onOpenChange={(open) => { if (!open) fecharModalMag(); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileDown className="w-5 h-5 text-orange-500" />
+              Buscar Boletos no Portal MAG
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+
+            {/* Fase: verificando / sem servidor */}
+            {(faseMag === "verificando" || faseMag === "sem_servidor") && (
+              <div className="space-y-4">
+                {faseMag === "verificando" && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="w-4 h-4 animate-spin" /> Verificando servidor local...
+                  </div>
+                )}
+                {faseMag === "sem_servidor" && (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 text-sm text-red-600">
+                      <WifiOff className="w-4 h-4" /> Servidor local não encontrado
+                    </div>
+                    <div className="rounded-lg bg-muted p-4 space-y-2">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase">Execute no terminal (uma única vez para instalar):</p>
+                      <code className="block text-xs bg-black text-green-400 rounded p-2 select-all">
+                        npm install playwright express cors<br />
+                        npx playwright install chromium
+                      </code>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase mt-2">Depois, toda vez que for usar:</p>
+                      <code className="block text-xs bg-black text-green-400 rounded p-2 select-all">
+                        node scripts/mag-boletos-server.js
+                      </code>
+                    </div>
+                    <Button size="sm" variant="outline" onClick={abrirModalMag} className="gap-2">
+                      <RefreshCw className="w-3 h-3" /> Verificar novamente
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Fase: aguardando login */}
+            {faseMag === "aguardando_login" && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-sm text-green-600">
+                  <Wifi className="w-4 h-4" /> Servidor local ativo
+                </div>
+                <div className="rounded-lg bg-orange-50 border border-orange-200 p-4 space-y-2">
+                  <p className="text-sm font-semibold text-orange-800">Faça o login no portal MAG</p>
+                  <p className="text-xs text-orange-700">
+                    O Chrome vai abrir automaticamente no portal. Faça o login normalmente
+                    (CAPTCHA incluído). Após entrar, esta tela avança sozinha.
+                  </p>
+                </div>
+                <Button onClick={abrirPortalMag} className="w-full gap-2 bg-orange-500 hover:bg-orange-600">
+                  <FileDown className="w-4 h-4" /> Abrir portal MAG no Chrome
+                </Button>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Aguardando login...
+                </div>
+              </div>
+            )}
+
+            {/* Fase: pronto (logado, aguardando confirmar) */}
+            {faseMag === "pronto" && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-sm text-green-600">
+                  <CheckCircle2 className="w-4 h-4" /> Logado no portal MAG
+                </div>
+                <div className="rounded-lg bg-muted/50 border p-3">
+                  <p className="text-sm font-medium mb-2">{cpfsMagSelecionados.length} cliente{cpfsMagSelecionados.length !== 1 ? "s" : ""} na fila:</p>
+                  <div className="max-h-32 overflow-y-auto space-y-1">
+                    {cpfsMagSelecionados.map((cpf) => {
+                      const item = listaFiltrada.find((i) => (i.cpf ?? String(i.id)) === cpf);
+                      return (
+                        <div key={cpf} className="text-xs flex items-center gap-2">
+                          <span className="font-mono text-muted-foreground">{cpf}</span>
+                          {item && <span className="text-foreground">{item.nome}</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <Button onClick={iniciarBuscaMag} className="w-full gap-2 bg-orange-500 hover:bg-orange-600" disabled={cpfsMagSelecionados.length === 0}>
+                  <FileDown className="w-4 h-4" /> Iniciar busca dos boletos
+                </Button>
+              </div>
+            )}
+
+            {/* Fase: processando */}
+            {faseMag === "processando" && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium">Processando boletos...</span>
+                  <span className="text-muted-foreground">{progressoMag.atual}/{progressoMag.total}</span>
+                </div>
+                <div className="w-full bg-muted rounded-full h-2">
+                  <div
+                    className="bg-orange-500 h-2 rounded-full transition-all duration-500"
+                    style={{ width: progressoMag.total > 0 ? `${(progressoMag.atual / progressoMag.total) * 100}%` : "0%" }}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground font-mono">{progressoMag.mensagem}</p>
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-green-600 font-semibold">{sucessosMag} baixados</span>
+                  <span className="text-muted-foreground">·</span>
+                  <span className="text-red-500">{falhasMag.length} falhas</span>
+                </div>
+              </div>
+            )}
+
+            {/* Fase: concluído */}
+            {faseMag === "concluido" && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-center">
+                    <p className="text-2xl font-bold text-green-700">{sucessosMag}</p>
+                    <p className="text-xs text-green-600 mt-1">Boletos baixados</p>
+                  </div>
+                  <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-center">
+                    <p className="text-2xl font-bold text-red-700">{falhasMag.length}</p>
+                    <p className="text-xs text-red-600 mt-1">Falharam</p>
+                  </div>
+                </div>
+                {sucessosMag > 0 && (
+                  <div className="rounded-lg bg-green-50 border border-green-200 p-3 text-xs text-green-800">
+                    ✓ Os boletos já estão anexados — veja os ícones 📎 verdes na lista. Agora é só disparar o WhatsApp.
+                  </div>
+                )}
+                {falhasMag.length > 0 && (
+                  <div className="space-y-1 max-h-40 overflow-y-auto">
+                    <p className="text-xs font-semibold text-red-600">Falharam (fazer manual):</p>
+                    {falhasMag.map((f, i) => (
+                      <div key={i} className="text-xs flex items-start gap-2 bg-red-50 border border-red-100 rounded px-2 py-1">
+                        <span className="font-mono text-red-700 shrink-0">{f.cpf}</span>
+                        <span className="text-red-600">{f.motivo}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            {faseMag !== "processando" && (
+              <Button variant="outline" onClick={fecharModalMag}>
+                {faseMag === "concluido" ? "Fechar" : "Cancelar"}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
