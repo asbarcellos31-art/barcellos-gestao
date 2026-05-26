@@ -715,7 +715,6 @@ export default function Inadimplentes() {
                   {uploading ? "Importando..." : "Selecionar Arquivo Excel"}
                 </Button>
                 <input ref={fileRef} type="file" accept=".xlsx,.xls,.xlsm" className="hidden" onChange={handleUpload} />
-                <input ref={boletoFileRef} type="file" accept=".pdf" className="hidden" onChange={handleBoletoUpload} />
                 <span className="text-xs text-muted-foreground">Formato: .xlsx, .xls, .xlsm</span>
               </div>
 
@@ -1130,6 +1129,9 @@ export default function Inadimplentes() {
           </div>
         );
       })()}
+
+      {/* Input oculto para anexar boleto PDF — fora das abas para estar sempre no DOM */}
+      <input ref={boletoFileRef} type="file" accept=".pdf" className="hidden" onChange={handleBoletoUpload} />
 
       {/* ─── MODAL: Editar Status ──────────────────────────────────────────── */}
       <Dialog open={!!editandoStatus} onOpenChange={() => setEditandoStatus(null)}>
