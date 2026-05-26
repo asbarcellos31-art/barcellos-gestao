@@ -201,7 +201,11 @@ export default function Inadimplentes() {
       toast.error("Servidor local não retornou URL do túnel — verifique o terminal");
       return;
     }
-    iniciarBuscaMagMutation.mutate({ cpfs: cpfsMagSelecionados, ngrokUrl: ngrokUrl.trim() });
+    const clientes = cpfsMagSelecionados.map((cpf) => {
+      const item = listaFiltrada.find((i) => (i.cpf ?? String(i.id)) === cpf);
+      return { cpf, nome: item?.nome ?? "" };
+    });
+    iniciarBuscaMagMutation.mutate({ clientes, ngrokUrl: ngrokUrl.trim() });
   }
 
   // Polling do job via tRPC (a cada 2s enquanto jobIdMag estiver definido)

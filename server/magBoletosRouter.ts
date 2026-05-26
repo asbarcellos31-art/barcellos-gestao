@@ -138,7 +138,7 @@ magBoletosExpressRouter.post("/mag/progresso", authMag, (req, res) => {
 export const magTrpcRouter = router({
   iniciarBusca: publicProcedure
     .input(z.object({
-      cpfs: z.array(z.string()).min(1),
+      clientes: z.array(z.object({ cpf: z.string(), nome: z.string() })).min(1),
       ngrokUrl: z.string().min(1),
     }))
     .mutation(async ({ input }) => {
@@ -148,8 +148,8 @@ export const magTrpcRouter = router({
 
       const jobId = Date.now().toString();
       magJobs.set(jobId, {
-        cpfs: input.cpfs,
-        total: input.cpfs.length,
+        cpfs: input.clientes.map(c => c.cpf),
+        total: input.clientes.length,
         atual: 0,
         mensagem: "Aguardando início...",
         status: "rodando",
@@ -170,7 +170,7 @@ export const magTrpcRouter = router({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             jobId,
-            cpfs: input.cpfs,
+            clientes: input.clientes,
             callbackUrl,
             apiKey: MAG_API_KEY,
           }),
