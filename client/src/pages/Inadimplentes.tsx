@@ -82,6 +82,8 @@ const formVazio: FormData = {
   status: "BOLETO", historicoCobranca: "",
 };
 
+type FaseMag = "verificando" | "sem_servidor" | "aguardando_login" | "pronto" | "processando" | "concluido";
+
 export default function Inadimplentes() {
   const { ano } = useAno();
   const [mesSel, setMesSel] = useState<number>(new Date().getMonth() + 1);
@@ -119,7 +121,6 @@ export default function Inadimplentes() {
 
   // ── Busca MAG ────────────────────────────────────────────────────────────
   const MAG_SERVER = "http://localhost:3001";
-  type FaseMag = "verificando" | "sem_servidor" | "aguardando_login" | "pronto" | "processando" | "concluido";
   const [modalMagAberto, setModalMagAberto] = useState(false);
   const [faseMag, setFaseMag] = useState<FaseMag>("verificando");
   const [progressoMag, setProgressoMag] = useState({ atual: 0, total: 0, mensagem: "" });
@@ -139,7 +140,10 @@ export default function Inadimplentes() {
     setFaseMag("verificando");
     setModalMagAberto(true);
     try {
-      const r = await fetch(`${MAG_SERVER}/ping`, { signal: AbortSignal.timeout(3000) });
+      const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 3000);
+    const r = await fetch(`${MAG_SERVER}/ping`, { signal: ctrl.signal });
+    clearTimeout(t);
       const json = await r.json();
       if (json.loginStatus === "logado") setFaseMag("pronto");
       else if (json.loginStatus === "aguardando") setFaseMag("aguardando_login");
