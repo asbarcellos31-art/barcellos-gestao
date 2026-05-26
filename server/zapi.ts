@@ -217,7 +217,8 @@ export async function enviarMidiaEvolution(
   mediaUrl: string,
   mediaType: "image" | "video" | "document" | "audio",
   caption: string,
-  instancia: string = INSTANCIAS.campanhas
+  instancia: string = INSTANCIAS.campanhas,
+  nomeArquivo?: string
 ): Promise<{ sucesso: boolean; erro?: string }> {
   const numero = formatarTelefone(telefone);
   if (numero.length < 12) {
@@ -244,7 +245,7 @@ export async function enviarMidiaEvolution(
         audio: "mp3",
       };
       const mimetype = mimetypeMap[mediaType] || "application/octet-stream";
-      const fileName = `arquivo.${extMap[mediaType] || "bin"}`;
+      const fileName = nomeArquivo || `arquivo.${extMap[mediaType] || "bin"}`;
 
       const resp = await fetch(url, {
         method: "POST",

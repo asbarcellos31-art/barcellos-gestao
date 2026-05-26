@@ -571,7 +571,14 @@ export const whatsappRouter = router({
 
    // ── Disparo WhatsApp em massa para inadimplentes selecionados ────────────
   dispararInadimplentesWhatsapp: publicProcedure
-    .input(z.object({ cpfs: z.array(z.string()) }))
+    .input(z.object({
+      cpfs: z.array(z.string()),
+      boletos: z.array(z.object({
+        cpf: z.string(),
+        base64: z.string(),
+        nomeArquivo: z.string(),
+      })).optional(),
+    }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco indisponível");
@@ -604,7 +611,11 @@ export const whatsappRouter = router({
         input.cpfs
       );
 
-      const resultados: { nome: string; telefone: string; status: "ENVIADO" | "ERRO"; erro?: string }[] = [];
+      const boletoMap = new Map(
+        (input.boletos || []).map(b => [b.cpf, b])
+      );
+
+      const resultados: { nome: string; telefone: string; status: "ENVIADO" | "ERRO"; erro?: string; comBoleto?: boolean }[] = [];
 
       for (const item of (lista || [])) {
         const nome = item.nome || "Cliente";
@@ -614,7 +625,23 @@ export const whatsappRouter = router({
           continue;
         }
         const mensagem = mensagemTemplate.replace(/\{\{nome\}\}/g, nome.split(" ")[0]);
-        const resultado = await enviarMensagemEvolution(telefone, mensagem, INSTANCIAS.inadimplencia);
+        const boleto = boletoMap.get(item.cpf);
+        let resultado: { sucesso: boolean; erro?: string };
+
+        if (boleto) {
+          // Envia documento (boleto) com a mensagem como caption
+          resultado = await enviarMidiaEvolution(
+            telefone,
+            boleto.base64,
+            "document",
+            mensagem,
+            INSTANCIAS.inadimplencia,
+            boleto.nomeArquivo,
+          );
+        } else {
+          resultado = await enviarMensagemEvolution(telefone, mensagem, INSTANCIAS.inadimplencia);
+        }
+
         await registrarEnvioWhatsapp({
           nome,
           telefone: formatarTelefone(telefone),
@@ -623,7 +650,7 @@ export const whatsappRouter = router({
           status: resultado.sucesso ? "ENVIADO" : "ERRO",
           erro: resultado.erro,
         });
-        resultados.push({ nome, telefone, status: resultado.sucesso ? "ENVIADO" : "ERRO", erro: resultado.erro });
+        resultados.push({ nome, telefone, status: resultado.sucesso ? "ENVIADO" : "ERRO", erro: resultado.erro, comBoleto: !!boleto });
         await new Promise(r => setTimeout(r, 2000)); // 2s entre envios
       }
 

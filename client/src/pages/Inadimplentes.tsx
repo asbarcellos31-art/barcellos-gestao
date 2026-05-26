@@ -21,7 +21,7 @@ import { toast } from "sonner";
 import {
   Upload, Trash2, AlertTriangle, CheckCircle2, Clock, DollarSign,
   Users, Phone, Search, Plus, Pencil, X, FileText, TrendingUp,
-  CreditCard, Banknote, ChevronDown, ChevronUp, Download, Mail, RefreshCw, MessageSquare,
+  CreditCard, Banknote, ChevronDown, ChevronUp, Download, Mail, RefreshCw, MessageSquare, Paperclip,
 } from "lucide-react";
 
 const MESES = [
@@ -114,6 +114,41 @@ export default function Inadimplentes() {
   // Disparo WhatsApp
   const [modalDisparoWA, setModalDisparoWA] = useState(false);
   const [resultadoDisparoWA, setResultadoDisparoWA] = useState<any>(null);
+
+  // Boletos por cliente (key = CPF ou ID string)
+  const [boletosPorCliente, setBoletosPorCliente] = useState<Map<string, { base64: string; nomeArquivo: string }>>(new Map());
+  const [clienteSelecionadoParaBoleto, setClienteSelecionadoParaBoleto] = useState<string | null>(null);
+  const boletoFileRef = useRef<HTMLInputElement>(null);
+
+  function fileToBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        resolve(result.split(",")[1]); // remove prefixo data:...;base64,
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleBoletoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !clienteSelecionadoParaBoleto) return;
+    try {
+      const base64 = await fileToBase64(file);
+      setBoletosPorCliente(prev => {
+        const next = new Map(prev);
+        next.set(clienteSelecionadoParaBoleto, { base64, nomeArquivo: file.name });
+        return next;
+      });
+      toast.success(`Boleto "${file.name}" anexado!`);
+    } catch {
+      toast.error("Erro ao ler o arquivo PDF");
+    } finally {
+      if (boletoFileRef.current) boletoFileRef.current.value = "";
+    }
+  }
 
   const utils = trpc.useUtils();
 
@@ -680,6 +715,7 @@ export default function Inadimplentes() {
                   {uploading ? "Importando..." : "Selecionar Arquivo Excel"}
                 </Button>
                 <input ref={fileRef} type="file" accept=".xlsx,.xls,.xlsm" className="hidden" onChange={handleUpload} />
+                <input ref={boletoFileRef} type="file" accept=".pdf" className="hidden" onChange={handleBoletoUpload} />
                 <span className="text-xs text-muted-foreground">Formato: .xlsx, .xls, .xlsm</span>
               </div>
 
@@ -928,6 +964,18 @@ export default function Inadimplentes() {
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className={`h-7 w-7 p-0 ${boletosPorCliente.has(itemKey) ? "text-green-600 hover:text-green-700" : "text-muted-foreground hover:text-blue-600"}`}
+                                title={boletosPorCliente.has(itemKey) ? `Boleto: ${boletosPorCliente.get(itemKey)!.nomeArquivo} (clique para trocar)` : "Anexar boleto PDF"}
+                                onClick={() => {
+                                  setClienteSelecionadoParaBoleto(itemKey);
+                                  boletoFileRef.current?.click();
+                                }}
+                              >
+                                <Paperclip className="w-3.5 h-3.5" />
+                              </Button>
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -1430,26 +1478,44 @@ export default function Inadimplentes() {
               Disparar WhatsApp de Cobrança
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              Serão enviadas mensagens de cobrança via WhatsApp para <strong>{selecionados.size}</strong> inadimplente{selecionados.size > 1 ? "s" : ""} selecionado{selecionados.size > 1 ? "s" : ""}.
-            </p>
-            <div className="rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-800">
-              <p className="font-semibold mb-1">📱 Mensagem que será enviada:</p>
-              <p className="text-xs whitespace-pre-line">Olá, [Nome]! Identificamos uma pendência financeira em seu nome junto à Barcellos Seguros. Por favor, entre em contato para regularizar sua situação: 📞 (48) 3372-6890</p>
-              <p className="text-xs text-green-600 mt-1">Personalize a mensagem em WhatsApp Marketing → Automações</p>
-            </div>
-            <div className="rounded-lg bg-yellow-50 border border-yellow-200 p-3 text-xs text-yellow-800">
-              ⚠️ Apenas inadimplentes com telefone cadastrado receberão a mensagem. Certifique-se de que a Z-API está configurada em Configurações → Integrações.
-            </div>
-          </div>
+          {(() => {
+            const comBoleto = Array.from(selecionados).filter(k => boletosPorCliente.has(k)).length;
+            return (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Serão enviadas mensagens de cobrança via WhatsApp para <strong>{selecionados.size}</strong> inadimplente{selecionados.size > 1 ? "s" : ""} selecionado{selecionados.size > 1 ? "s" : ""}.
+                </p>
+                {comBoleto > 0 && (
+                  <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 text-sm text-blue-800 flex items-center gap-2">
+                    <Paperclip className="w-4 h-4 shrink-0" />
+                    <span><strong>{comBoleto}</strong> cliente{comBoleto > 1 ? "s" : ""} receberá{comBoleto > 1 ? "ão" : ""} o boleto PDF anexado junto à mensagem.</span>
+                  </div>
+                )}
+                <div className="rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-800">
+                  <p className="font-semibold mb-1">📱 Mensagem que será enviada:</p>
+                  <p className="text-xs whitespace-pre-line">Olá, [Nome]! Identificamos uma pendência financeira em seu nome junto à Barcellos Seguros. Por favor, entre em contato para regularizar sua situação: 📞 (48) 3372-6890</p>
+                  <p className="text-xs text-green-600 mt-1">Personalize a mensagem em WhatsApp Marketing → Automações</p>
+                </div>
+                <div className="rounded-lg bg-yellow-50 border border-yellow-200 p-3 text-xs text-yellow-800">
+                  ⚠️ Apenas inadimplentes com telefone cadastrado receberão a mensagem. Certifique-se de que a Z-API está configurada em Configurações → Integrações.
+                </div>
+              </div>
+            );
+          })()}
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalDisparoWA(false)}>Cancelar</Button>
             <Button
               className="gap-2 bg-green-600 hover:bg-green-700 text-white"
               onClick={() => {
                 setModalDisparoWA(false);
-                dispararWhatsapp.mutate({ cpfs: Array.from(selecionados) });
+                const boletosParaEnviar = Array.from(selecionados)
+                  .filter(k => boletosPorCliente.has(k))
+                  .map(k => ({
+                    cpf: k,
+                    base64: boletosPorCliente.get(k)!.base64,
+                    nomeArquivo: boletosPorCliente.get(k)!.nomeArquivo,
+                  }));
+                dispararWhatsapp.mutate({ cpfs: Array.from(selecionados), boletos: boletosParaEnviar });
                 toast.info(`Disparando WhatsApp para ${selecionados.size} inadimplente${selecionados.size > 1 ? "s" : ""}...`);
               }}
               disabled={dispararWhatsapp.isPending}
