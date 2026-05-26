@@ -1090,8 +1090,8 @@ export default function Inadimplentes() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className={`h-7 w-7 p-0 ${(boletosPorCliente.has(itemKey) || (item as any).temBoleto) ? "text-green-600 hover:text-green-700" : "text-muted-foreground hover:text-blue-600"}`}
-                                title={boletosPorCliente.has(itemKey) ? `Boleto: ${boletosPorCliente.get(itemKey)!.nomeArquivo} (clique para trocar)` : (item as any).temBoleto ? "Boleto MAG no banco (clique para substituir)" : "Anexar boleto PDF"}
+                                className={`h-7 w-7 p-0 ${(boletosPorCliente.has(itemKey) || !!(item as any).boleto_nome) ? "text-green-600 hover:text-green-700" : "text-muted-foreground hover:text-blue-600"}`}
+                                title={boletosPorCliente.has(itemKey) ? `Boleto: ${boletosPorCliente.get(itemKey)!.nomeArquivo} (clique para trocar)` : (item as any).boleto_nome ? `Boleto MAG: ${(item as any).boleto_nome} (clique para substituir)` : "Anexar boleto PDF"}
                                 onClick={() => {
                                   setClienteSelecionadoParaBoleto(itemKey);
                                   boletoFileRef.current?.click();
