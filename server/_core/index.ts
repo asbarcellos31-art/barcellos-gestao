@@ -12,6 +12,7 @@ import uploadRouter from "../uploadRouter";
 import emailMarketingRouter from "../emailMarketingRouter";
 import emailAutomacaoRouter from "../emailAutomacaoRouter";
 import inadimplentesEnriquecerRouter from "../inadimplentesEnriquecerRouter";
+import { magBoletosExpressRouter } from "../magBoletosRouter";
 import { garantirAdminPadrao } from "../configuracoesDb";
 import { verificarEDisparar } from "../emailAutomacao";
 
@@ -101,6 +102,7 @@ async function startServer() {
   app.use("/api", emailMarketingRouter);
   app.use("/api", emailAutomacaoRouter);
   app.use("/api", inadimplentesEnriquecerRouter);
+  app.use("/api", magBoletosExpressRouter);
 
   // tRPC API
   app.use(

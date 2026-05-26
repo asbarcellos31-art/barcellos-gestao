@@ -6,11 +6,13 @@
  * Como usar:
  *
  *   Setup (uma única vez — na raiz do projeto):
- *     npm install cors playwright
+ *     cd scripts && npm install
  *     npx playwright install chromium
  *
- *   Para usar (toda vez):
- *     node scripts/mag-boletos-server.js
+ *   Toda vez que for usar:
+ *     1. node scripts/mag-boletos-server.js
+ *     2. ngrok http 4040          (ou ngrok http --url=sua-url-fixa 4040)
+ *     3. Cole a URL do ngrok no campo do modal "Buscar Boletos MAG" no sistema
  */
 
 const express = require("express");
@@ -19,7 +21,7 @@ const path    = require("path");
 const fs      = require("fs");
 const os      = require("os");
 
-const PORT         = 3001;
+const PORT         = 4040;
 const DOWNLOAD_DIR = path.join(os.tmpdir(), "mag-boletos");
 const MAG_URL      = "https://plataformadosprodutores.mag.com.br/s/";
 
@@ -28,26 +30,29 @@ let browser     = null;
 let context     = null;
 let mainPage    = null;
 let loginStatus = "aguardando"; // "aguardando" | "logado"
-const jobs      = new Map();
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
 if (!fs.existsSync(DOWNLOAD_DIR)) fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
 
 const app = express();
-app.use(cors({
-  origin: ["https://app.barcellosseguros.com.br", "http://localhost:5173", "http://localhost:3000"],
-}));
+app.use(cors({ origin: "*" }));
 app.use(express.json({ limit: "50mb" }));
 
-// ── Endpoints ─────────────────────────────────────────────────────────────────
+// ── Endpoints de login (chamados diretamente pelo browser do usuário) ─────────
 
+// Verifica se o servidor está rodando e qual o status do login
+app.get("/status", (_req, res) => {
+  res.json({ ok: true, logado: loginStatus === "logado" });
+});
+
+// Compatibilidade com nome antigo
 app.get("/ping", (_req, res) => {
   res.json({ ok: true, loginStatus });
 });
 
+// Abre o Chrome com o portal MAG para o usuário fazer login
 app.post("/iniciar-sessao", async (_req, res) => {
   try {
-    // Se browser já está aberto e vivo, apenas redireciona para o portal
     if (browser && mainPage) {
       try {
         await mainPage.evaluate(() => document.title);
@@ -76,49 +81,36 @@ app.post("/iniciar-sessao", async (_req, res) => {
   }
 });
 
+// Polling do frontend para saber se o login foi concluído
 app.get("/status-login", (_req, res) => {
   res.json({ status: loginStatus });
 });
 
-app.post("/iniciar-busca", async (req, res) => {
-  const { cpfs } = req.body;
-  if (!Array.isArray(cpfs) || cpfs.length === 0)
+// ── Endpoint de busca (chamado pelo Railway via ngrok) ────────────────────────
+
+app.post("/buscar-boletos", async (req, res) => {
+  const { jobId, cpfs, callbackUrl, apiKey } = req.body;
+
+  if (!Array.isArray(cpfs) || cpfs.length === 0) {
     return res.status(400).json({ erro: "Lista de CPFs inválida" });
-  if (loginStatus !== "logado")
-    return res.status(400).json({ erro: "Faça login no portal MAG primeiro" });
-
-  const jobId = Date.now().toString();
-  jobs.set(jobId, { cpfs, status: "rodando", eventos: [], sseClients: [] });
-
-  processarBoletos(jobId, cpfs).catch((err) => {
-    console.error("[MAG] Erro fatal no processamento:", err.message);
-    emitir(jobId, "erro_fatal", { mensagem: err.message });
-    jobs.get(jobId).status = "erro";
-  });
-
-  res.json({ jobId });
-});
-
-app.get("/progresso/:jobId", (req, res) => {
-  const job = jobs.get(req.params.jobId);
-  if (!job) return res.status(404).json({ erro: "Job não encontrado" });
-
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.flushHeaders();
-
-  // Replay dos eventos já ocorridos (para cliente que conectou tarde)
-  for (const ev of job.eventos) {
-    res.write(`event: ${ev.tipo}\ndata: ${JSON.stringify(ev.dados)}\n\n`);
+  }
+  if (!jobId || !callbackUrl || !apiKey) {
+    return res.status(400).json({ erro: "jobId, callbackUrl e apiKey são obrigatórios" });
+  }
+  if (loginStatus !== "logado") {
+    return res.status(400).json({ erro: "sem_sessao" });
   }
 
-  if (job.status !== "rodando") { res.end(); return; }
+  // Responde imediatamente — processamento é assíncrono
+  res.json({ ok: true, total: cpfs.length });
 
-  job.sseClients.push(res);
-  req.on("close", () => {
-    job.sseClients = job.sseClients.filter((c) => c !== res);
+  // Processa em background
+  processarBoletos(jobId, cpfs, callbackUrl, apiKey).catch((err) => {
+    console.error("[MAG] Erro fatal:", err.message);
+    enviarProgresso(callbackUrl, apiKey, {
+      jobId, tipo: "erro_fatal", motivo: err.message,
+      atual: 0, total: cpfs.length, mensagem: "Erro fatal: " + err.message,
+    }).catch(() => {});
   });
 });
 
@@ -129,7 +121,6 @@ function monitorarLogin() {
     if (!mainPage) { clearInterval(t); return; }
     try {
       const url = mainPage.url();
-      // Sai da tela de login quando a URL não contém mais "/login" E existe algum elemento de nav
       if (url && !url.includes("/login")) {
         const temNav = await mainPage.evaluate(() =>
           !!(document.querySelector("nav") ||
@@ -147,45 +138,62 @@ function monitorarLogin() {
   }, 2000);
 }
 
-function emitir(jobId, tipo, dados) {
-  const job = jobs.get(jobId);
-  if (!job) return;
-  job.eventos.push({ tipo, dados });
-  for (const c of job.sseClients) {
-    try { c.write(`event: ${tipo}\ndata: ${JSON.stringify(dados)}\n\n`); } catch {}
+async function enviarCallback(url, apiKey, body) {
+  try {
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": apiKey },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      console.warn(`[MAG] Callback ${url} retornou ${resp.status}`);
+    }
+  } catch (err) {
+    console.warn("[MAG] Falha no callback:", err.message);
   }
 }
 
-async function processarBoletos(jobId, cpfs) {
+async function enviarProgresso(callbackUrl, apiKey, dados) {
+  return enviarCallback(`${callbackUrl}/progresso`, apiKey, dados);
+}
+
+async function processarBoletos(jobId, cpfs, callbackUrl, apiKey) {
   for (let i = 0; i < cpfs.length; i++) {
     const cpf = cpfs[i];
-    emitir(jobId, "progresso", {
-      atual: i + 1, total: cpfs.length, cpf,
+
+    await enviarProgresso(callbackUrl, apiKey, {
+      jobId, atual: i + 1, total: cpfs.length, cpf, tipo: "progresso",
       mensagem: `Processando ${i + 1}/${cpfs.length} — CPF ${cpf}`,
     });
 
     try {
       const res = await buscarBoletoPorCpf(cpf);
+
       if (res.sucesso) {
-        emitir(jobId, "boleto", { cpf, base64: res.base64, nomeArquivo: res.nomeArquivo });
-        emitir(jobId, "progresso", {
-          atual: i + 1, total: cpfs.length, cpf,
+        // Envia o boleto ao Railway
+        await enviarCallback(`${callbackUrl}/boleto`, apiKey, {
+          jobId, cpf, base64: res.base64, nomeArquivo: res.nomeArquivo,
+        });
+        await enviarProgresso(callbackUrl, apiKey, {
+          jobId, atual: i + 1, total: cpfs.length, cpf, tipo: "progresso",
           mensagem: `✓ ${i + 1}/${cpfs.length} — ${cpf} — boleto baixado`,
         });
+        console.log(`[MAG] ✓ ${cpf} — boleto enviado`);
       } else {
-        emitir(jobId, "falha", { cpf, motivo: res.erro });
-        emitir(jobId, "progresso", {
-          atual: i + 1, total: cpfs.length, cpf,
-          mensagem: `✗ ${i + 1}/${cpfs.length} — ${cpf} — ${res.erro}`,
+        await enviarProgresso(callbackUrl, apiKey, {
+          jobId, atual: i + 1, total: cpfs.length, cpf, tipo: "falha",
+          motivo: res.erro, mensagem: `✗ ${i + 1}/${cpfs.length} — ${cpf} — ${res.erro}`,
         });
+        console.log(`[MAG] ✗ ${cpf} — ${res.erro}`);
       }
     } catch (err) {
-      emitir(jobId, "falha", { cpf, motivo: err.message });
-      emitir(jobId, "progresso", {
-        atual: i + 1, total: cpfs.length, cpf,
-        mensagem: `✗ ${i + 1}/${cpfs.length} — ${cpf} — ${err.message}`,
+      await enviarProgresso(callbackUrl, apiKey, {
+        jobId, atual: i + 1, total: cpfs.length, cpf, tipo: "falha",
+        motivo: err.message, mensagem: `✗ ${i + 1}/${cpfs.length} — ${cpf} — ${err.message}`,
       });
-      // Tenta fechar abas extras que possam ter ficado abertas
+      console.log(`[MAG] ✗ ${cpf} — ${err.message}`);
+
+      // Fecha abas extras que possam ter ficado abertas
       try {
         for (const p of context.pages()) {
           if (p !== mainPage) await p.close().catch(() => {});
@@ -196,14 +204,13 @@ async function processarBoletos(jobId, cpfs) {
     if (i < cpfs.length - 1) await sleep(1500);
   }
 
-  const job = jobs.get(jobId);
-  job.status = "concluido";
-  emitir(jobId, "concluido", {
-    total: cpfs.length,
-    sucessos: job.eventos.filter((e) => e.tipo === "boleto").length,
-    falhas:   job.eventos.filter((e) => e.tipo === "falha").length,
-    listaFalhas: job.eventos.filter((e) => e.tipo === "falha").map((e) => e.dados),
+  // Sinaliza conclusão
+  await enviarProgresso(callbackUrl, apiKey, {
+    jobId, tipo: "concluido",
+    atual: cpfs.length, total: cpfs.length,
+    mensagem: "Processamento concluído",
   });
+  console.log(`[MAG] Job ${jobId} concluído`);
 }
 
 async function buscarBoletoPorCpf(cpf) {
@@ -290,7 +297,6 @@ async function buscarBoletoPorCpf(cpf) {
     novaAba.click('button:has-text("Gerar boleto"), button:has-text("Gerar Boleto"), button:has-text("Gerar")', { timeout: 10000 }),
   ]);
 
-  // Salva o arquivo temporariamente
   const nomeArquivo = `${cpfLimpo}-${competencias || "boleto"}.pdf`;
   const filePath = path.join(DOWNLOAD_DIR, nomeArquivo);
   await download.saveAs(filePath);
@@ -299,7 +305,7 @@ async function buscarBoletoPorCpf(cpf) {
   // ── 11. Converte para base64 ──────────────────────────────────────────────
   const buffer = fs.readFileSync(filePath);
   const base64 = buffer.toString("base64");
-  fs.unlink(filePath, () => {}); // limpa arquivo temporário
+  fs.unlink(filePath, () => {});
 
   return { sucesso: true, base64, nomeArquivo };
 }
@@ -313,8 +319,10 @@ app.listen(PORT, () => {
   console.log("║     Barcellos Seguros — Buscador de Boletos MAG        ║");
   console.log("╚════════════════════════════════════════════════════════╝");
   console.log(`\n✓ Servidor ativo em http://localhost:${PORT}`);
-  console.log("\n→ Abra https://app.barcellosseguros.com.br");
-  console.log("→ Inadimplentes → selecione clientes → botão 📥 MAG\n");
+  console.log("\n→ Em outro terminal, execute:");
+  console.log("  ngrok http 4040");
+  console.log("\n→ Cole a URL do ngrok (https://xxxx.ngrok-free.app) no modal do sistema");
+  console.log("→ Inadimplentes → selecione clientes → botão MAG\n");
 });
 
 process.on("SIGINT", async () => {

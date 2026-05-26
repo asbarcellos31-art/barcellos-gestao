@@ -1,5 +1,5 @@
 import AppLayout from "@/components/AppLayout";
-import { useState, useRef, useMemo, useCallback } from "react";
+import { useState, useRef, useMemo, useCallback, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAno } from "@/contexts/AnoContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -120,17 +120,26 @@ export default function Inadimplentes() {
   const [instanciaWA, setInstanciaWA] = useState<string>("whatsapp-1");
 
   // ── Busca MAG ────────────────────────────────────────────────────────────
-  const MAG_SERVER = "http://localhost:3001";
+  const MAG_LOCAL = "http://localhost:4040";
+
+  // ngrokUrl persistido em localStorage para não redigitar a cada sessão
+  const [ngrokUrl, setNgrokUrl] = useState<string>(() =>
+    typeof window !== "undefined" ? localStorage.getItem("mag_ngrok_url") || "" : ""
+  );
+  function salvarNgrokUrl(v: string) {
+    setNgrokUrl(v);
+    localStorage.setItem("mag_ngrok_url", v);
+  }
+
   const [modalMagAberto, setModalMagAberto] = useState(false);
   const [faseMag, setFaseMag] = useState<FaseMag>("verificando");
   const [progressoMag, setProgressoMag] = useState({ atual: 0, total: 0, mensagem: "" });
   const [sucessosMag, setSucessosMag] = useState(0);
   const [falhasMag, setFalhasMag] = useState<{ cpf: string; motivo: string }[]>([]);
-  const sseRef = useRef<EventSource | null>(null);
+  const [jobIdMag, setJobIdMag] = useState<string | null>(null);
 
   const fecharModalMag = useCallback(() => {
-    sseRef.current?.close();
-    sseRef.current = null;
+    setJobIdMag(null);
     setModalMagAberto(false);
     setFaseMag("verificando");
     setProgressoMag({ atual: 0, total: 0, mensagem: "" });
@@ -141,12 +150,11 @@ export default function Inadimplentes() {
     setModalMagAberto(true);
     try {
       const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 3000);
-    const r = await fetch(`${MAG_SERVER}/ping`, { signal: ctrl.signal });
-    clearTimeout(t);
+      const t = setTimeout(() => ctrl.abort(), 3000);
+      const r = await fetch(`${MAG_LOCAL}/status`, { signal: ctrl.signal });
+      clearTimeout(t);
       const json = await r.json();
-      if (json.loginStatus === "logado") setFaseMag("pronto");
-      else if (json.loginStatus === "aguardando") setFaseMag("aguardando_login");
+      if (json.logado) setFaseMag("pronto");
       else setFaseMag("aguardando_login");
     } catch {
       setFaseMag("sem_servidor");
@@ -155,7 +163,7 @@ export default function Inadimplentes() {
 
   async function abrirPortalMag() {
     try {
-      await fetch(`${MAG_SERVER}/iniciar-sessao`, { method: "POST" });
+      await fetch(`${MAG_LOCAL}/iniciar-sessao`, { method: "POST" });
       setFaseMag("aguardando_login");
       iniciarPollingLogin();
     } catch {
@@ -166,7 +174,7 @@ export default function Inadimplentes() {
   function iniciarPollingLogin() {
     const t = setInterval(async () => {
       try {
-        const r = await fetch(`${MAG_SERVER}/status-login`);
+        const r = await fetch(`${MAG_LOCAL}/status-login`);
         const json = await r.json();
         if (json.status === "logado") {
           clearInterval(t);
@@ -176,73 +184,49 @@ export default function Inadimplentes() {
     }, 2500);
   }
 
+  const iniciarBuscaMagMutation = trpc.mag.iniciarBusca.useMutation({
+    onSuccess: ({ jobId }) => {
+      setJobIdMag(jobId);
+      setFaseMag("processando");
+      setProgressoMag({ atual: 0, total: cpfsMagSelecionados.length, mensagem: "Iniciando..." });
+      setSucessosMag(0);
+      setFalhasMag([]);
+    },
+    onError: (err) => toast.error("Erro ao iniciar busca: " + err.message),
+  });
+
   async function iniciarBuscaMag() {
-    const cpfsParaBuscar = Array.from(selecionados).filter(k => /^\d/.test(k.replace(/\D/g, "")));
-    if (cpfsParaBuscar.length === 0) {
+    if (cpfsMagSelecionados.length === 0) {
       toast.error("Nenhum cliente com CPF selecionado");
       return;
     }
-    try {
-      const r = await fetch(`${MAG_SERVER}/iniciar-busca`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cpfs: cpfsParaBuscar }),
-      });
-      const { jobId, erro } = await r.json();
-      if (erro) { toast.error(erro); return; }
-
-      setFaseMag("processando");
-      setProgressoMag({ atual: 0, total: cpfsParaBuscar.length, mensagem: "Iniciando..." });
-      setSucessosMag(0);
-      setFalhasMag([]);
-
-      const source = new EventSource(`${MAG_SERVER}/progresso/${jobId}`);
-      sseRef.current = source;
-
-      source.addEventListener("progresso", (e) => {
-        const d = JSON.parse(e.data);
-        setProgressoMag({ atual: d.atual, total: d.total, mensagem: d.mensagem });
-      });
-
-      source.addEventListener("boleto", (e) => {
-        const { cpf, base64, nomeArquivo } = JSON.parse(e.data);
-        setBoletosPorCliente((prev) => {
-          const next = new Map(prev);
-          next.set(cpf, { base64, nomeArquivo });
-          return next;
-        });
-        setSucessosMag((n) => n + 1);
-      });
-
-      source.addEventListener("falha", (e) => {
-        const d = JSON.parse(e.data);
-        setFalhasMag((prev) => [...prev, d]);
-      });
-
-      source.addEventListener("concluido", (e) => {
-        source.close();
-        sseRef.current = null;
-        setFaseMag("concluido");
-        const d = JSON.parse(e.data);
-        if (d.sucessos > 0) toast.success(`${d.sucessos} boleto${d.sucessos > 1 ? "s" : ""} baixado${d.sucessos > 1 ? "s" : ""} com sucesso!`);
-      });
-
-      source.addEventListener("erro_fatal", (e) => {
-        source.close();
-        sseRef.current = null;
-        const d = JSON.parse(e.data);
-        toast.error("Erro no processamento: " + d.mensagem);
-        setFaseMag("pronto");
-      });
-
-      source.onerror = () => {
-        source.close();
-        sseRef.current = null;
-      };
-    } catch (err: any) {
-      toast.error("Erro ao iniciar busca: " + err.message);
+    if (!ngrokUrl.trim()) {
+      toast.error("Cole a URL do ngrok antes de iniciar");
+      return;
     }
+    iniciarBuscaMagMutation.mutate({ cpfs: cpfsMagSelecionados, ngrokUrl: ngrokUrl.trim() });
   }
+
+  // Polling do job via tRPC (a cada 2s enquanto jobIdMag estiver definido)
+  const { data: magJobStatus } = trpc.mag.jobStatus.useQuery(
+    { jobId: jobIdMag || "" },
+    { enabled: !!jobIdMag, refetchInterval: !!jobIdMag ? 2000 : false }
+  );
+
+  useEffect(() => {
+    if (!magJobStatus || !jobIdMag) return;
+    setProgressoMag({ atual: magJobStatus.atual, total: magJobStatus.total, mensagem: magJobStatus.mensagem });
+    setSucessosMag(magJobStatus.sucessos);
+    setFalhasMag(magJobStatus.falhas);
+    if (magJobStatus.status !== "rodando") {
+      setFaseMag("concluido");
+      setJobIdMag(null);
+      utils.inadimplentes.listar.invalidate();
+      if (magJobStatus.sucessos > 0) {
+        toast.success(`${magJobStatus.sucessos} boleto${magJobStatus.sucessos > 1 ? "s" : ""} baixado${magJobStatus.sucessos > 1 ? "s" : ""} com sucesso!`);
+      }
+    }
+  }, [magJobStatus]);
 
   // CPFs disponíveis para busca MAG (clientes selecionados que têm CPF)
   const cpfsMagSelecionados = useMemo(
@@ -1106,8 +1090,8 @@ export default function Inadimplentes() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className={`h-7 w-7 p-0 ${boletosPorCliente.has(itemKey) ? "text-green-600 hover:text-green-700" : "text-muted-foreground hover:text-blue-600"}`}
-                                title={boletosPorCliente.has(itemKey) ? `Boleto: ${boletosPorCliente.get(itemKey)!.nomeArquivo} (clique para trocar)` : "Anexar boleto PDF"}
+                                className={`h-7 w-7 p-0 ${(boletosPorCliente.has(itemKey) || (item as any).temBoleto) ? "text-green-600 hover:text-green-700" : "text-muted-foreground hover:text-blue-600"}`}
+                                title={boletosPorCliente.has(itemKey) ? `Boleto: ${boletosPorCliente.get(itemKey)!.nomeArquivo} (clique para trocar)` : (item as any).temBoleto ? "Boleto MAG no banco (clique para substituir)" : "Anexar boleto PDF"}
                                 onClick={() => {
                                   setClienteSelecionadoParaBoleto(itemKey);
                                   boletoFileRef.current?.click();
@@ -1761,18 +1745,13 @@ export default function Inadimplentes() {
                 {faseMag === "sem_servidor" && (
                   <div className="space-y-3">
                     <div className="flex items-center gap-2 text-sm text-red-600">
-                      <WifiOff className="w-4 h-4" /> Servidor local não encontrado
+                      <WifiOff className="w-4 h-4" /> Servidor local não encontrado (porta 4040)
                     </div>
                     <div className="rounded-lg bg-muted p-4 space-y-2">
-                      <p className="text-xs font-semibold text-muted-foreground uppercase">Execute no terminal (uma única vez para instalar):</p>
-                      <code className="block text-xs bg-black text-green-400 rounded p-2 select-all">
-                        npm install playwright express cors<br />
-                        npx playwright install chromium
-                      </code>
-                      <p className="text-xs font-semibold text-muted-foreground uppercase mt-2">Depois, toda vez que for usar:</p>
-                      <code className="block text-xs bg-black text-green-400 rounded p-2 select-all">
-                        node scripts/mag-boletos-server.js
-                      </code>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase">Setup (uma única vez):</p>
+                      <code className="block text-xs bg-black text-green-400 rounded p-2 select-all whitespace-pre">cd scripts && npm install{"\n"}npx playwright install chromium</code>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase mt-2">Toda vez que for usar (2 terminais):</p>
+                      <code className="block text-xs bg-black text-green-400 rounded p-2 select-all whitespace-pre">node scripts/mag-boletos-server.js{"\n"}ngrok http 4040</code>
                     </div>
                     <Button size="sm" variant="outline" onClick={abrirModalMag} className="gap-2">
                       <RefreshCw className="w-3 h-3" /> Verificar novamente
@@ -1810,6 +1789,20 @@ export default function Inadimplentes() {
                 <div className="flex items-center gap-2 text-sm text-green-600">
                   <CheckCircle2 className="w-4 h-4" /> Logado no portal MAG
                 </div>
+
+                {/* URL ngrok */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase">URL do ngrok</label>
+                  <input
+                    type="url"
+                    value={ngrokUrl}
+                    onChange={(e) => salvarNgrokUrl(e.target.value)}
+                    placeholder="https://xxxx.ngrok-free.app"
+                    className="w-full text-sm border rounded px-3 py-1.5 bg-background focus:outline-none focus:ring-2 focus:ring-orange-400"
+                  />
+                  <p className="text-xs text-muted-foreground">Cole a URL exibida pelo <code>ngrok http 4040</code> — salva automaticamente.</p>
+                </div>
+
                 <div className="rounded-lg bg-muted/50 border p-3">
                   <p className="text-sm font-medium mb-2">{cpfsMagSelecionados.length} cliente{cpfsMagSelecionados.length !== 1 ? "s" : ""} na fila:</p>
                   <div className="max-h-32 overflow-y-auto space-y-1">
@@ -1824,8 +1817,13 @@ export default function Inadimplentes() {
                     })}
                   </div>
                 </div>
-                <Button onClick={iniciarBuscaMag} className="w-full gap-2 bg-orange-500 hover:bg-orange-600" disabled={cpfsMagSelecionados.length === 0}>
-                  <FileDown className="w-4 h-4" /> Iniciar busca dos boletos
+                <Button
+                  onClick={iniciarBuscaMag}
+                  className="w-full gap-2 bg-orange-500 hover:bg-orange-600"
+                  disabled={cpfsMagSelecionados.length === 0 || !ngrokUrl.trim() || iniciarBuscaMagMutation.isPending}
+                >
+                  <FileDown className="w-4 h-4" />
+                  {iniciarBuscaMagMutation.isPending ? "Iniciando..." : "Iniciar busca dos boletos"}
                 </Button>
               </div>
             )}

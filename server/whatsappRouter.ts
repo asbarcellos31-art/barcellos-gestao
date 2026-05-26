@@ -626,7 +626,25 @@ export const whatsappRouter = router({
           continue;
         }
         const mensagem = mensagemTemplate.replace(/\{\{nome\}\}/g, nome.split(" ")[0]);
-        const boleto = boletoMap.get(item.cpf);
+        let boleto = boletoMap.get(item.cpf);
+
+        // Fallback: busca boleto no banco se não foi enviado no input
+        if (!boleto && item.cpf) {
+          const cpfLimpo = (item.cpf as string).replace(/\D/g, "");
+          const [dbRow] = await rawQuery<any>(
+            `SELECT boleto_pdf, boleto_nome FROM inadimplentes
+             WHERE REGEXP_REPLACE(cpf, '[^0-9]', '') = ? AND boleto_pdf IS NOT NULL
+             ORDER BY updatedAt DESC LIMIT 1`,
+            [cpfLimpo]
+          );
+          if (dbRow?.boleto_pdf) {
+            boleto = {
+              cpf: item.cpf,
+              base64: dbRow.boleto_pdf,
+              nomeArquivo: dbRow.boleto_nome || `boleto-${cpfLimpo}.pdf`,
+            };
+          }
+        }
         let resultado: { sucesso: boolean; erro?: string };
 
         if (boleto) {

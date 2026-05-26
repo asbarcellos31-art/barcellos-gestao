@@ -58,6 +58,7 @@ import { COOKIE_NAME } from "@shared/const";
 import { inadimplentesDisparoRouter } from "./inadimplentesDisparoRouter";
 import { enviarAniversarioIndividual } from "./emailAutomacao";
 import { whatsappRouter } from "./whatsappRouter";
+import { magTrpcRouter } from "./magBoletosRouter";
 import { obterRelatorio, salvarRelatorio, obterMetricasMes, listarRelatorios } from "./relatorioExecutivoDb";
 import { buscarDadosMensagemDiaria } from "./mensagemDiariaDb";
 import { listarLembretes, criarLembrete, toggleLembrete, excluirLembrete, atualizarLembrete } from "./lembretesDb";
@@ -1073,6 +1074,7 @@ export const appRouter = router({
   }),
   inadimplentesDisparo: inadimplentesDisparoRouter,
   whatsapp: whatsappRouter,
+  mag: magTrpcRouter,
 
   lembretes: router({
     listar: publicProcedure

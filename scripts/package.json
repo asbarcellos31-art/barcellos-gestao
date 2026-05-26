@@ -1,0 +1,11 @@
+{
+  "name": "mag-boletos-server",
+  "version": "2.0.0",
+  "description": "Servidor local para busca automática de boletos no portal MAG",
+  "private": true,
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "playwright": "^1.49.0"
+  }
+}

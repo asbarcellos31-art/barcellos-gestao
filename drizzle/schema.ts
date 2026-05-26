@@ -131,6 +131,8 @@ export const inadimplentes = mysqlTable("inadimplentes", {
   observacao: text("observacao"),
   emailContato: varchar("emailContato", { length: 255 }),
   telefoneContato: varchar("telefoneContato", { length: 50 }),
+  boletoPdf: text("boleto_pdf"),
+  boletoNome: varchar("boleto_nome", { length: 255 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
