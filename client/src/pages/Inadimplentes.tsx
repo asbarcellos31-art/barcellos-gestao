@@ -122,15 +122,7 @@ export default function Inadimplentes() {
   // ── Busca MAG ────────────────────────────────────────────────────────────
   const MAG_LOCAL = "http://localhost:4040";
 
-  // ngrokUrl persistido em localStorage para não redigitar a cada sessão
-  const [ngrokUrl, setNgrokUrl] = useState<string>(() =>
-    typeof window !== "undefined" ? localStorage.getItem("mag_ngrok_url") || "" : ""
-  );
-  function salvarNgrokUrl(v: string) {
-    setNgrokUrl(v);
-    localStorage.setItem("mag_ngrok_url", v);
-  }
-
+  const [ngrokUrl, setNgrokUrl] = useState<string>("");
   const [modalMagAberto, setModalMagAberto] = useState(false);
   const [faseMag, setFaseMag] = useState<FaseMag>("verificando");
   const [progressoMag, setProgressoMag] = useState({ atual: 0, total: 0, mensagem: "" });
@@ -154,6 +146,7 @@ export default function Inadimplentes() {
       const r = await fetch(`${MAG_LOCAL}/status`, { signal: ctrl.signal });
       clearTimeout(t);
       const json = await r.json();
+      if (json.tunnelUrl) setNgrokUrl(json.tunnelUrl);
       if (json.logado) setFaseMag("pronto");
       else setFaseMag("aguardando_login");
     } catch {
@@ -178,6 +171,10 @@ export default function Inadimplentes() {
         const json = await r.json();
         if (json.status === "logado") {
           clearInterval(t);
+          // Busca URL do túnel atualizada
+          const s = await fetch(`${MAG_LOCAL}/status`);
+          const sj = await s.json();
+          if (sj.tunnelUrl) setNgrokUrl(sj.tunnelUrl);
           setFaseMag("pronto");
         }
       } catch { clearInterval(t); }
@@ -201,7 +198,7 @@ export default function Inadimplentes() {
       return;
     }
     if (!ngrokUrl.trim()) {
-      toast.error("Cole a URL do ngrok antes de iniciar");
+      toast.error("Servidor local não retornou URL do túnel — verifique o terminal");
       return;
     }
     iniciarBuscaMagMutation.mutate({ cpfs: cpfsMagSelecionados, ngrokUrl: ngrokUrl.trim() });

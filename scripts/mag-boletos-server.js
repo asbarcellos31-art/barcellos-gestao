@@ -26,13 +26,16 @@ const DOWNLOAD_DIR = path.join(os.tmpdir(), "mag-boletos");
 const MAG_URL      = "https://plataformadosprodutores.mag.com.br/s/";
 
 // ── Estado global ─────────────────────────────────────────────────────────────
-let browser     = null;
 let context     = null;
 let mainPage    = null;
 let loginStatus = "aguardando"; // "aguardando" | "logado"
+let tunnelUrl   = null;
+
+const USER_DATA_DIR = path.join(os.homedir(), ".mag-boletos-session");
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
 if (!fs.existsSync(DOWNLOAD_DIR)) fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
+if (!fs.existsSync(USER_DATA_DIR)) fs.mkdirSync(USER_DATA_DIR, { recursive: true });
 
 const app = express();
 app.use(cors({ origin: "*" }));
@@ -42,7 +45,7 @@ app.use(express.json({ limit: "50mb" }));
 
 // Verifica se o servidor está rodando e qual o status do login
 app.get("/status", (_req, res) => {
-  res.json({ ok: true, logado: loginStatus === "logado" });
+  res.json({ ok: true, logado: loginStatus === "logado", tunnelUrl });
 });
 
 // Compatibilidade com nome antigo
@@ -50,10 +53,11 @@ app.get("/ping", (_req, res) => {
   res.json({ ok: true, loginStatus });
 });
 
-// Abre o Chrome com o portal MAG para o usuário fazer login
+// Abre o Chrome com sessão persistente (não precisa logar de novo se já logou antes)
 app.post("/iniciar-sessao", async (_req, res) => {
   try {
-    if (browser && mainPage) {
+    // Se já tem contexto aberto e a página responde, só verifica o login
+    if (context && mainPage) {
       try {
         await mainPage.evaluate(() => document.title);
         loginStatus = "aguardando";
@@ -61,16 +65,26 @@ app.post("/iniciar-sessao", async (_req, res) => {
         monitorarLogin();
         return res.json({ ok: true });
       } catch {
-        browser = null; context = null; mainPage = null;
+        context = null; mainPage = null;
       }
     }
 
     const { chromium } = require("playwright");
-    browser = await chromium.launch({ headless: false, args: ["--start-maximized"] });
-    context = await browser.newContext({ acceptDownloads: true, viewport: null });
-    mainPage = await context.newPage();
-    loginStatus = "aguardando";
 
+    // Contexto persistente: salva cookies/sessão em ~/.mag-boletos-session
+    // Na primeira vez pede login; nas próximas, já entra direto.
+    context = await chromium.launchPersistentContext(USER_DATA_DIR, {
+      headless: false,
+      args: ["--start-maximized"],
+      acceptDownloads: true,
+      viewport: null,
+    });
+
+    // Reusa aba existente se houver, senão abre uma nova
+    const pages = context.pages();
+    mainPage = pages.length > 0 ? pages[0] : await context.newPage();
+
+    loginStatus = "aguardando";
     await mainPage.goto(MAG_URL, { waitUntil: "domcontentloaded" });
     monitorarLogin();
 
@@ -313,20 +327,41 @@ async function buscarBoletoPorCpf(cpf) {
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 // ── Start ─────────────────────────────────────────────────────────────────────
+const { Tunnel } = require("cloudflared");
+
+let cfTunnel = null;
+
 app.listen(PORT, () => {
   console.log("");
   console.log("╔════════════════════════════════════════════════════════╗");
   console.log("║     Barcellos Seguros — Buscador de Boletos MAG        ║");
   console.log("╚════════════════════════════════════════════════════════╝");
   console.log(`\n✓ Servidor ativo em http://localhost:${PORT}`);
-  console.log("\n→ Em outro terminal, execute:");
-  console.log("  ngrok http 4040");
-  console.log("\n→ Cole a URL do ngrok (https://xxxx.ngrok-free.app) no modal do sistema");
-  console.log("→ Inadimplentes → selecione clientes → botão MAG\n");
+  console.log("\n⏳ Abrindo túnel público (Cloudflare)...\n");
+
+  try {
+    cfTunnel = new Tunnel(["tunnel", "--url", `http://localhost:${PORT}`]);
+
+    cfTunnel.on("url", (url) => {
+      tunnelUrl = url;
+      console.log("╔════════════════════════════════════════════════════════╗");
+      console.log("║  ✓ PRONTO — pode usar o sistema normalmente            ║");
+      console.log(`║  ${url.padEnd(54)}║`);
+      console.log("╚════════════════════════════════════════════════════════╝\n");
+    });
+
+    cfTunnel.on("error", (err) => {
+      console.error("[MAG] Erro no túnel:", err.message);
+    });
+  } catch (err) {
+    console.error("[MAG] Não foi possível abrir túnel:", err.message);
+    console.log(`\n→ Alternativa manual: ngrok http ${PORT}`);
+  }
 });
 
 process.on("SIGINT", async () => {
   console.log("\n[MAG] Encerrando...");
-  if (browser) await browser.close().catch(() => {});
+  if (cfTunnel) cfTunnel.stop();
+  if (context) await context.close().catch(() => {});
   process.exit(0);
 });
