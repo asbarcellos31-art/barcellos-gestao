@@ -1256,11 +1256,6 @@ function CampanhasTab() {
     queryFn: () => apiFetch("/email-marketing/campanhas"),
     refetchInterval: 10000,
   });
-  const { data: sgStatus } = useQuery<{ sendgridConfigurado: boolean }>({
-    queryKey: ["email-sg-status"],
-    queryFn: () => apiFetch("/email-marketing/status"),
-    staleTime: 60000,
-  });
   const { data: templates = [] } = useQuery<Template[]>({
     queryKey: ["email-templates"],
     queryFn: () => apiFetch("/email-marketing/templates"),
@@ -2669,6 +2664,12 @@ function HistoricoEmailTab() {
 
 // --- Main Page ---
 export default function EmailMarketing() {
+  const { data: sgStatus } = useQuery<{ sendgridConfigurado: boolean }>({
+    queryKey: ["email-sg-status"],
+    queryFn: () => apiFetch("/email-marketing/status"),
+    staleTime: 60000,
+  });
+
   return (
     <DashboardLayout>
       <div className="p-6 space-y-6">
