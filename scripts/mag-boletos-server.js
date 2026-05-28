@@ -217,7 +217,7 @@ async function processarBoletos(jobId, clientes, callbackUrl, apiKey) {
   // Sinaliza conclusão
   await enviarProgresso(callbackUrl, apiKey, {
     jobId, tipo: "concluido",
-    atual: cpfs.length, total: cpfs.length,
+    atual: clientes.length, total: clientes.length,
     mensagem: "Processamento concluído",
   });
   console.log(`[MAG] Job ${jobId} concluído`);
@@ -290,10 +290,14 @@ async function buscarBoletoPorCpf(cpf, nome) {
   // ── 5. Seleciona todos os checkboxes de parcelas ──────────────────────────
   const checkboxes = await page.$$('input[type="checkbox"]');
   for (const cb of checkboxes) {
-    if (!(await cb.isChecked().catch(() => true))) {
-      await cb.check().catch(() => {});
-    }
+    try {
+      const checked = await cb.isChecked({ timeout: 2000 }).catch(() => true);
+      if (!checked) {
+        await cb.check({ timeout: 3000 }).catch(() => {});
+      }
+    } catch {}
   }
+  await sleep(800);
 
   // Captura competências para nomear o arquivo
   const competencias = await page.evaluate(() => {
@@ -306,11 +310,24 @@ async function buscarBoletoPorCpf(cpf, nome) {
       .replace(/\//g, "-");
   }).catch(() => "boleto");
 
-  // ── 6. Clica em "Cobrança Inadimplentes" ─────────────────────────────────
-  await page.click('button:has-text("Cobrança Inadimplentes"), span:has-text("Cobrança Inadimplentes")', { timeout: 10000 });
+  // ── 6. Clica em "Cobrar inadimplência" ───────────────────────────────────
+  const ssBefore = path.join(os.homedir(), "Desktop", `mag-antes-cobrar-${Date.now()}.png`);
+  await page.screenshot({ path: ssBefore, fullPage: true });
+  console.log(`[MAG] Screenshot antes de cobrar: ${ssBefore}`);
+
+  await page.click(
+    'button:has-text("Cobrar inadimplência"), button:has-text("Cobrar Inadimplência"), ' +
+    'button:has-text("Cobrança Inadimplentes"), span:has-text("Cobrar inadimplência"), ' +
+    'span:has-text("Cobrança Inadimplentes")',
+    { timeout: 12000 }
+  );
   await sleep(1500);
 
   // ── 7. Confirma ──────────────────────────────────────────────────────────
+  const ssConfirm = path.join(os.homedir(), "Desktop", `mag-confirmar-${Date.now()}.png`);
+  await page.screenshot({ path: ssConfirm, fullPage: true });
+  console.log(`[MAG] Screenshot antes de confirmar: ${ssConfirm}`);
+
   const btnConfirmar = await page.waitForSelector(
     'button:has-text("Confirmar"), button:has-text("Gerar"), button:has-text("OK"), button:has-text("Próximo"), button:has-text("Sim")',
     { timeout: 10000 }

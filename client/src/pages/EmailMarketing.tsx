@@ -1285,7 +1285,24 @@ function CampanhasTab() {
   const [criandoLista, setCriandoLista] = useState<'abriram' | 'nao_abriram' | null>(null);
   const [nomeNovaLista, setNomeNovaLista] = useState("");
   const [listaCriada, setListaCriada] = useState<{ total: number; listaId: number } | null>(null);
+  const [sincronizandoSG, setSincronizandoSG] = useState(false);
+  const [resultadoSincSG, setResultadoSincSG] = useState<{ atualizados: number; total: number } | null>(null);
   const queryClient = useQueryClient();
+
+  async function handleSincronizarSendGrid() {
+    if (!aberturasId) return;
+    setSincronizandoSG(true);
+    setResultadoSincSG(null);
+    try {
+      const r = await apiFetch(`/email-marketing/campanhas/${aberturasId}/sincronizar-sendgrid`, { method: "POST" });
+      setResultadoSincSG({ atualizados: r.atualizados, total: r.total });
+      queryClient.invalidateQueries({ queryKey: ["email-aberturas", aberturasId] });
+    } catch (e: any) {
+      toast.error("Erro ao sincronizar: " + e.message);
+    } finally {
+      setSincronizandoSG(false);
+    }
+  }
 
   async function handleCriarLista(tipo: 'abriram' | 'nao_abriram') {
     if (!aberturasId || !nomeNovaLista.trim()) return;
@@ -2020,6 +2037,20 @@ function CampanhasTab() {
                   </Button>
                 </div>
               )}
+              {resultadoSincSG && (
+                <div className="text-xs text-center text-green-700 bg-green-50 rounded px-3 py-2 border border-green-200">
+                  Sincronização concluída: <strong>{resultadoSincSG.atualizados}</strong> de {resultadoSincSG.total} atualizados
+                </div>
+              )}
+              <Button
+                size="sm" variant="outline"
+                className="w-full text-xs text-purple-700 border-purple-300 hover:bg-purple-50"
+                onClick={handleSincronizarSendGrid}
+                disabled={sincronizandoSG}
+              >
+                {sincronizandoSG ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+                Sincronizar aberturas do SendGrid
+              </Button>
               <Button
                 size="sm" variant="outline"
                 className="w-full text-xs"

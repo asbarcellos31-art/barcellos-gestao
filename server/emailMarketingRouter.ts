@@ -508,9 +508,7 @@ router.post("/email-marketing/campanhas/:id/disparar", async (req, res) => {
         const corpoBase = corpoHtmlResolvido
           .replace(/\{\{nome\}\}/gi, contato.nome)
           .replace(/\{\{whatsapp_link\}\}/gi, whatsappGeralLink);
-        // Injetar pixel de rastreamento de abertura
-        // Domínio fixo do sistema — garante que o pixel seja acessível pelos clientes de e-mail
-        const appUrl = 'https://barcellos.manus.space';
+        const appUrl = (process.env.PUBLIC_BASE_URL || process.env.APP_URL || 'https://app.barcellosseguros.com.br').replace(/\/+$/, '');
         const pixelTag = `<img src="${appUrl}/api/email-marketing/track/open/${envio.id}" width="1" height="1" style="display:none" alt="" />`;
         const corpo = corpoBase.includes('</body>')
           ? corpoBase.replace(/<\/body>/i, `${pixelTag}</body>`)
@@ -721,7 +719,7 @@ router.post("/email-marketing/campanhas/:id/retomar", async (req, res) => {
           }
         } catch (_e) {}
 
-        const appUrl = 'https://barcellos.manus.space';
+        const appUrl = (process.env.PUBLIC_BASE_URL || process.env.APP_URL || 'https://app.barcellosseguros.com.br').replace(/\/+$/, '');
         for (let i = 0; i < pendentes.length; i++) {
           const p = pendentes[i];
           const assunto = template.assunto.replace(/\{\{nome\}\}/gi, p.nome || '');
@@ -859,6 +857,66 @@ router.get("/email-marketing/campanhas/:id/aberturas", async (req, res) => {
     const campanhaId = parseInt(req.params.id);
     const rows = await listarAberturasCampanha(campanhaId);
     res.json(rows);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── SINCRONIZAR ABERTURAS DO SENDGRID ─────────────────────────────────────
+// Consulta a Activity Feed API do SendGrid para cada email da campanha e atualiza aberturas
+router.post("/email-marketing/campanhas/:id/sincronizar-sendgrid", async (req, res) => {
+  try {
+    const campanhaId = parseInt(req.params.id);
+    const apiKey = process.env.SENDGRID_API_KEY;
+    if (!apiKey) return res.status(400).json({ error: "SENDGRID_API_KEY não configurada" });
+
+    const envios = await listarAberturasCampanha(campanhaId);
+    if (!envios || envios.length === 0) return res.json({ atualizados: 0, total: 0 });
+
+    let atualizados = 0;
+    const erros: string[] = [];
+
+    for (const envio of envios as any[]) {
+      if (!envio.email) continue;
+      try {
+        // Consulta Activity Feed por email — retorna eventos dos últimos 30 dias
+        const query = encodeURIComponent(`to_email="${envio.email}"`);
+        const sgResp = await fetch(
+          `https://api.sendgrid.com/v3/messages?limit=10&query=${query}`,
+          { headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" } }
+        );
+        if (!sgResp.ok) {
+          erros.push(`${envio.email}: HTTP ${sgResp.status}`);
+          continue;
+        }
+        const sgData: any = await sgResp.json();
+        const messages: any[] = sgData.messages || [];
+
+        // Conta quantas vezes o email foi aberto (status "opened")
+        let totalAberturas = 0;
+        for (const msg of messages) {
+          if (msg.status === "opened" || (msg.opens_count && msg.opens_count > 0)) {
+            totalAberturas = Math.max(totalAberturas, msg.opens_count || 1);
+          }
+        }
+
+        if (totalAberturas > 0 && totalAberturas > (envio.aberturas || 0)) {
+          const db = await (await import("./db")).getDb();
+          if (db) {
+            await db.execute(
+              sql`UPDATE email_envios SET aberturas = ${totalAberturas}, abertoPrimeiramente = COALESCE(abertoPrimeiramente, NOW()) WHERE id = ${envio.id}`
+            );
+            atualizados++;
+          }
+        }
+      } catch (err: any) {
+        erros.push(`${envio.email}: ${err.message}`);
+      }
+      // Pausa para não estourar rate limit do SendGrid
+      await new Promise(r => setTimeout(r, 200));
+    }
+
+    res.json({ atualizados, total: envios.length, erros });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
@@ -1035,7 +1093,7 @@ router.post("/email-marketing/enviar-individual", async (req, res) => {
   <p style="margin:0">Barcellos Seguros Corretora de Seguros Ltda.</p>
   <p style="margin:4px 0">Av. Marechal Castelo Branco, 65, sala 1002-A — Campinas, São José/SC — CEP 88101-020</p>
   <p style="margin:4px 0">
-    <a href="https://barcellos.manus.space/privacidade" style="color:#6b7280">Política de Privacidade</a>
+    <a href="https://app.barcellosseguros.com.br/privacidade" style="color:#6b7280">Política de Privacidade</a>
     &nbsp;|&nbsp;
     <a href="mailto:atendimento@barcellosseguros.com?subject=Cancelar inscrição&body=Solicito o cancelamento do recebimento de e-mails." style="color:#6b7280">Cancelar inscrição</a>
   </p>
