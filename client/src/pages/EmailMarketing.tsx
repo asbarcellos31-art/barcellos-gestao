@@ -1922,97 +1922,99 @@ function CampanhasTab() {
 
       {/* Dialog de Aberturas */}
       <Dialog open={aberturasId !== null} onOpenChange={() => { setAberturasId(null); setResultadoSincSG(null); setListaCriada(null); setNomeNovaLista(""); }}>
-        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <BarChart2 className="h-5 w-5 text-green-600" />
-              Relatório de Envios da Campanha
-            </DialogTitle>
-          </DialogHeader>
-          {loadingAberturas ? (
-            <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin" /></div>
-          ) : (
-            <div className="flex-1 overflow-y-auto space-y-4 pr-1">
-              {/* Cards de resumo */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-                <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-center">
-                  <div className="text-2xl font-bold text-blue-700">{aberturas.length}</div>
-                  <div className="text-blue-600 text-xs mt-1">Total enviados</div>
+        <DialogContent className="max-w-3xl p-0 gap-0 overflow-hidden" style={{ maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}>
+          {/* Cabeçalho fixo */}
+          <div className="px-6 py-4 border-b flex items-center gap-2">
+            <BarChart2 className="h-5 w-5 text-green-600 shrink-0" />
+            <span className="font-semibold text-base">Relatório de Envios da Campanha</span>
+          </div>
+
+          {/* Corpo com scroll */}
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+            {loadingAberturas ? (
+              <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin" /></div>
+            ) : (
+              <>
+                {/* Cards de resumo */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-center">
+                    <div className="text-2xl font-bold text-blue-700">{aberturas.length}</div>
+                    <div className="text-blue-600 text-xs mt-1">Total enviados</div>
+                  </div>
+                  <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-center">
+                    <div className="text-2xl font-bold text-green-700">{aberturas.filter((a: any) => a.aberturas > 0).length}</div>
+                    <div className="text-green-600 text-xs mt-1">Visualizaram</div>
+                  </div>
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-center">
+                    <div className="text-2xl font-bold text-gray-700">{aberturas.filter((a: any) => a.status === 'ENVIADO' && a.aberturas === 0).length}</div>
+                    <div className="text-gray-500 text-xs mt-1">Não visualizaram</div>
+                  </div>
+                  <div className="bg-purple-50 border border-purple-200 rounded-lg px-4 py-3 text-center">
+                    <div className="text-2xl font-bold text-purple-700">
+                      {aberturas.filter((a: any) => a.status === 'ENVIADO').length > 0
+                        ? Math.round((aberturas.filter((a: any) => a.aberturas > 0).length / aberturas.filter((a: any) => a.status === 'ENVIADO').length) * 100)
+                        : 0}%
+                    </div>
+                    <div className="text-purple-600 text-xs mt-1">Taxa de abertura</div>
+                  </div>
                 </div>
-                <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-center">
-                  <div className="text-2xl font-bold text-green-700">{aberturas.filter((a: any) => a.aberturas > 0).length}</div>
-                  <div className="text-green-600 text-xs mt-1">Visualizaram</div>
-                </div>
-                <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-center">
-                  <div className="text-2xl font-bold text-gray-700">{aberturas.filter((a: any) => a.status === 'ENVIADO' && a.aberturas === 0).length}</div>
-                  <div className="text-gray-500 text-xs mt-1">Não visualizaram</div>
-                </div>
-                <div className="bg-purple-50 border border-purple-200 rounded-lg px-4 py-3 text-center">
-                  <div className="text-2xl font-bold text-purple-700">{aberturas.filter((a: any) => a.status === 'ENVIADO').length > 0 ? Math.round((aberturas.filter((a: any) => a.aberturas > 0).length / aberturas.filter((a: any) => a.status === 'ENVIADO').length) * 100) : 0}%</div>
-                  <div className="text-purple-600 text-xs mt-1">Taxa de abertura</div>
-                </div>
-              </div>
-              {/* Tabela de destinatários */}
-              <div className="max-h-[400px] overflow-y-auto rounded-lg border border-border bg-white">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-slate-100 border-b-2 border-slate-200 hover:bg-slate-100">
-                      <TableHead className="text-slate-900 font-semibold">Nome</TableHead>
-                      <TableHead className="text-slate-900 font-semibold">E-mail</TableHead>
-                      <TableHead className="text-center text-slate-900 font-semibold">Status envio</TableHead>
-                      <TableHead className="text-center text-slate-900 font-semibold">Visualizações</TableHead>
-                      <TableHead className="text-slate-900 font-semibold">Primeira abertura</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {aberturas.map((a: any, idx: number) => (
-                      <TableRow key={a.id} className={idx % 2 === 0 ? 'bg-white hover:bg-slate-50' : 'bg-slate-50 hover:bg-slate-100'} style={{borderBottom: '1px solid #e2e8f0'}}>
-                        <TableCell className="font-medium text-sm text-slate-900">{a.contatoNome || '—'}</TableCell>
-                        <TableCell className="text-slate-700 text-xs">{a.email}</TableCell>
-                        <TableCell className="text-center">
-                          {a.status === 'ENVIADO' ? (
-                            <span className="inline-flex items-center gap-1 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
-                              <CheckCircle2 className="h-3 w-3" /> Enviado
-                            </span>
-                          ) : a.status === 'ERRO' ? (
-                            <span className="inline-flex items-center gap-1 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full" title={a.erro || ''}>
-                              <XCircle className="h-3 w-3" /> Erro
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">
-                              <Clock className="h-3 w-3" /> Pendente
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {a.aberturas > 0 ? (
-                            <span className="inline-flex items-center gap-1 text-green-700 font-semibold text-sm">
-                              <Eye className="h-3.5 w-3.5" /> {a.aberturas}x
-                            </span>
-                          ) : (
-                            <span className="text-slate-500 text-xs">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-xs text-slate-600">
-                          {a.abertoPrimeiramente ? new Date(a.abertoPrimeiramente).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '—'}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-              {aberturas.length === 0 && (
-                <div className="text-center py-8 text-muted-foreground">
-                  <BarChart2 className="h-10 w-10 mx-auto mb-2 opacity-20" />
-                  <p className="text-sm">Nenhum envio registrado para esta campanha.</p>
-                </div>
-              )}
-            </div>
-          )}
-          {/* Seção de ações */}
+
+                {/* Tabela */}
+                {aberturas.length > 0 ? (
+                  <div className="rounded-lg border border-border bg-white overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-slate-100 border-b-2 border-slate-200 hover:bg-slate-100">
+                          <TableHead className="text-slate-900 font-semibold">Nome</TableHead>
+                          <TableHead className="text-slate-900 font-semibold">E-mail</TableHead>
+                          <TableHead className="text-center text-slate-900 font-semibold">Status</TableHead>
+                          <TableHead className="text-center text-slate-900 font-semibold">Views</TableHead>
+                          <TableHead className="text-slate-900 font-semibold">Primeira abertura</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {aberturas.map((a: any, idx: number) => (
+                          <TableRow key={a.id} className={idx % 2 === 0 ? 'bg-white hover:bg-slate-50' : 'bg-slate-50 hover:bg-slate-100'}>
+                            <TableCell className="font-medium text-sm text-slate-900">{a.contatoNome || '—'}</TableCell>
+                            <TableCell className="text-slate-700 text-xs">{a.email}</TableCell>
+                            <TableCell className="text-center">
+                              {a.status === 'ENVIADO' ? (
+                                <span className="inline-flex items-center gap-1 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full"><CheckCircle2 className="h-3 w-3" /> Enviado</span>
+                              ) : a.status === 'ERRO' ? (
+                                <span className="inline-flex items-center gap-1 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full" title={a.erro || ''}><XCircle className="h-3 w-3" /> Erro</span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full"><Clock className="h-3 w-3" /> Pendente</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {a.aberturas > 0 ? (
+                                <span className="inline-flex items-center gap-1 text-green-700 font-semibold text-sm"><Eye className="h-3.5 w-3.5" /> {a.aberturas}x</span>
+                              ) : (
+                                <span className="text-slate-400 text-xs">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-xs text-slate-600">
+                              {a.abertoPrimeiramente ? new Date(a.abertoPrimeiramente).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '—'}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <BarChart2 className="h-10 w-10 mx-auto mb-2 opacity-20" />
+                    <p className="text-sm">Nenhum envio registrado para esta campanha.</p>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Rodapé fixo com ações */}
           {!loadingAberturas && aberturas.length > 0 && (
-            <div className="border-t pt-4 space-y-3">
-              <p className="text-sm font-medium text-foreground">Ações com este relatório</p>
+            <div className="border-t px-6 py-4 bg-slate-50 space-y-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Ações com este relatório</p>
               {listaCriada ? (
                 <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-4 py-3">
                   <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
@@ -2021,59 +2023,42 @@ function CampanhasTab() {
                 </div>
               ) : (
                 <div className="flex flex-col sm:flex-row gap-2">
-                  <Input
-                    placeholder="Nome da nova lista..."
-                    value={nomeNovaLista}
-                    onChange={e => setNomeNovaLista(e.target.value)}
-                    className="flex-1 text-sm h-9"
-                  />
-                  <Button
-                    size="sm" variant="outline"
-                    className="text-green-700 border-green-300 hover:bg-green-50 text-xs"
-                    disabled={!nomeNovaLista.trim() || criandoLista !== null}
-                    onClick={() => handleCriarLista('abriram')}
-                  >
+                  <Input placeholder="Nome da nova lista..." value={nomeNovaLista} onChange={e => setNomeNovaLista(e.target.value)} className="flex-1 text-sm h-9" />
+                  <Button size="sm" variant="outline" className="text-green-700 border-green-300 hover:bg-green-50 text-xs" disabled={!nomeNovaLista.trim() || criandoLista !== null} onClick={() => handleCriarLista('abriram')}>
                     {criandoLista === 'abriram' ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <CheckCircle2 className="h-3 w-3 mr-1" />}
-                    Lista de quem abriu ({aberturas.filter((a: any) => a.aberturas > 0).length})
+                    Quem abriu ({aberturas.filter((a: any) => a.aberturas > 0).length})
                   </Button>
-                  <Button
-                    size="sm" variant="outline"
-                    className="text-orange-700 border-orange-300 hover:bg-orange-50 text-xs"
-                    disabled={!nomeNovaLista.trim() || criandoLista !== null}
-                    onClick={() => handleCriarLista('nao_abriram')}
-                  >
+                  <Button size="sm" variant="outline" className="text-orange-700 border-orange-300 hover:bg-orange-50 text-xs" disabled={!nomeNovaLista.trim() || criandoLista !== null} onClick={() => handleCriarLista('nao_abriram')}>
                     {criandoLista === 'nao_abriram' ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Eye className="h-3 w-3 mr-1 opacity-40" />}
-                    Lista de quem não abriu ({aberturas.filter((a: any) => a.status === 'ENVIADO' && a.aberturas === 0).length})
+                    Quem não abriu ({aberturas.filter((a: any) => a.status === 'ENVIADO' && a.aberturas === 0).length})
                   </Button>
                 </div>
               )}
               {resultadoSincSG && (
-                <div className="text-xs text-center text-green-700 bg-green-50 rounded px-3 py-2 border border-green-200">
-                  Sincronização concluída: <strong>{resultadoSincSG.atualizados}</strong> de {resultadoSincSG.total} atualizados
+                <div className="text-xs text-green-700 bg-green-50 rounded px-3 py-2 border border-green-200">
+                  Sincronização: <strong>{resultadoSincSG.atualizados}</strong> atualizados de {resultadoSincSG.total} enviados
                 </div>
               )}
-              <Button
-                size="sm" variant="outline"
-                className="w-full text-xs text-purple-700 border-purple-300 hover:bg-purple-50"
-                onClick={handleSincronizarSendGrid}
-                disabled={sincronizandoSG}
-              >
-                {sincronizandoSG ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <RefreshCw className="h-3 w-3 mr-1" />}
-                Sincronizar aberturas do SendGrid
-              </Button>
-              <Button
-                size="sm" variant="outline"
-                className="w-full text-xs"
-                onClick={handleExportarExcel}
-              >
-                <FileText className="h-3 w-3 mr-1" />
-                Exportar relatório completo em Excel
-              </Button>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" className="flex-1 text-xs text-purple-700 border-purple-300 hover:bg-purple-50" onClick={handleSincronizarSendGrid} disabled={sincronizandoSG}>
+                  {sincronizandoSG ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+                  Sincronizar do SendGrid
+                </Button>
+                <Button size="sm" variant="outline" className="flex-1 text-xs" onClick={handleExportarExcel}>
+                  <FileText className="h-3 w-3 mr-1" />
+                  Exportar Excel
+                </Button>
+                <Button size="sm" variant="outline" className="text-xs" onClick={() => { setAberturasId(null); setResultadoSincSG(null); setListaCriada(null); setNomeNovaLista(""); }}>
+                  Fechar
+                </Button>
+              </div>
             </div>
           )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setAberturasId(null); setListaCriada(null); setNomeNovaLista(""); }}>Fechar</Button>
-          </DialogFooter>
+          {(!loadingAberturas && aberturas.length === 0) && (
+            <div className="border-t px-6 py-4 flex justify-end">
+              <Button variant="outline" size="sm" onClick={() => setAberturasId(null)}>Fechar</Button>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

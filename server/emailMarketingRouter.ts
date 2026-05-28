@@ -533,6 +533,10 @@ router.post("/email-marketing/campanhas/:id/disparar", async (req, res) => {
             from: { email: campanha.remetente, name: campanha.nomeRemetente },
             subject: assunto || "Barcellos Seguros",
             content: [{ type: "text/html", value: corpo }],
+            tracking_settings: {
+              open_tracking: { enable: true },
+              click_tracking: { enable: true, enable_text: false },
+            },
           };
           // Adicionar anexo se existir
           if (campanha.anexoUrl && campanha.anexoNome) {
@@ -740,6 +744,10 @@ router.post("/email-marketing/campanhas/:id/retomar", async (req, res) => {
               from: { email: campanha.remetente, name: campanha.nomeRemetente },
               subject: assunto,
               content: [{ type: "text/html", value: corpo }],
+              tracking_settings: {
+                open_tracking: { enable: true },
+                click_tracking: { enable: true, enable_text: false },
+              },
             };
             if (campanha.anexoUrl && campanha.anexoNome) {
               try {
