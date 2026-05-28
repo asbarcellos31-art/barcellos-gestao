@@ -29,6 +29,11 @@ async function rawQuery<T = any>(sql: string, params?: any[]): Promise<T[]> {
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
+// ─── STATUS SENDGRID ─────────────────────────────────────────────────────────
+router.get("/email-marketing/status", (_req, res) => {
+  res.json({ sendgridConfigurado: !!process.env.SENDGRID_API_KEY });
+});
+
 // ─── TEMPLATES ───────────────────────────────────────────────────────────────
 
 router.get("/email-marketing/templates", async (_req, res) => {

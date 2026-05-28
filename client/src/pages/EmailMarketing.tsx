@@ -1254,7 +1254,12 @@ function CampanhasTab() {
   const { data: campanhas = [], isLoading, refetch } = useQuery<Campanha[]>({
     queryKey: ["email-campanhas"],
     queryFn: () => apiFetch("/email-marketing/campanhas"),
-    refetchInterval: 10000, // Atualiza a cada 10s enquanto houver envios em andamento
+    refetchInterval: 10000,
+  });
+  const { data: sgStatus } = useQuery<{ sendgridConfigurado: boolean }>({
+    queryKey: ["email-sg-status"],
+    queryFn: () => apiFetch("/email-marketing/status"),
+    staleTime: 60000,
   });
   const { data: templates = [] } = useQuery<Template[]>({
     queryKey: ["email-templates"],
@@ -2688,15 +2693,17 @@ export default function EmailMarketing() {
           </div>
         </div>
 
-        {/* SendGrid notice */}
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800 flex items-start gap-3">
-          <Mail className="h-5 w-5 mt-0.5 shrink-0" />
-          <div>
-            <strong>Integração SendGrid necessária para disparar e-mails.</strong>
-            <br />
-            Configure a variável de ambiente <code className="bg-amber-100 px-1 rounded">SENDGRID_API_KEY</code> nas configurações do sistema para habilitar o disparo de campanhas.
+        {/* SendGrid notice — só aparece se a chave não estiver configurada */}
+        {sgStatus && !sgStatus.sendgridConfigurado && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800 flex items-start gap-3">
+            <Mail className="h-5 w-5 mt-0.5 shrink-0" />
+            <div>
+              <strong>Integração SendGrid necessária para disparar e-mails.</strong>
+              <br />
+              Configure a variável de ambiente <code className="bg-amber-100 px-1 rounded">SENDGRID_API_KEY</code> nas configurações do Railway para habilitar o disparo de campanhas.
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Tabs */}
         <Tabs defaultValue="campanhas">
