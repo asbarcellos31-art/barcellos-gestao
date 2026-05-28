@@ -868,60 +868,86 @@ router.get("/email-marketing/campanhas/:id/aberturas", async (req, res) => {
 });
 
 // ─── SINCRONIZAR ABERTURAS DO SENDGRID ─────────────────────────────────────
-// Consulta a Activity Feed API do SendGrid para cada email da campanha e atualiza aberturas
+// Busca aberturas em lote via date-range (máx 7 páginas de 1000) em vez de 1 req/email
 router.post("/email-marketing/campanhas/:id/sincronizar-sendgrid", async (req, res) => {
   try {
     const campanhaId = parseInt(req.params.id);
     const apiKey = process.env.SENDGRID_API_KEY;
     if (!apiKey) return res.status(400).json({ error: "SENDGRID_API_KEY não configurada" });
 
+    const campanha = await buscarCampanha(campanhaId);
+    if (!campanha) return res.status(404).json({ error: "Campanha não encontrada" });
+
     const envios = await listarAberturasCampanha(campanhaId);
     if (!envios || envios.length === 0) return res.json({ atualizados: 0, total: 0 });
 
-    let atualizados = 0;
-    const erros: string[] = [];
-
-    for (const envio of envios as any[]) {
-      if (!envio.email) continue;
-      try {
-        // Consulta Activity Feed por email — retorna eventos dos últimos 30 dias
-        const query = encodeURIComponent(`to_email="${envio.email}"`);
-        const sgResp = await fetch(
-          `https://api.sendgrid.com/v3/messages?limit=10&query=${query}`,
-          { headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" } }
-        );
-        if (!sgResp.ok) {
-          erros.push(`${envio.email}: HTTP ${sgResp.status}`);
-          continue;
-        }
-        const sgData: any = await sgResp.json();
-        const messages: any[] = sgData.messages || [];
-
-        // Conta quantas vezes o email foi aberto (status "opened")
-        let totalAberturas = 0;
-        for (const msg of messages) {
-          if (msg.status === "opened" || (msg.opens_count && msg.opens_count > 0)) {
-            totalAberturas = Math.max(totalAberturas, msg.opens_count || 1);
-          }
-        }
-
-        if (totalAberturas > 0 && totalAberturas > (envio.aberturas || 0)) {
-          const db = await (await import("./db")).getDb();
-          if (db) {
-            await db.execute(
-              sql`UPDATE email_envios SET aberturas = ${totalAberturas}, abertoPrimeiramente = COALESCE(abertoPrimeiramente, NOW()) WHERE id = ${envio.id}`
-            );
-            atualizados++;
-          }
-        }
-      } catch (err: any) {
-        erros.push(`${envio.email}: ${err.message}`);
-      }
-      // Pausa para não estourar rate limit do SendGrid
-      await new Promise(r => setTimeout(r, 200));
+    // Mapa email → { envioId, aberturas atuais }
+    const emailMap = new Map<string, { id: number; aberturas: number }>();
+    for (const e of envios as any[]) {
+      if (e.email) emailMap.set(e.email.toLowerCase().trim(), { id: e.id, aberturas: e.aberturas || 0 });
     }
 
-    res.json({ atualizados, total: envios.length, erros });
+    // Intervalo de busca: dataInicio da campanha até hoje + 7 dias de margem
+    const inicio: Date = (campanha as any).dataInicio || (campanha as any).createdAt || new Date(Date.now() - 30 * 86400000);
+    const fim = new Date();
+    fim.setDate(fim.getDate() + 1);
+    const inicioISO = inicio.toISOString().slice(0, 19).replace('T', ' ');
+    const fimISO = fim.toISOString().slice(0, 19).replace('T', ' ');
+
+    // Pagina pela Activity Feed do SendGrid em blocos de 1000
+    const abreMap = new Map<string, number>(); // email → max opens_count
+    let offset = 0;
+    const limit = 1000;
+    let paginasLidas = 0;
+
+    while (paginasLidas < 20) { // teto de segurança: 20.000 mensagens
+      const query = encodeURIComponent(
+        `last_event_time BETWEEN TIMESTAMP "${inicioISO}" AND TIMESTAMP "${fimISO}"`
+      );
+      const sgResp = await fetch(
+        `https://api.sendgrid.com/v3/messages?limit=${limit}&offset=${offset}&query=${query}`,
+        { headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" } }
+      );
+
+      if (!sgResp.ok) {
+        const errText = await sgResp.text();
+        // Se a API de Activity não estiver habilitada no plano, retorna aviso amigável
+        return res.status(200).json({
+          atualizados: 0, total: envios.length,
+          aviso: `SendGrid Activity Feed não disponível neste plano (HTTP ${sgResp.status}). Ative "Email Activity Feed" nas configurações do SendGrid.`,
+        });
+      }
+
+      const sgData: any = await sgResp.json();
+      const messages: any[] = sgData.messages || [];
+
+      for (const msg of messages) {
+        const email = (msg.to_email || '').toLowerCase().trim();
+        if (!email || !emailMap.has(email)) continue;
+        const opens = msg.opens_count || 0;
+        if (opens > 0) abreMap.set(email, Math.max(abreMap.get(email) || 0, opens));
+      }
+
+      paginasLidas++;
+      if (messages.length < limit) break;
+      offset += limit;
+    }
+
+    // Atualiza banco apenas onde encontrou aberturas maiores que o atual
+    const db = await getDb();
+    let atualizados = 0;
+    for (const [email, opens] of abreMap) {
+      const envio = emailMap.get(email);
+      if (!envio || opens <= envio.aberturas) continue;
+      if (db) {
+        await db.execute(
+          sql`UPDATE email_envios SET aberturas = ${opens}, abertoPrimeiramente = COALESCE(abertoPrimeiramente, NOW()) WHERE id = ${envio.id}`
+        );
+        atualizados++;
+      }
+    }
+
+    res.json({ atualizados, total: envios.length, encontradosSendGrid: abreMap.size });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }

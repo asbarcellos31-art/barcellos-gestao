@@ -1300,8 +1300,13 @@ function CampanhasTab() {
     setResultadoSincSG(null);
     try {
       const r = await apiFetch(`/email-marketing/campanhas/${aberturasId}/sincronizar-sendgrid`, { method: "POST" });
-      setResultadoSincSG({ atualizados: r.atualizados, total: r.total });
-      queryClient.invalidateQueries({ queryKey: ["email-aberturas", aberturasId] });
+      if (r.aviso) {
+        toast.error(r.aviso);
+      } else {
+        setResultadoSincSG({ atualizados: r.atualizados, total: r.total });
+        queryClient.invalidateQueries({ queryKey: ["email-aberturas", aberturasId] });
+        if (r.atualizados === 0) toast.info(`Nenhuma abertura nova encontrada no SendGrid (${r.encontradosSendGrid ?? 0} e-mails com abertura no período).`);
+      }
     } catch (e: any) {
       toast.error("Erro ao sincronizar: " + e.message);
     } finally {
@@ -1916,8 +1921,8 @@ function CampanhasTab() {
        </AlertDialog>
 
       {/* Dialog de Aberturas */}
-      <Dialog open={aberturasId !== null} onOpenChange={() => setAberturasId(null)}>
-        <DialogContent className="max-w-3xl">
+      <Dialog open={aberturasId !== null} onOpenChange={() => { setAberturasId(null); setResultadoSincSG(null); setListaCriada(null); setNomeNovaLista(""); }}>
+        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <BarChart2 className="h-5 w-5 text-green-600" />
@@ -1927,7 +1932,7 @@ function CampanhasTab() {
           {loadingAberturas ? (
             <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin" /></div>
           ) : (
-            <div className="space-y-4">
+            <div className="flex-1 overflow-y-auto space-y-4 pr-1">
               {/* Cards de resumo */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
                 <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-center">
