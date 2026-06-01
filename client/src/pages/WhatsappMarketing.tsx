@@ -58,6 +58,8 @@ export default function WhatsappMarketing() {
   const [inadForm, setInadForm] = useState({ ativo: false, mensagem: "" });
   const [reenvioAnivPending, setReenvioAnivPending] = useState(false);
   const [reenvioInstancia, setReenvioInstancia] = useState<string>("whatsapp-2");
+  const [reenvioRowPending, setReenvioRowPending] = useState<string | null>(null); // telefone em progresso
+  const [reenvioRowInstancia, setReenvioRowInstancia] = useState<string>("whatsapp-2");
   const [uploadingVideo, setUploadingVideo] = useState(false);
   // Sincronizar com dados do servidor
   const [automacoesSincronizadas, setAutomacoesSincronizadas] = useState(false);
@@ -729,12 +731,23 @@ export default function WhatsappMarketing() {
                   </div>
                 </div>
               </div>
-              <div className="flex items-center justify-between mt-3">
+              <div className="flex items-center justify-between mt-3 gap-2 flex-wrap">
                 <span className="text-sm text-muted-foreground">{historico.length} registro(s)</span>
-                <Button size="sm" variant="outline" onClick={() => refetchHistorico()} disabled={loadingHistorico}>
-                  {loadingHistorico ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
-                  Atualizar
-                </Button>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={reenvioRowInstancia}
+                    onChange={e => setReenvioRowInstancia(e.target.value)}
+                    className="text-xs border rounded px-2 py-1.5 bg-background"
+                  >
+                    <option value="whatsapp-1">(48) 3372-6890</option>
+                    <option value="whatsapp-2">(48) 99210-8365 — padrão</option>
+                    <option value="whatsapp-3">(48) 99225-9899</option>
+                  </select>
+                  <Button size="sm" variant="outline" onClick={() => refetchHistorico()} disabled={loadingHistorico}>
+                    {loadingHistorico ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
+                    Atualizar
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -758,6 +771,7 @@ export default function WhatsappMarketing() {
                     <th className="text-left px-3 py-2 font-medium">Tipo</th>
                     <th className="text-left px-3 py-2 font-medium">Status</th>
                     <th className="text-left px-3 py-2 font-medium">Obs</th>
+                    <th className="text-left px-3 py-2 font-medium">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -785,6 +799,33 @@ export default function WhatsappMarketing() {
                         )}
                       </td>
                       <td className="px-3 py-2 text-xs text-muted-foreground max-w-[200px] truncate">{e.erro || ""}</td>
+                      <td className="px-3 py-2">
+                        {e.tipo === 'ANIVERSARIO' && e.status === 'ERRO' && e.telefone && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-6 px-2 text-xs gap-1 text-pink-600 border-pink-300 hover:bg-pink-50"
+                            disabled={reenvioRowPending === e.telefone}
+                            onClick={async () => {
+                              setReenvioRowPending(e.telefone);
+                              try {
+                                const r = await fetch('/api/email-automacoes/reenviar-aniversario-telefone', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ telefone: e.telefone, instancia: reenvioRowInstancia }),
+                                });
+                                const d = await r.json();
+                                if (r.ok) toast.success(`Reenvio iniciado para ${e.nome || e.telefone}`);
+                                else toast.error(d.error || 'Erro ao reenviar');
+                              } catch { toast.error('Erro ao reenviar'); }
+                              finally { setReenvioRowPending(null); }
+                            }}
+                          >
+                            {reenvioRowPending === e.telefone ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                            Reenviar
+                          </Button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

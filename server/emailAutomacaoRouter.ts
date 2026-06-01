@@ -128,6 +128,41 @@ router.post("/email-automacoes/reenviar-falhas-aniversario", async (req, res) =>
   }
 });
 
+// Reenviar aniversário para um telefone específico
+router.post("/email-automacoes/reenviar-aniversario-telefone", async (req, res) => {
+  try {
+    const { telefone, instancia } = req.body;
+    if (!telefone) return res.status(400).json({ error: "telefone obrigatório" });
+    const conn = await getConn();
+
+    // Busca clienteId pelo telefone
+    const [rows]: any = await conn.execute(
+      `SELECT id FROM clientes WHERE (celular = ? OR telefone = ?) AND LOWER(status) = 'ativo' LIMIT 1`,
+      [telefone, telefone]
+    );
+    let clienteId: number | null = null;
+    if (rows?.length) {
+      clienteId = rows[0].id;
+    } else {
+      const telSemDDI = String(telefone).replace(/^55/, '');
+      const [rows2]: any = await conn.execute(
+        `SELECT id FROM clientes WHERE (celular LIKE ? OR telefone LIKE ?) AND LOWER(status) = 'ativo' LIMIT 1`,
+        [`%${telSemDDI}`, `%${telSemDDI}`]
+      );
+      if (rows2?.length) clienteId = rows2[0].id;
+    }
+
+    if (!clienteId) return res.status(404).json({ error: "Cliente não encontrado para este telefone" });
+
+    res.json({ ok: true, mensagem: "Reenvio iniciado" });
+    (async () => {
+      await enviarAniversarioIndividual(clienteId!, instancia || undefined);
+    })().catch(console.error);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Estatísticas de aniversariantes do dia
 router.get("/email-automacoes/aniversariantes-hoje", async (_req, res) => {
   try {
