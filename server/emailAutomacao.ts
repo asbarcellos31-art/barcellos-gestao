@@ -196,7 +196,7 @@ export async function dispararAniversariantes(): Promise<{ enviados: number; err
     if (telefoneClienteCheck) {
       const telFormatado = formatarTelefone(telefoneClienteCheck);
       const [jaEnviou]: any = await conn.execute(
-        "SELECT id FROM whatsapp_envios WHERE tipo = 'ANIVERSARIO' AND telefone = ? AND DATE(createdAt) = ? LIMIT 1",
+        "SELECT id FROM whatsapp_envios WHERE tipo = 'ANIVERSARIO' AND telefone = ? AND DATE(createdAt) = ? AND status = 'ENVIADO' LIMIT 1",
         [telFormatado, hojeStr]
       );
       if (jaEnviou?.length > 0) {
