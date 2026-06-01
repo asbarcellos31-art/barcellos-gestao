@@ -86,8 +86,7 @@ router.post("/email-automacoes/reenviar-falhas-aniversario", async (req, res) =>
        FROM whatsapp_envios w
        WHERE w.tipo = 'ANIVERSARIO'
          AND w.status = 'ERRO'
-         AND w.createdAt >= DATE_SUB(NOW(), INTERVAL ? DAY)
-       ORDER BY w.createdAt DESC`,
+         AND w.createdAt >= DATE_SUB(NOW(), INTERVAL ? DAY)`,
       [dias]
     );
 
