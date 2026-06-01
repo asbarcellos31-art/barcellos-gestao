@@ -53,13 +53,17 @@ const INSTANCIAS_INFO: Record<InstanciaKey, { numero: string; uso: string }> = {
 function DisparadorAniversariantesCard() {
   const [disparando, setDisparando] = useState(false);
   const [resultado, setResultado] = useState<{ enviados: number; erros: number } | null>(null);
+  const [instanciaSelecionada, setInstanciaSelecionada] = useState<string>("whatsapp-2");
 
   const disparar = async () => {
     setDisparando(true);
     setResultado(null);
     try {
-      // Primeiro reseta o ultimoDisparo e dispara
-      const res = await fetch("/api/email-automacoes/1/disparar-agora", { method: "POST" });
+      const res = await fetch("/api/email-automacoes/1/disparar-agora", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ instancia: instanciaSelecionada }),
+      });
       const data = await res.json();
       if (data.ok) {
         toast.success("Disparo iniciado! Aguarde alguns segundos para o resultado.");
@@ -84,7 +88,7 @@ function DisparadorAniversariantesCard() {
   };
 
   return (
-    <div className="border rounded-lg p-3 bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800">
+    <div className="border rounded-lg p-3 bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800 space-y-2">
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-sm font-medium text-amber-900 dark:text-amber-100">Disparar Aniversariantes Agora</p>
@@ -100,8 +104,21 @@ function DisparadorAniversariantesCard() {
           {disparando ? "Disparando..." : "Disparar Agora"}
         </Button>
       </div>
+      <div className="flex items-center gap-2">
+        <p className="text-xs text-amber-700 dark:text-amber-300 flex-shrink-0">Enviar pelo celular:</p>
+        <select
+          value={instanciaSelecionada}
+          onChange={e => setInstanciaSelecionada(e.target.value)}
+          className="text-xs border border-amber-300 rounded px-2 py-1 bg-white dark:bg-amber-950 text-amber-900 dark:text-amber-100 flex-1"
+          disabled={disparando}
+        >
+          <option value="whatsapp-1">(48) 3372-6890 — Inadimplência / Campanhas</option>
+          <option value="whatsapp-2">(48) 99210-8365 — Aniversariantes (padrão)</option>
+          <option value="whatsapp-3">(48) 99225-9899 — Médicos / Anderson</option>
+        </select>
+      </div>
       {resultado && (
-        <p className="text-xs mt-2 text-amber-800 dark:text-amber-200">
+        <p className="text-xs mt-1 text-amber-800 dark:text-amber-200">
           ✅ Resultado: <strong>{resultado.enviados}</strong> mensagens enviadas
         </p>
       )}

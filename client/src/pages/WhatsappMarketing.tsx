@@ -57,6 +57,7 @@ export default function WhatsappMarketing() {
   const [anivForm, setAnivForm] = useState({ ativo: false, mensagem: "", horario: "08:00", videoUrl: "" });
   const [inadForm, setInadForm] = useState({ ativo: false, mensagem: "" });
   const [reenvioAnivPending, setReenvioAnivPending] = useState(false);
+  const [reenvioInstancia, setReenvioInstancia] = useState<string>("whatsapp-2");
   const [uploadingVideo, setUploadingVideo] = useState(false);
   // Sincronizar com dados do servidor
   const [automacoesSincronizadas, setAutomacoesSincronizadas] = useState(false);
@@ -595,26 +596,38 @@ export default function WhatsappMarketing() {
               </div>
             </div>
 
-            <div className="flex justify-between items-center">
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-2 text-orange-600 border-orange-300 hover:bg-orange-50"
-                disabled={reenvioAnivPending}
-                onClick={async () => {
-                  setReenvioAnivPending(true);
-                  try {
-                    const r = await fetch('/api/email-automacoes/reenviar-falhas-aniversario', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dias: 7 }) });
-                    const d = await r.json();
-                    if (r.ok) toast.success(d.mensagem || 'Reenvio iniciado!');
-                    else toast.error(d.error || 'Erro ao reenviar');
-                  } catch { toast.error('Erro ao reenviar falhas'); }
-                  finally { setReenvioAnivPending(false); }
-                }}
-              >
-                {reenvioAnivPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                Reenviar falhas (7 dias)
-              </Button>
+            <div className="flex justify-between items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-2 flex-wrap">
+                <select
+                  value={reenvioInstancia}
+                  onChange={e => setReenvioInstancia(e.target.value)}
+                  disabled={reenvioAnivPending}
+                  className="text-xs border rounded px-2 py-1.5 bg-background"
+                >
+                  <option value="whatsapp-1">(48) 3372-6890</option>
+                  <option value="whatsapp-2">(48) 99210-8365 — padrão</option>
+                  <option value="whatsapp-3">(48) 99225-9899</option>
+                </select>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-2 text-orange-600 border-orange-300 hover:bg-orange-50"
+                  disabled={reenvioAnivPending}
+                  onClick={async () => {
+                    setReenvioAnivPending(true);
+                    try {
+                      const r = await fetch('/api/email-automacoes/reenviar-falhas-aniversario', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dias: 7, instancia: reenvioInstancia }) });
+                      const d = await r.json();
+                      if (r.ok) toast.success(d.mensagem || 'Reenvio iniciado!');
+                      else toast.error(d.error || 'Erro ao reenviar');
+                    } catch { toast.error('Erro ao reenviar falhas'); }
+                    finally { setReenvioAnivPending(false); }
+                  }}
+                >
+                  {reenvioAnivPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  Reenviar falhas (7 dias)
+                </Button>
+              </div>
               <Button
                 size="sm"
                 className="bg-pink-600 hover:bg-pink-700 gap-2"

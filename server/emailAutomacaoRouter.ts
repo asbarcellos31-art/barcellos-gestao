@@ -61,9 +61,10 @@ router.post("/email-automacoes/:id/disparar-agora", async (req, res) => {
     // Responder imediatamente e disparar em background
     res.json({ ok: true, mensagem: "Disparo iniciado em background" });
 
+    const { instancia } = req.body || {};
     (async () => {
       if (auto.tipo === "ANIVERSARIO") {
-        await dispararAniversariantes();
+        await dispararAniversariantes(instancia || undefined);
       } else if (auto.tipo === "INADIMPLENCIA") {
         await dispararInadimplentes();
       }
@@ -76,7 +77,7 @@ router.post("/email-automacoes/:id/disparar-agora", async (req, res) => {
 // Reenviar aniversariantes que falharam nos últimos N dias (reprocessa por telefone)
 router.post("/email-automacoes/reenviar-falhas-aniversario", async (req, res) => {
   try {
-    const { dias = 7 } = req.body;
+    const { dias = 7, instancia } = req.body;
     const conn = await getConn();
 
     // Busca envios de aniversário com erro nos últimos N dias
@@ -113,10 +114,10 @@ router.post("/email-automacoes/reenviar-falhas-aniversario", async (req, res) =>
             [`%${telSemDDI}`, `%${telSemDDI}`]
           );
           if (!clienteRows2?.length) { erros++; continue; }
-          const resultado = await enviarAniversarioIndividual(clienteRows2[0].id);
+          const resultado = await enviarAniversarioIndividual(clienteRows2[0].id, instancia || undefined);
           resultado.sucesso ? sucessos++ : erros++;
         } else {
-          const resultado = await enviarAniversarioIndividual(clienteRows[0].id);
+          const resultado = await enviarAniversarioIndividual(clienteRows[0].id, instancia || undefined);
           resultado.sucesso ? sucessos++ : erros++;
         }
         await new Promise(r => setTimeout(r, 3000));

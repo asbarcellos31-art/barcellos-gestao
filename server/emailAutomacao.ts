@@ -132,7 +132,7 @@ async function enviarRelatorioEquipe(
 }
 
 /** Dispara e-mails para aniversariantes do dia */
-export async function dispararAniversariantes(): Promise<{ enviados: number; erros: number }> {
+export async function dispararAniversariantes(instanciaOverride?: string): Promise<{ enviados: number; erros: number }> {
   const db = await getDb();
   if (!db) return { enviados: 0, erros: 0 };
 
@@ -224,7 +224,8 @@ export async function dispararAniversariantes(): Promise<{ enviados: number; err
         await registrarEnvioEmail({ email: cliente.email, contatoNome: cliente.nome || '', tipo: 'ANIVERSARIO', status: 'ERRO', erro: String(e) }).catch(() => {});
       }
     }
-    // Enviar WhatsApp via whatsapp-2 (aniversariantes)
+    // Enviar WhatsApp via instância de aniversário (ou override manual)
+    const instanciaWA = instanciaOverride || INSTANCIAS.aniversario;
     const telefoneCliente = cliente.celular || cliente.telefone;
     if (telefoneCliente) {
       try {
@@ -234,10 +235,9 @@ export async function dispararAniversariantes(): Promise<{ enviados: number; err
           : `🎂 Parabéns, ${primeiroNome}! 🎉\n\nA equipe da Barcellos Seguros deseja a você um feliz aniversário!\n\nEquipe Barcellos Seguros\n📞 (48) 99210-8365`;
         let resultado: { sucesso: boolean; erro?: string };
         if (videoUrl) {
-          // Enviar vídeo/imagem com a mensagem como legenda
-          resultado = await enviarVideoEvolution(telefoneCliente, videoUrl, msgAniv, INSTANCIAS.aniversario);
+          resultado = await enviarVideoEvolution(telefoneCliente, videoUrl, msgAniv, instanciaWA);
         } else {
-          resultado = await enviarMensagemComRetry(telefoneCliente, msgAniv, INSTANCIAS.aniversario);
+          resultado = await enviarMensagemComRetry(telefoneCliente, msgAniv, instanciaWA);
         }
         await registrarEnvioWhatsapp({
           nome: cliente.nome,
@@ -478,7 +478,7 @@ export async function verificarEDisparar() {
 }
 
 /** Envia mensagem de aniversário para um cliente individual (reenvio manual) */
-export async function enviarAniversarioIndividual(clienteId: number): Promise<{ sucesso: boolean; mensagem: string }> {
+export async function enviarAniversarioIndividual(clienteId: number, instanciaOverride?: string): Promise<{ sucesso: boolean; mensagem: string }> {
   const db = await getDb();
   if (!db) return { sucesso: false, mensagem: "Banco de dados indisponível" };
 
@@ -514,12 +514,13 @@ export async function enviarAniversarioIndividual(clienteId: number): Promise<{ 
     ? msgTemplate.replace(/@nome/gi, primeiroNome).replace(/\{\{nome\}\}/gi, primeiroNome)
     : `🎂 Parabéns, ${primeiroNome}! 🎉\n\nA equipe da Barcellos Seguros deseja a você um feliz aniversário!\n\nEquipe Barcellos Seguros\n📞 (48) 99210-8365`;
 
+  const instanciaWA = instanciaOverride || INSTANCIAS.aniversario;
   try {
     let resultado: { sucesso: boolean; erro?: string };
     if (videoUrl) {
-      resultado = await enviarVideoEvolution(telefoneCliente, videoUrl, msgAniv, INSTANCIAS.aniversario);
+      resultado = await enviarVideoEvolution(telefoneCliente, videoUrl, msgAniv, instanciaWA);
     } else {
-      resultado = await enviarMensagemComRetry(telefoneCliente, msgAniv, INSTANCIAS.aniversario);
+      resultado = await enviarMensagemComRetry(telefoneCliente, msgAniv, instanciaWA);
     }
     await registrarEnvioWhatsapp({
       nome: cliente.nome,
