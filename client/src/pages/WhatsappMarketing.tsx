@@ -56,6 +56,7 @@ export default function WhatsappMarketing() {
 
   const [anivForm, setAnivForm] = useState({ ativo: false, mensagem: "", horario: "08:00", videoUrl: "" });
   const [inadForm, setInadForm] = useState({ ativo: false, mensagem: "" });
+  const [reenvioAnivPending, setReenvioAnivPending] = useState(false);
   const [uploadingVideo, setUploadingVideo] = useState(false);
   // Sincronizar com dados do servidor
   const [automacoesSincronizadas, setAutomacoesSincronizadas] = useState(false);
@@ -594,7 +595,26 @@ export default function WhatsappMarketing() {
               </div>
             </div>
 
-            <div className="flex justify-end">
+            <div className="flex justify-between items-center">
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-2 text-orange-600 border-orange-300 hover:bg-orange-50"
+                disabled={reenvioAnivPending}
+                onClick={async () => {
+                  setReenvioAnivPending(true);
+                  try {
+                    const r = await fetch('/api/email-automacoes/reenviar-falhas-aniversario', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dias: 7 }) });
+                    const d = await r.json();
+                    if (r.ok) toast.success(d.mensagem || 'Reenvio iniciado!');
+                    else toast.error(d.error || 'Erro ao reenviar');
+                  } catch { toast.error('Erro ao reenviar falhas'); }
+                  finally { setReenvioAnivPending(false); }
+                }}
+              >
+                {reenvioAnivPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                Reenviar falhas (7 dias)
+              </Button>
               <Button
                 size="sm"
                 className="bg-pink-600 hover:bg-pink-700 gap-2"

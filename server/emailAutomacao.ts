@@ -7,7 +7,7 @@
 
 import { getDb } from "./db";
 import { buscarTemplate } from "./emailMarketingDb";
-import { enviarMensagemEvolution, enviarVideoEvolution, formatarTelefone, registrarEnvioWhatsapp, INSTANCIAS } from "./zapi";
+import { enviarMensagemEvolution, enviarMensagemComRetry, enviarVideoEvolution, formatarTelefone, registrarEnvioWhatsapp, INSTANCIAS } from "./zapi";
 import { resolverCorpoTemplate } from "./emailBlocosHtml";
 
 const REMETENTE = process.env.SENDGRID_FROM_EMAIL || "atendimento@barcellosseguros.com";
@@ -237,7 +237,7 @@ export async function dispararAniversariantes(): Promise<{ enviados: number; err
           // Enviar vídeo/imagem com a mensagem como legenda
           resultado = await enviarVideoEvolution(telefoneCliente, videoUrl, msgAniv, INSTANCIAS.aniversario);
         } else {
-          resultado = await enviarMensagemEvolution(telefoneCliente, msgAniv, INSTANCIAS.aniversario);
+          resultado = await enviarMensagemComRetry(telefoneCliente, msgAniv, INSTANCIAS.aniversario);
         }
         await registrarEnvioWhatsapp({
           nome: cliente.nome,
@@ -519,7 +519,7 @@ export async function enviarAniversarioIndividual(clienteId: number): Promise<{ 
     if (videoUrl) {
       resultado = await enviarVideoEvolution(telefoneCliente, videoUrl, msgAniv, INSTANCIAS.aniversario);
     } else {
-      resultado = await enviarMensagemEvolution(telefoneCliente, msgAniv, INSTANCIAS.aniversario);
+      resultado = await enviarMensagemComRetry(telefoneCliente, msgAniv, INSTANCIAS.aniversario);
     }
     await registrarEnvioWhatsapp({
       nome: cliente.nome,

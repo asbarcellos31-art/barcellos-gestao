@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { getDb } from "./db";
-import { dispararAniversariantes, dispararInadimplentes } from "./emailAutomacao";
+import { dispararAniversariantes, dispararInadimplentes, enviarAniversarioIndividual } from "./emailAutomacao";
 
 const router = Router();
 
@@ -67,6 +67,61 @@ router.post("/email-automacoes/:id/disparar-agora", async (req, res) => {
       } else if (auto.tipo === "INADIMPLENCIA") {
         await dispararInadimplentes();
       }
+    })().catch(console.error);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Reenviar aniversariantes que falharam nos últimos N dias (reprocessa por telefone)
+router.post("/email-automacoes/reenviar-falhas-aniversario", async (req, res) => {
+  try {
+    const { dias = 7 } = req.body;
+    const conn = await getConn();
+
+    // Busca envios de aniversário com erro nos últimos N dias
+    const [falhas]: any = await conn.execute(
+      `SELECT DISTINCT w.telefone, w.nome
+       FROM whatsapp_envios w
+       WHERE w.tipo = 'ANIVERSARIO'
+         AND w.status = 'ERRO'
+         AND w.createdAt >= DATE_SUB(NOW(), INTERVAL ? DAY)
+       ORDER BY w.createdAt DESC`,
+      [dias]
+    );
+
+    if (!falhas || falhas.length === 0) {
+      return res.json({ ok: true, mensagem: "Nenhuma falha encontrada para reenvio", total: 0 });
+    }
+
+    res.json({ ok: true, mensagem: `Reenviando ${falhas.length} mensagens em background...`, total: falhas.length });
+
+    (async () => {
+      let sucessos = 0;
+      let erros = 0;
+      for (const f of falhas) {
+        // Busca clienteId pelo telefone
+        const [clienteRows]: any = await conn.execute(
+          `SELECT id FROM clientes WHERE (celular = ? OR telefone = ?) AND LOWER(status) = 'ativo' LIMIT 1`,
+          [f.telefone, f.telefone]
+        );
+        if (!clienteRows?.length) {
+          // Tenta sem DDI
+          const telSemDDI = f.telefone.replace(/^55/, '');
+          const [clienteRows2]: any = await conn.execute(
+            `SELECT id FROM clientes WHERE (celular LIKE ? OR telefone LIKE ?) AND LOWER(status) = 'ativo' LIMIT 1`,
+            [`%${telSemDDI}`, `%${telSemDDI}`]
+          );
+          if (!clienteRows2?.length) { erros++; continue; }
+          const resultado = await enviarAniversarioIndividual(clienteRows2[0].id);
+          resultado.sucesso ? sucessos++ : erros++;
+        } else {
+          const resultado = await enviarAniversarioIndividual(clienteRows[0].id);
+          resultado.sucesso ? sucessos++ : erros++;
+        }
+        await new Promise(r => setTimeout(r, 3000));
+      }
+      console.log(`[ReenvioAniv] Concluído: ${sucessos} ok, ${erros} erros`);
     })().catch(console.error);
   } catch (e: any) {
     res.status(500).json({ error: e.message });
