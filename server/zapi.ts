@@ -333,8 +333,7 @@ export async function verificarConexaoEvolution(instancia: string): Promise<{ co
     // v2: campo "connectionStatus" no nível raiz
     // v1: campo "status" dentro de "instance"
     const status = inst.connectionStatus ?? inst.instance?.status ?? inst.status;
-    const owner = inst.ownerJid ?? inst.instance?.owner ?? inst.owner;
-    const conectado = status === "open" || !!owner;
+    const conectado = status === "open";
     return { conectado };
   } catch (err: any) {
     console.error(`[Evolution] ERRO em verificarConexaoEvolution:`, err.message, err.cause?.message || "");
