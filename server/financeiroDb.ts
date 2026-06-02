@@ -306,19 +306,18 @@ export async function upsertMeta(data: {
     .from(metasAnuais)
     .where(and(eq(metasAnuais.ano, data.ano), eq(metasAnuais.mes, data.mes)));
   if (existing.length > 0) {
-    await db
-      .update(metasAnuais)
-      .set({
-        metaReceita: data.metaReceita,
-        metaCarteira: data.metaCarteira || data.metaReceita,
-        metaAngariacao: data.metaAngariacao || "0",
-        metaLucro: data.metaLucro || null,
-        metaVendas: data.metaVendas || null,
-        metaCpfs: data.metaCpfs ?? null,
-        metaPropostas: data.metaPropostas ?? null,
-        updatedAt: new Date(),
-      })
-      .where(eq(metasAnuais.id, existing[0].id));
+    // Preserva metaCpfs/metaPropostas existentes se não foram enviados na requisição
+    const updateSet: any = {
+      metaReceita: data.metaReceita,
+      metaCarteira: data.metaCarteira || data.metaReceita,
+      metaAngariacao: data.metaAngariacao || "0",
+      metaLucro: data.metaLucro || null,
+      metaVendas: data.metaVendas || null,
+      updatedAt: new Date(),
+    };
+    if (data.metaCpfs !== undefined) updateSet.metaCpfs = data.metaCpfs ?? null;
+    if (data.metaPropostas !== undefined) updateSet.metaPropostas = data.metaPropostas ?? null;
+    await db.update(metasAnuais).set(updateSet).where(eq(metasAnuais.id, existing[0].id));
   } else {
     await db.insert(metasAnuais).values({
       ...data,
