@@ -310,17 +310,23 @@ export async function upsertMeta(data: {
       .update(metasAnuais)
       .set({
         metaReceita: data.metaReceita,
-        metaCarteira: data.metaCarteira,
-        metaAngariacao: data.metaAngariacao,
-        metaLucro: data.metaLucro ?? null,
-        metaVendas: data.metaVendas ?? null,
+        metaCarteira: data.metaCarteira || data.metaReceita,
+        metaAngariacao: data.metaAngariacao || "0",
+        metaLucro: data.metaLucro || null,
+        metaVendas: data.metaVendas || null,
         metaCpfs: data.metaCpfs ?? null,
         metaPropostas: data.metaPropostas ?? null,
         updatedAt: new Date(),
       })
       .where(eq(metasAnuais.id, existing[0].id));
   } else {
-    await db.insert(metasAnuais).values(data);
+    await db.insert(metasAnuais).values({
+      ...data,
+      metaCarteira: data.metaCarteira || data.metaReceita,
+      metaAngariacao: data.metaAngariacao || "0",
+      metaLucro: data.metaLucro || null,
+      metaVendas: data.metaVendas || null,
+    });
   }
 }
 

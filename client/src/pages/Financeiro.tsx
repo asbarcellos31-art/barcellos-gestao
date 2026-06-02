@@ -932,10 +932,12 @@ function TabMetas({ ano }: { ano: number }) {
   const utils = trpc.useUtils();
   const [editando, setEditando] = useState<number | null>(null);
   const [form, setForm] = useState({ metaReceita: "", metaCarteira: "", metaAngariacao: "", metaLucro: "", metaVendas: "" });
+  const [editandoAnual, setEditandoAnual] = useState(false);
+  const [formAnual, setFormAnual] = useState({ metaReceita: "", metaAngariacao: "", metaLucro: "", metaVendas: "" });
 
   const salvar = trpc.financeiro.salvarMeta.useMutation({
-    onSuccess: () => { utils.financeiro.metasPorAno.invalidate({ ano }); toast.success("Meta salva!"); setEditando(null); },
-    onError: () => toast.error("Erro ao salvar"),
+    onSuccess: () => { utils.financeiro.metasPorAno.invalidate({ ano }); toast.success("Meta salva!"); setEditando(null); setEditandoAnual(false); },
+    onError: (e) => toast.error("Erro ao salvar: " + e.message),
   });
 
   // Realizado por mês a partir do DRE
@@ -1005,7 +1007,48 @@ function TabMetas({ ano }: { ano: number }) {
     <div className="space-y-4">
       {/* Metas Globais */}
       <div>
-        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">📌 Metas Globais {ano}</h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">📌 Metas Globais {ano}</h3>
+          <button
+            className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1 border rounded px-2 py-1"
+            onClick={() => {
+              setFormAnual({ metaReceita: metaAnual?.metaReceita ?? "", metaAngariacao: metaAnual?.metaAngariacao ?? "0", metaLucro: metaAnual?.metaLucro ?? "", metaVendas: metaAnual?.metaVendas ?? "" });
+              setEditandoAnual(true);
+            }}
+          ><Edit2 size={12} /> Editar metas anuais</button>
+        </div>
+        {editandoAnual && (
+          <div className="mb-4 p-3 border rounded-lg bg-muted/30 space-y-3">
+            <p className="text-xs font-medium text-muted-foreground">Metas Anuais {ano} (valores totais do ano)</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { key: "metaReceita", label: "Receita Total" },
+                { key: "metaAngariacao", label: "Angariação" },
+                { key: "metaLucro", label: "Lucro Líquido" },
+                { key: "metaVendas", label: "Vendas (Prêmio mensal)" },
+              ].map(({ key, label }) => (
+                <div key={key}>
+                  <label className="text-xs text-muted-foreground">{label}</label>
+                  <Input
+                    className="h-8 text-sm mt-1"
+                    type="number"
+                    placeholder="0"
+                    value={(formAnual as any)[key]}
+                    onChange={(e) => setFormAnual((p) => ({ ...p, [key]: e.target.value }))}
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <button
+                className="text-xs text-green-600 border border-green-300 rounded px-3 py-1 hover:bg-green-50 flex items-center gap-1"
+                onClick={() => salvar.mutate({ ano, mes: 0, metaReceita: formAnual.metaReceita || "0", metaCarteira: formAnual.metaReceita || "0", metaAngariacao: formAnual.metaAngariacao || "0", metaLucro: formAnual.metaLucro || null, metaVendas: formAnual.metaVendas || null })}
+                disabled={salvar.isPending}
+              ><Check size={12} /> Salvar</button>
+              <button className="text-xs text-muted-foreground border rounded px-3 py-1" onClick={() => setEditandoAnual(false)}><X size={12} /> Cancelar</button>
+            </div>
+          </div>
+        )}
         {metaAnual && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
@@ -1074,7 +1117,7 @@ function TabMetas({ ano }: { ano: number }) {
                         <td />
                         <td className="py-1 px-2">
                           <div className="flex gap-1 justify-center">
-                            <button onClick={() => salvar.mutate({ ano, mes: m.mes, metaReceita: form.metaReceita, metaCarteira: form.metaCarteira, metaAngariacao: form.metaAngariacao, metaLucro: form.metaLucro, metaVendas: form.metaVendas || null })} className="text-green-600"><Check size={14} /></button>
+                            <button onClick={() => salvar.mutate({ ano, mes: m.mes, metaReceita: form.metaReceita, metaCarteira: form.metaCarteira || form.metaReceita, metaAngariacao: form.metaAngariacao || "0", metaLucro: form.metaLucro || null, metaVendas: form.metaVendas || null })} className="text-green-600"><Check size={14} /></button>
                             <button onClick={() => setEditando(null)} className="text-red-500"><X size={14} /></button>
                           </div>
                         </td>
