@@ -302,7 +302,8 @@ export default function RelatorioExecutivo() {
   const mesAbrev = MESES_ABREV[mes];
 
   const pctReceita = m ? (m.metaReceita > 0 ? (m.receitaReal / m.metaReceita) * 100 : 0) : 0;
-  const pctVendas = m ? (m.metaVendas > 0 ? (m.receitaVendas / m.metaVendas) * 100 : (m.percentualMetaVendas || 0)) : 0;
+  const metaVendasEfetiva = m ? (m.metaVendas > 0 ? m.metaVendas : m.metaReceita) : 0;
+  const pctVendas = m && metaVendasEfetiva > 0 ? (m.receitaVendas / metaVendasEfetiva) * 100 : 0;
   const pctPropostas = m ? (m.metaPropostas > 0 ? (m.propostas / m.metaPropostas) * 100 : 0) : 0;
   const pctCpfs = m ? (m.metaCpfs > 0 ? (m.cpfsNovos / m.metaCpfs) * 100 : 0) : 0;
   const pctMargem = m ? (m.receitaReal > 0 ? (m.lucroLiquido / m.receitaReal) * 100 : 0) : 0;
@@ -463,9 +464,9 @@ export default function RelatorioExecutivo() {
                 <KpiCard
                   label="Vendas (Comissão)"
                   value={fmt(m.receitaVendas)}
-                  sub={m.metaVendas > 0 ? `Meta: ${fmt(m.metaVendas)}` : `${m.propostas} propostas`}
-                  sub2={m.metaVendas > 0 ? `${pctVendas.toFixed(0)}% da meta` : undefined}
-                  pct={m.metaVendas > 0 ? pctVendas : (pctPropostas || 50)}
+                  sub={metaVendasEfetiva > 0 ? `Meta: ${fmt(metaVendasEfetiva)}` : `${m.propostas} propostas`}
+                  sub2={metaVendasEfetiva > 0 ? `${pctVendas.toFixed(0)}% da meta` : undefined}
+                  pct={metaVendasEfetiva > 0 ? pctVendas : (pctPropostas || 50)}
                 />
                 <KpiCard
                   label="Propostas Aceitas"
@@ -624,24 +625,14 @@ export default function RelatorioExecutivo() {
                   </div>
 
                   {/* IMAP */}
-                  <div className="bg-white rounded-xl shadow-sm overflow-hidden border-l-4 border-indigo-500">
-                    <div className="p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="text-xs text-gray-500 font-semibold uppercase">IMAP — {mesNome}</div>
-                      </div>
-                      <input
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        max="100"
-                        placeholder="Ex: 8.5"
-                        value={insights.imap}
-                        onChange={(e) => setInsights((p) => ({ ...p, imap: e.target.value }))}
-                        className="w-full text-3xl font-black text-indigo-600 bg-transparent border-b border-indigo-200 focus:outline-none focus:border-indigo-500 pb-1 mb-2"
-                      />
-                      <p className="text-[10px] text-gray-400 mb-3">Salve o relatório para registrar</p>
-                      {(m.imapMedia !== null || m.imapMax !== null) && (
-                        <div className="grid grid-cols-3 gap-2">
+                  {(m.imap !== null || m.imapMedia !== null) && (
+                    <div className="bg-white rounded-xl shadow-sm overflow-hidden border-l-4 border-indigo-500">
+                      <div className="p-4">
+                        <div className="text-xs text-gray-500 font-semibold uppercase mb-2">IMAP — {mesNome}</div>
+                        <div className="text-3xl font-black text-indigo-600 mb-1">
+                          {m.imap !== null ? m.imap.toFixed(1) : "—"}
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 mt-3">
                           {m.imapMedia !== null && (
                             <div className="text-center">
                               <p className="text-[10px] text-gray-400 uppercase">Média {ano}</p>
@@ -663,9 +654,9 @@ export default function RelatorioExecutivo() {
                             </div>
                           )}
                         </div>
-                      )}
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Lucro Líquido */}
                   <div className="bg-white rounded-xl shadow-sm overflow-hidden border-l-4 border-emerald-500">

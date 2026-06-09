@@ -1158,9 +1158,74 @@ function TabMetas({ ano }: { ano: number }) {
 }
 
 // ─── Aba Indicadores ──────────────────────────────────────────────────────────
-function TabIndicadores() {
+function TabImap({ ano }: { ano: number }) {
+  const utils = trpc.useUtils();
+  const [editando, setEditando] = useState<number | null>(null);
+  const [valor, setValor] = useState("");
+  const salvar = trpc.relatorio.salvar.useMutation({
+    onSuccess: () => { utils.relatorio.listar.invalidate({ ano }); toast.success("IMAP salvo!"); setEditando(null); },
+    onError: (e) => toast.error("Erro: " + e.message),
+  });
+  const { data: relatorios } = trpc.relatorio.listar.useQuery({ ano });
+  const imapPorMes: Record<number, string> = {};
+  (relatorios || []).forEach((r: any) => { if (r.imap) imapPorMes[r.mes] = String(r.imap); });
+
+  return (
+    <div className="mb-6">
+      <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">📊 IMAP Mensal — {ano}</h3>
+      <p className="text-xs text-muted-foreground mb-3">Índice de Mercado de Apólices e Performance. Preencha a pontuação mensal — o Relatório Executivo exibe automaticamente.</p>
+      <div className="overflow-x-auto rounded-lg border">
+        <table className="w-full text-xs border-collapse">
+          <thead>
+            <tr className="bg-muted/50">
+              <th className="text-left py-2 px-3">MÊS</th>
+              <th className="text-right py-2 px-3">PONTUAÇÃO IMAP</th>
+              <th className="text-center py-2 px-3">AÇÕES</th>
+            </tr>
+          </thead>
+          <tbody>
+            {MESES_FULL.map((nome, i) => {
+              const mes = i + 1;
+              const imap = imapPorMes[mes];
+              return (
+                <tr key={mes} className="border-b hover:bg-muted/20">
+                  <td className="py-1.5 px-3 font-medium">{nome}</td>
+                  {editando === mes ? (
+                    <>
+                      <td className="py-1 px-3 text-right">
+                        <Input className="h-6 w-24 text-xs text-right ml-auto" type="number" step="0.1" placeholder="Ex: 8.5" value={valor} onChange={(e) => setValor(e.target.value)} />
+                      </td>
+                      <td className="py-1 px-3 text-center">
+                        <div className="flex gap-1 justify-center">
+                          <button onClick={() => salvar.mutate({ ano, mes, imap: valor || null })} className="text-green-600"><Check size={14} /></button>
+                          <button onClick={() => setEditando(null)} className="text-red-500"><X size={14} /></button>
+                        </div>
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td className="text-right py-1.5 px-3">
+                        {imap ? <span className="font-bold text-indigo-600">{parseFloat(imap).toFixed(1)}</span> : <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="text-center py-1.5 px-3">
+                        <button onClick={() => { setEditando(mes); setValor(imap ?? ""); }} className="text-muted-foreground hover:text-primary"><Edit2 size={12} /></button>
+                      </td>
+                    </>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function TabIndicadores({ ano }: { ano: number }) {
   return (
     <div className="space-y-6">
+      <TabImap ano={ano} />
       <div>
         <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">📌 Indicadores Financeiros</h3>
         <div className="overflow-x-auto rounded-lg border">
@@ -1430,7 +1495,7 @@ export default function Financeiro() {
             <TabMetas ano={ano} />
           </TabsContent>
           <TabsContent value="indicadores" className="mt-4">
-            <TabIndicadores />
+            <TabIndicadores ano={ano} />
           </TabsContent>
           <TabsContent value="projecoes" className="mt-4">
             <TabProjecoes />
