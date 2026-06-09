@@ -302,7 +302,7 @@ export default function RelatorioExecutivo() {
   const mesAbrev = MESES_ABREV[mes];
 
   const pctReceita = m ? (m.metaReceita > 0 ? (m.receitaReal / m.metaReceita) * 100 : 0) : 0;
-  const metaVendasEfetiva = m ? (m.metaVendas > 0 ? m.metaVendas : m.metaReceita) : 0;
+  const metaVendasEfetiva = m ? (m.metaVendas > 0 ? m.metaVendas : (m.metaPremioVendas || 0)) : 0;
   const pctVendas = m && metaVendasEfetiva > 0 ? (m.receitaVendas / metaVendasEfetiva) * 100 : 0;
   const pctPropostas = m ? (m.metaPropostas > 0 ? (m.propostas / m.metaPropostas) * 100 : 0) : 0;
   const pctCpfs = m ? (m.metaCpfs > 0 ? (m.cpfsNovos / m.metaCpfs) * 100 : 0) : 0;
