@@ -25,6 +25,7 @@ export async function salvarRelatorio(mes: number, ano: number, dados: {
   metaReceitaManual?: string | null;
   metaCpfsManual?: number | null;
   metaPropostasManual?: number | null;
+  imap?: string | null;
 }) {
   const db = await getDb();
   if (!db) return null;
@@ -326,20 +327,16 @@ export async function obterMetricasMes(mes: number, ano: number) {
   const metaAngariacao = parseFloat(meta?.metaAngariacao || "0");
   const metaCpfs = meta?.metaCpfs ? parseInt(String(meta.metaCpfs)) : 0;
   const metaPropostas = meta?.metaPropostas ? parseInt(String(meta.metaPropostas)) : 0;
-  const imapMes = meta?.imap ? parseFloat(String(meta.imap)) : null;
 
-  // ── 9.0 IMAP — todos os meses do ano para calcular média/max/min ──────
-  const imapMensaisRows = await db.select({
-    mes: metasAnuais.mes,
-    imap: metasAnuais.imap,
-  }).from(metasAnuais)
-    .where(and(eq(metasAnuais.ano, ano)));
-  const imapValores: { mes: number; valor: number }[] = [];
-  for (const r of imapMensaisRows) {
-    if (r.mes >= 1 && r.mes <= 12 && r.imap !== null) {
-      imapValores.push({ mes: r.mes, valor: parseFloat(String(r.imap)) });
-    }
-  }
+  // ── 9.0 IMAP — lido dos relatorios_executivos (não é meta, é indicador mensal) ──
+  const [imapAnoRows] = await db.execute(
+    sql`SELECT mes, imap FROM relatorios_executivos WHERE ano=${ano} AND imap IS NOT NULL`
+  ) as any;
+  const imapMesRow = (imapAnoRows as any[]).find((r: any) => parseInt(r.mes) === mes);
+  const imapMes = imapMesRow ? parseFloat(String(imapMesRow.imap)) : null;
+  const imapValores: { mes: number; valor: number }[] = (imapAnoRows as any[])
+    .map((r: any) => ({ mes: parseInt(r.mes), valor: parseFloat(String(r.imap)) }))
+    .filter((v) => v.mes >= 1 && v.mes <= 12);
   const imapMedia = imapValores.length > 0 ? imapValores.reduce((s, v) => s + v.valor, 0) / imapValores.length : null;
   const imapMax = imapValores.length > 0 ? Math.max(...imapValores.map((v) => v.valor)) : null;
   const imapMin = imapValores.length > 0 ? Math.min(...imapValores.map((v) => v.valor)) : null;

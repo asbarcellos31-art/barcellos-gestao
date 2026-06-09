@@ -1,1 +1,1 @@
-ALTER TABLE `metas_anuais` ADD COLUMN `imap` decimal(5,2);
+ALTER TABLE `relatorios_executivos` ADD COLUMN IF NOT EXISTS `imap` decimal(5,2);

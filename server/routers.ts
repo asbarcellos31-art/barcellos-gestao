@@ -676,7 +676,6 @@ export const appRouter = router({
         metaVendas: z.string().optional().nullable(),
         metaCpfs: z.number().optional().nullable(),
         metaPropostas: z.number().optional().nullable(),
-        imap: z.string().optional().nullable(),
       }))
       .mutation(({ input }) => upsertMeta(input)),
     comparativoMensal: publicProcedure.query(() => listarComparativoMensal()),
@@ -906,6 +905,7 @@ export const appRouter = router({
         metaReceitaManual: z.string().nullable().optional(),
         metaCpfsManual: z.number().nullable().optional(),
         metaPropostasManual: z.number().nullable().optional(),
+        imap: z.string().nullable().optional(),
       }))
       .mutation(({ input }) => {
         const { mes, ano, ...dados } = input;

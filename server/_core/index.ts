@@ -46,7 +46,7 @@ async function startServer() {
   // Migrações seguras (idempotentes)
   const db = await getDb();
   if (db) {
-    await db.execute(sql`ALTER TABLE metas_anuais ADD COLUMN IF NOT EXISTS imap DECIMAL(5,2)`).catch(() => {});
+    await db.execute(sql`ALTER TABLE relatorios_executivos ADD COLUMN IF NOT EXISTS imap DECIMAL(5,2)`).catch(() => {});
   }
 
   const app = express();
