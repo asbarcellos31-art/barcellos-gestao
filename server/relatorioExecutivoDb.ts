@@ -329,14 +329,19 @@ export async function obterMetricasMes(mes: number, ano: number) {
   const metaPropostas = meta?.metaPropostas ? parseInt(String(meta.metaPropostas)) : 0;
 
   // ── 9.0 IMAP — lido dos relatorios_executivos (não é meta, é indicador mensal) ──
-  const [imapAnoRows] = await db.execute(
-    sql`SELECT mes, imap FROM relatorios_executivos WHERE ano=${ano} AND imap IS NOT NULL`
-  ) as any;
-  const imapMesRow = (imapAnoRows as any[]).find((r: any) => parseInt(r.mes) === mes);
-  const imapMes = imapMesRow ? parseFloat(String(imapMesRow.imap)) : null;
-  const imapValores: { mes: number; valor: number }[] = (imapAnoRows as any[])
-    .map((r: any) => ({ mes: parseInt(r.mes), valor: parseFloat(String(r.imap)) }))
-    .filter((v) => v.mes >= 1 && v.mes <= 12);
+  let imapMes: number | null = null;
+  let imapValores: { mes: number; valor: number }[] = [];
+  try {
+    const [imapAnoRows] = await db.execute(
+      sql`SELECT mes, imap FROM relatorios_executivos WHERE ano=${ano} AND imap IS NOT NULL`
+    ) as any;
+    const rows = imapAnoRows as any[];
+    const imapMesRow = rows.find((r: any) => parseInt(r.mes) === mes);
+    imapMes = imapMesRow ? parseFloat(String(imapMesRow.imap)) : null;
+    imapValores = rows
+      .map((r: any) => ({ mes: parseInt(r.mes), valor: parseFloat(String(r.imap)) }))
+      .filter((v) => v.mes >= 1 && v.mes <= 12);
+  } catch (_) {}
   const imapMedia = imapValores.length > 0 ? imapValores.reduce((s, v) => s + v.valor, 0) / imapValores.length : null;
   const imapMax = imapValores.length > 0 ? Math.max(...imapValores.map((v) => v.valor)) : null;
   const imapMin = imapValores.length > 0 ? Math.min(...imapValores.map((v) => v.valor)) : null;
