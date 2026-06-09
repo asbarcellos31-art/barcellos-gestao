@@ -949,11 +949,11 @@ function TabMetas({ ano }: { ano: number }) {
     return por;
   }, [dreAno]);
 
-  // Vendas reais por mês (valorPremio)
+  // Vendas reais por mês (comissão gerada)
   const vendasPorMes = useMemo(() => {
     if (!resumoVendas) return {};
     const por: Record<number, number> = {};
-    resumoVendas.forEach((v) => { por[v.mes] = Number(v.faturamento) || 0; });
+    resumoVendas.forEach((v) => { por[v.mes] = Number(v.comissaoTotal) || 0; });
     return por;
   }, [resumoVendas]);
 
@@ -1090,7 +1090,7 @@ function TabMetas({ ano }: { ano: number }) {
                 <th className="text-right py-2 px-2">REALIZADO</th>
                 <th className="text-right py-2 px-2">% ATING.</th>
                 <th className="text-right py-2 px-2">META VENDAS</th>
-                <th className="text-right py-2 px-2">VENDAS REAL</th>
+                <th className="text-right py-2 px-2">COMISSÃO REAL</th>
                 <th className="text-right py-2 px-2">% VENDAS</th>
                 <th className="text-right py-2 px-2">IMAP</th>
                 <th className="text-center py-2 px-2">STATUS</th>

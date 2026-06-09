@@ -300,7 +300,7 @@ export default function RelatorioExecutivo() {
   const mesAbrev = MESES_ABREV[mes];
 
   const pctReceita = m ? (m.metaReceita > 0 ? (m.receitaReal / m.metaReceita) * 100 : 0) : 0;
-  const pctVendas = m ? (m.metaVendas > 0 ? (m.totalPremio / m.metaVendas) * 100 : (m.percentualMetaVendas || 0)) : 0;
+  const pctVendas = m ? (m.metaVendas > 0 ? (m.receitaVendas / m.metaVendas) * 100 : (m.percentualMetaVendas || 0)) : 0;
   const pctPropostas = m ? (m.metaPropostas > 0 ? (m.propostas / m.metaPropostas) * 100 : 0) : 0;
   const pctCpfs = m ? (m.metaCpfs > 0 ? (m.cpfsNovos / m.metaCpfs) * 100 : 0) : 0;
   const pctMargem = m ? (m.receitaReal > 0 ? (m.lucroLiquido / m.receitaReal) * 100 : 0) : 0;
@@ -459,10 +459,10 @@ export default function RelatorioExecutivo() {
                   pct={pctReceita}
                 />
                 <KpiCard
-                  label="Vendas (Prêmio Total)"
-                  value={fmt(m.totalPremio)}
-                  sub={m.metaVendas > 0 ? `Meta Vendas: ${fmt(m.metaVendas)}` : `${m.propostas} propostas`}
-                  sub2={m.metaVendas > 0 ? `${pctVendas.toFixed(0)}% da meta de vendas` : undefined}
+                  label="Vendas (Comissão)"
+                  value={fmt(m.receitaVendas)}
+                  sub={m.metaVendas > 0 ? `Meta: ${fmt(m.metaVendas)}` : `${m.propostas} propostas`}
+                  sub2={m.metaVendas > 0 ? `${pctVendas.toFixed(0)}% da meta` : undefined}
                   pct={m.metaVendas > 0 ? pctVendas : (pctPropostas || 50)}
                 />
                 <KpiCard
@@ -834,7 +834,7 @@ export default function RelatorioExecutivo() {
                   <div className="mt-3 text-xs text-gray-500">
                     Receita: {fmt(m.receitaReal)} vs Meta Comissão {fmt(m.metaReceita)}.
                     {m.metaReceita > m.receitaReal && ` Gap de ${fmt(m.metaReceita - m.receitaReal)}.`}
-                    {m.metaVendas > 0 && ` Vendas: ${fmt(m.totalPremio)} vs Meta Vendas ${fmt(m.metaVendas)} (${pctVendas.toFixed(0)}%).`}
+                    {m.metaVendas > 0 && ` Vendas (comissão): ${fmt(m.receitaVendas)} vs Meta ${fmt(m.metaVendas)} (${pctVendas.toFixed(0)}%).`}
                   </div>
                 </div>
 
