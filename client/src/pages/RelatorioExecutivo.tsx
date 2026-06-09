@@ -625,38 +625,31 @@ export default function RelatorioExecutivo() {
                   </div>
 
                   {/* IMAP */}
-                  {(m.imap !== null || m.imapMedia !== null) && (
-                    <div className="bg-white rounded-xl shadow-sm overflow-hidden border-l-4 border-indigo-500">
-                      <div className="p-4">
-                        <div className="text-xs text-gray-500 font-semibold uppercase mb-2">IMAP — {mesNome}</div>
-                        <div className="text-3xl font-black text-indigo-600 mb-1">
-                          {m.imap !== null ? m.imap.toFixed(1) : "—"}
+                  <div className="bg-white rounded-xl shadow-sm overflow-hidden border-l-4 border-indigo-500">
+                    <div className="p-4">
+                      <div className="text-xs text-gray-500 font-semibold uppercase mb-2">IMAP — {mesNome}</div>
+                      <div className="text-3xl font-black text-indigo-600 mb-1">
+                        {m.imap !== null ? m.imap.toFixed(1) : <span className="text-gray-300">—</span>}
+                      </div>
+                      <p className="text-[10px] text-gray-400 mb-3">Preencha em Financeiro → Indicadores</p>
+                      <div className="grid grid-cols-3 gap-2 border-t pt-3">
+                        <div className="text-center">
+                          <p className="text-[10px] text-gray-400 uppercase">Média 12m</p>
+                          <p className="text-sm font-bold text-indigo-500">{m.imapMedia !== null ? m.imapMedia.toFixed(1) : "—"}</p>
                         </div>
-                        <div className="grid grid-cols-3 gap-2 mt-3">
-                          {m.imapMedia !== null && (
-                            <div className="text-center">
-                              <p className="text-[10px] text-gray-400 uppercase">Média {ano}</p>
-                              <p className="text-sm font-bold text-indigo-500">{m.imapMedia.toFixed(1)}</p>
-                            </div>
-                          )}
-                          {m.imapMax !== null && (
-                            <div className="text-center">
-                              <p className="text-[10px] text-gray-400 uppercase">Maior</p>
-                              <p className="text-sm font-bold text-green-600">{m.imapMax.toFixed(1)}</p>
-                              {m.imapMaxMes && <p className="text-[9px] text-gray-400">{MESES_ABREV[m.imapMaxMes]}</p>}
-                            </div>
-                          )}
-                          {m.imapMin !== null && (
-                            <div className="text-center">
-                              <p className="text-[10px] text-gray-400 uppercase">Menor</p>
-                              <p className="text-sm font-bold text-red-500">{m.imapMin.toFixed(1)}</p>
-                              {m.imapMinMes && <p className="text-[9px] text-gray-400">{MESES_ABREV[m.imapMinMes]}</p>}
-                            </div>
-                          )}
+                        <div className="text-center">
+                          <p className="text-[10px] text-gray-400 uppercase">Maior 12m</p>
+                          <p className="text-sm font-bold text-green-600">{m.imapMax !== null ? m.imapMax.toFixed(1) : "—"}</p>
+                          {m.imapMaxMes && <p className="text-[9px] text-gray-400">{MESES_ABREV[m.imapMaxMes]}</p>}
+                        </div>
+                        <div className="text-center">
+                          <p className="text-[10px] text-gray-400 uppercase">Menor 12m</p>
+                          <p className="text-sm font-bold text-red-500">{m.imapMin !== null ? m.imapMin.toFixed(1) : "—"}</p>
+                          {m.imapMinMes && <p className="text-[9px] text-gray-400">{MESES_ABREV[m.imapMinMes]}</p>}
                         </div>
                       </div>
                     </div>
-                  )}
+                  </div>
 
                   {/* Lucro Líquido */}
                   <div className="bg-white rounded-xl shadow-sm overflow-hidden border-l-4 border-emerald-500">

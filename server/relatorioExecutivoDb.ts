@@ -328,25 +328,32 @@ export async function obterMetricasMes(mes: number, ano: number) {
   const metaCpfs = meta?.metaCpfs ? parseInt(String(meta.metaCpfs)) : 0;
   const metaPropostas = meta?.metaPropostas ? parseInt(String(meta.metaPropostas)) : 0;
 
-  // ── 9.0 IMAP — lido dos relatorios_executivos (não é meta, é indicador mensal) ──
+  // ── 9.0 IMAP — últimos 12 meses a partir de mes/ano selecionado ──────────
   let imapMes: number | null = null;
-  let imapValores: { mes: number; valor: number }[] = [];
+  let imapValores12: { mes: number; ano: number; valor: number }[] = [];
   try {
-    const [imapAnoRows] = await db.execute(
-      sql`SELECT mes, imap FROM relatorios_executivos WHERE ano=${ano} AND imap IS NOT NULL`
+    // Busca os últimos 12 registros com imap preenchido, ordenados desc
+    const [imapRows] = await db.execute(
+      sql`SELECT mes, ano, imap FROM relatorios_executivos
+          WHERE imap IS NOT NULL
+            AND (ano < ${ano} OR (ano = ${ano} AND mes <= ${mes}))
+          ORDER BY ano DESC, mes DESC
+          LIMIT 12`
     ) as any;
-    const rows = imapAnoRows as any[];
-    const imapMesRow = rows.find((r: any) => parseInt(r.mes) === mes);
-    imapMes = imapMesRow ? parseFloat(String(imapMesRow.imap)) : null;
-    imapValores = rows
-      .map((r: any) => ({ mes: parseInt(r.mes), valor: parseFloat(String(r.imap)) }))
-      .filter((v) => v.mes >= 1 && v.mes <= 12);
+    const rows = imapRows as any[];
+    const mesAtual = rows.find((r: any) => parseInt(r.mes) === mes && parseInt(r.ano) === ano);
+    imapMes = mesAtual ? parseFloat(String(mesAtual.imap)) : null;
+    imapValores12 = rows.map((r: any) => ({
+      mes: parseInt(r.mes), ano: parseInt(r.ano), valor: parseFloat(String(r.imap))
+    }));
   } catch (_) {}
-  const imapMedia = imapValores.length > 0 ? imapValores.reduce((s, v) => s + v.valor, 0) / imapValores.length : null;
-  const imapMax = imapValores.length > 0 ? Math.max(...imapValores.map((v) => v.valor)) : null;
-  const imapMin = imapValores.length > 0 ? Math.min(...imapValores.map((v) => v.valor)) : null;
-  const imapMaxMes = imapMax !== null ? (imapValores.find((v) => v.valor === imapMax)?.mes ?? null) : null;
-  const imapMinMes = imapMin !== null ? (imapValores.find((v) => v.valor === imapMin)?.mes ?? null) : null;
+  const imapMedia = imapValores12.length > 0 ? imapValores12.reduce((s, v) => s + v.valor, 0) / imapValores12.length : null;
+  const imapMax = imapValores12.length > 0 ? Math.max(...imapValores12.map((v) => v.valor)) : null;
+  const imapMin = imapValores12.length > 0 ? Math.min(...imapValores12.map((v) => v.valor)) : null;
+  const imapMaxEntry = imapMax !== null ? imapValores12.find((v) => v.valor === imapMax) : null;
+  const imapMinEntry = imapMin !== null ? imapValores12.find((v) => v.valor === imapMin) : null;
+  const imapMaxMes = imapMaxEntry?.mes ?? null;
+  const imapMinMes = imapMinEntry?.mes ?? null;
 
   const metaAnualRows = await db.select().from(metasAnuais)
     .where(and(eq(metasAnuais.ano, ano), eq(metasAnuais.mes, 0)))
