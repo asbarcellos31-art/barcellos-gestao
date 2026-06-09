@@ -468,7 +468,7 @@ export async function obterMetricasMes(mes: number, ano: number) {
     imapMin,
     imapMaxMes,
     imapMinMes,
-    imapValores,
+    imapValores: imapValores12,
     // Contas a pagar
     contas,
     // Vendas
