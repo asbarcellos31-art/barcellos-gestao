@@ -1086,34 +1086,25 @@ function TabMetas({ ano }: { ano: number }) {
             <thead>
               <tr className="bg-muted/50">
                 <th className="text-left py-2 px-3">MÊS</th>
-                <th className="text-right py-2 px-2">META RECEITA</th>
+                <th className="text-right py-2 px-2">META VENDAS</th>
                 <th className="text-right py-2 px-2">REALIZADO</th>
                 <th className="text-right py-2 px-2">% ATING.</th>
-                <th className="text-right py-2 px-2">META VENDAS</th>
-                <th className="text-right py-2 px-2">COMISSÃO REAL</th>
-                <th className="text-right py-2 px-2">% VENDAS</th>
                 <th className="text-center py-2 px-2">STATUS</th>
                 <th className="text-center py-2 px-2">AÇÕES</th>
               </tr>
             </thead>
             <tbody>
               {metasMensais.map((m) => {
-                const realizado = realizadoPorMes[m.mes] ?? 0;
+                const realizado = vendasPorMes[m.mes] ?? 0;
                 const pct = parseFloat(m.metaReceita) > 0 ? realizado / parseFloat(m.metaReceita) : 0;
-                const vendasReal = vendasPorMes[m.mes] ?? 0;
-                const metaVendasNum = m.metaVendas ? parseFloat(m.metaVendas) : 0;
-                const pctVendas = metaVendasNum > 0 ? vendasReal / metaVendasNum : 0;
                 return (
                   <tr key={m.mes} className="border-b hover:bg-muted/20">
                     <td className="py-1.5 px-3 font-medium">{MESES_FULL[m.mes - 1]}</td>
                     {editando === m.mes ? (
                       <>
-                        <td className="py-1 px-2"><Input className="h-6 w-24 text-xs text-right" value={form.metaReceita} onChange={(e) => setForm((p) => ({ ...p, metaReceita: e.target.value }))} /></td>
+                        <td className="py-1 px-2"><Input className="h-6 w-24 text-xs text-right" value={form.metaReceita} placeholder="Ex: 3500" onChange={(e) => setForm((p) => ({ ...p, metaReceita: e.target.value }))} /></td>
                         <td className="text-right py-1.5 px-2">{realizado > 0 ? fmt(realizado) : "—"}</td>
                         <td className="text-right py-1.5 px-2">{fmtPct(pct)}</td>
-                        <td className="py-1 px-2"><Input className="h-6 w-24 text-xs text-right" value={form.metaVendas} placeholder="Ex: 3500" onChange={(e) => setForm((p) => ({ ...p, metaVendas: e.target.value }))} /></td>
-                        <td className="text-right py-1.5 px-2">{vendasReal > 0 ? fmt(vendasReal) : "—"}</td>
-                        <td className="text-right py-1.5 px-2">{metaVendasNum > 0 ? fmtPct(pctVendas) : "—"}</td>
                         <td />
                         <td className="py-1 px-2">
                           <div className="flex gap-1 justify-center">
@@ -1126,11 +1117,8 @@ function TabMetas({ ano }: { ano: number }) {
                       <>
                         <td className="text-right py-1.5 px-2">{fmt(parseFloat(m.metaReceita))}</td>
                         <td className="text-right py-1.5 px-2">{realizado > 0 ? fmt(realizado) : "—"}</td>
-                        <td className={`text-right py-1.5 px-2 font-medium ${pct >= 0.8 ? "text-green-600" : pct >= 0.5 ? "text-yellow-600" : "text-red-500"}`}>{fmtPct(pct)}</td>
-                        <td className="text-right py-1.5 px-2">{metaVendasNum > 0 ? <span className="text-blue-600">{fmt(metaVendasNum)}</span> : <span className="text-gray-300">—</span>}</td>
-                        <td className="text-right py-1.5 px-2">{vendasReal > 0 ? <span className="font-medium">{fmt(vendasReal)}</span> : <span className="text-gray-300">—</span>}</td>
-                        <td className={`text-right py-1.5 px-2 ${pctVendas >= 0.8 ? "text-green-600" : pctVendas > 0 ? "text-yellow-600" : "text-gray-300"}`}>{metaVendasNum > 0 && vendasReal > 0 ? fmtPct(pctVendas) : "—"}</td>
-                        <td className="text-center py-1.5 px-2">{pct >= 0.8 ? "🟢" : pct > 0 ? "🟡" : "🔴"}</td>
+                        <td className={`text-right py-1.5 px-2 font-medium ${pct >= 0.8 ? "text-green-600" : pct >= 0.5 ? "text-yellow-600" : "text-red-500"}`}>{realizado > 0 ? fmtPct(pct) : <span className="text-gray-300">—</span>}</td>
+                        <td className="text-center py-1.5 px-2">{realizado > 0 ? (pct >= 0.8 ? "🟢" : pct >= 0.5 ? "🟡" : "🔴") : <span className="text-gray-300">—</span>}</td>
                         <td className="text-center py-1.5 px-2">
                           <button onClick={() => { setEditando(m.mes); setForm({ metaReceita: m.metaReceita, metaCarteira: m.metaCarteira, metaAngariacao: m.metaAngariacao, metaLucro: m.metaLucro ?? "", metaVendas: m.metaVendas ?? "" }); }} className="text-muted-foreground hover:text-primary"><Edit2 size={12} /></button>
                         </td>
