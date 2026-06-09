@@ -97,6 +97,9 @@ export default function Vendas() {
   const { ano } = useAno();
   const [mesSel, setMesSel] = useState<number | null>(null);
   const [corretorFiltro, setCorretorFiltro] = useState<string>("");
+  const [busca, setBusca] = useState("");
+  const [sortCol, setSortCol] = useState<"dataVenda" | "nomeCliente" | "comissaoPaga" | "implantada">("dataVenda");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [modalAberto, setModalAberto] = useState(false);
   const [editandoId, setEditandoId] = useState<number | null>(null);
   const [form, setForm] = useState<VendaForm>(formVazio(mesSel || new Date().getMonth() + 1, ano));
@@ -408,7 +411,24 @@ export default function Vendas() {
 
   const { data: resumoMensal } = trpc.vendas.resumoMensal.useQuery({ ano });
 
-  const vendas = dadosVendas?.vendas || [];
+  const vendasRaw = dadosVendas?.vendas || [];
+  const vendasFiltradas = vendasRaw
+    .filter(v => {
+      if (!busca) return true;
+      const q = busca.toLowerCase();
+      return (v.nomeCliente || "").toLowerCase().includes(q) || (v.cpfCliente || "").includes(q);
+    })
+    .sort((a, b) => {
+      let va: any, vb: any;
+      if (sortCol === "dataVenda") { va = a.dataVenda || ""; vb = b.dataVenda || ""; }
+      else if (sortCol === "nomeCliente") { va = (a.nomeCliente || "").toLowerCase(); vb = (b.nomeCliente || "").toLowerCase(); }
+      else if (sortCol === "comissaoPaga") { va = a.comissaoPaga === "PAGO" ? 1 : 0; vb = b.comissaoPaga === "PAGO" ? 1 : 0; }
+      else if (sortCol === "implantada") { va = a.implantada === "SIM" ? 1 : 0; vb = b.implantada === "SIM" ? 1 : 0; }
+      if (va < vb) return sortDir === "asc" ? -1 : 1;
+      if (va > vb) return sortDir === "asc" ? 1 : -1;
+      return 0;
+    });
+  const vendas = vendasFiltradas;
   const corretores = resumo || [];
 
   const m = metricas || { totalPropostas: 0, cpfNovos: 0, faturamento: 0, comissaoTotal: 0, ticketMedio: 0, comissoesPagas: 0, implantadas: 0 };
@@ -993,27 +1013,52 @@ export default function Vendas() {
 
           {/* Tabela de Lançamentos */}
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardHeader className="flex flex-row items-center justify-between gap-3 pb-2 flex-wrap">
               <CardTitle className="text-base">
-                {isLoading ? "Carregando..." : `${vendas.length} lançamentos`}
+                {isLoading ? "Carregando..." : `${vendas.length} lançamento${vendas.length !== 1 ? "s" : ""}${busca ? ` (filtrado de ${vendasRaw.length})` : ""}`}
               </CardTitle>
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar nome ou CPF..."
+                    value={busca}
+                    onChange={e => setBusca(e.target.value)}
+                    className="pl-8 h-8 text-sm w-52"
+                  />
+                  {busca && <button onClick={() => setBusca("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="w-3.5 h-3.5" /></button>}
+                </div>
+              </div>
             </CardHeader>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b bg-muted/50">
-                      <th className="text-left p-3 font-medium">Data</th>
-                      <th className="text-left p-3 font-medium">Nome do Cliente</th>
-                      <th className="text-left p-3 font-medium">CPF</th>
-                      <th className="text-right p-3 font-medium">Valor</th>
-                      <th className="text-center p-3 font-medium">CPF Novo</th>
-                      <th className="text-right p-3 font-medium">Comissão</th>
-                      <th className="text-center p-3 font-medium">Com. Paga</th>
-                      <th className="text-center p-3 font-medium">Implantada</th>
-                      <th className="text-center p-3 font-medium">Vendedor</th>
-                      <th className="text-center p-3 font-medium">Base</th>
-                      <th className="text-center p-3 font-medium">Ações</th>
+                      {(() => {
+                        const SortTh = ({ col, label, align = "left" }: { col: typeof sortCol; label: string; align?: string }) => {
+                          const ativo = sortCol === col;
+                          const toggle = () => { if (ativo) setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortCol(col); setSortDir("asc"); } };
+                          return (
+                            <th className={`p-3 font-medium text-${align} cursor-pointer select-none hover:text-primary whitespace-nowrap`} onClick={toggle}>
+                              {label} {ativo ? (sortDir === "asc" ? "↑" : "↓") : <span className="text-muted-foreground/30">↕</span>}
+                            </th>
+                          );
+                        };
+                        return <>
+                          <SortTh col="dataVenda" label="Data" />
+                          <SortTh col="nomeCliente" label="Nome do Cliente" />
+                          <th className="text-left p-3 font-medium">CPF</th>
+                          <th className="text-right p-3 font-medium">Valor</th>
+                          <th className="text-center p-3 font-medium">CPF Novo</th>
+                          <th className="text-right p-3 font-medium">Comissão</th>
+                          <SortTh col="comissaoPaga" label="Com. Paga" align="center" />
+                          <SortTh col="implantada" label="Implantada" align="center" />
+                          <th className="text-center p-3 font-medium">Vendedor</th>
+                          <th className="text-center p-3 font-medium">Base</th>
+                          <th className="text-center p-3 font-medium">Ações</th>
+                        </>;
+                      })()}
                     </tr>
                   </thead>
                   <tbody>
