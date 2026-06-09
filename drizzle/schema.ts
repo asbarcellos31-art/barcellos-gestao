@@ -386,6 +386,7 @@ export const metasAnuais = mysqlTable("metas_anuais", {
   metaVendas: decimal("metaVendas", { precision: 15, scale: 2 }), // Meta de prêmio total de vendas (soma de todos os vendedores)
   metaCpfs: int("metaCpfs").default(0),
   metaPropostas: int("metaPropostas").default(0),
+  imap: decimal("imap", { precision: 5, scale: 2 }), // Pontuação IMAP do mês
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

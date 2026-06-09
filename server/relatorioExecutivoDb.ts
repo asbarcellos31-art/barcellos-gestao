@@ -326,6 +326,25 @@ export async function obterMetricasMes(mes: number, ano: number) {
   const metaAngariacao = parseFloat(meta?.metaAngariacao || "0");
   const metaCpfs = meta?.metaCpfs ? parseInt(String(meta.metaCpfs)) : 0;
   const metaPropostas = meta?.metaPropostas ? parseInt(String(meta.metaPropostas)) : 0;
+  const imapMes = meta?.imap ? parseFloat(String(meta.imap)) : null;
+
+  // ── 9.0 IMAP — todos os meses do ano para calcular média/max/min ──────
+  const imapMensaisRows = await db.select({
+    mes: metasAnuais.mes,
+    imap: metasAnuais.imap,
+  }).from(metasAnuais)
+    .where(and(eq(metasAnuais.ano, ano)));
+  const imapValores: { mes: number; valor: number }[] = [];
+  for (const r of imapMensaisRows) {
+    if (r.mes >= 1 && r.mes <= 12 && r.imap !== null) {
+      imapValores.push({ mes: r.mes, valor: parseFloat(String(r.imap)) });
+    }
+  }
+  const imapMedia = imapValores.length > 0 ? imapValores.reduce((s, v) => s + v.valor, 0) / imapValores.length : null;
+  const imapMax = imapValores.length > 0 ? Math.max(...imapValores.map((v) => v.valor)) : null;
+  const imapMin = imapValores.length > 0 ? Math.min(...imapValores.map((v) => v.valor)) : null;
+  const imapMaxMes = imapMax !== null ? (imapValores.find((v) => v.valor === imapMax)?.mes ?? null) : null;
+  const imapMinMes = imapMin !== null ? (imapValores.find((v) => v.valor === imapMin)?.mes ?? null) : null;
 
   const metaAnualRows = await db.select().from(metasAnuais)
     .where(and(eq(metasAnuais.ano, ano), eq(metasAnuais.mes, 0)))
@@ -433,6 +452,14 @@ export async function obterMetricasMes(mes: number, ano: number) {
     percentualMetaPremioVendas: metaPremioVendas > 0 ? (totalPremio / metaPremioVendas) * 100 : 0,
     // Meta de angariação (vendas novas por mês — R$ recebido como angariação)
     metaAngariacao,
+    // IMAP
+    imap: imapMes,
+    imapMedia: imapMedia !== null ? parseFloat(imapMedia.toFixed(2)) : null,
+    imapMax,
+    imapMin,
+    imapMaxMes,
+    imapMinMes,
+    imapValores,
     // Contas a pagar
     contas,
     // Vendas

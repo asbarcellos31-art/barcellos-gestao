@@ -931,7 +931,7 @@ function TabMetas({ ano }: { ano: number }) {
   const { data: resumoVendas } = trpc.vendas.resumoMensal.useQuery({ ano });
   const utils = trpc.useUtils();
   const [editando, setEditando] = useState<number | null>(null);
-  const [form, setForm] = useState({ metaReceita: "", metaCarteira: "", metaAngariacao: "", metaLucro: "", metaVendas: "" });
+  const [form, setForm] = useState({ metaReceita: "", metaCarteira: "", metaAngariacao: "", metaLucro: "", metaVendas: "", imap: "" });
   const [editandoAnual, setEditandoAnual] = useState(false);
   const [formAnual, setFormAnual] = useState({ metaReceita: "", metaAngariacao: "", metaLucro: "", metaVendas: "" });
 
@@ -1092,6 +1092,7 @@ function TabMetas({ ano }: { ano: number }) {
                 <th className="text-right py-2 px-2">META VENDAS</th>
                 <th className="text-right py-2 px-2">VENDAS REAL</th>
                 <th className="text-right py-2 px-2">% VENDAS</th>
+                <th className="text-right py-2 px-2">IMAP</th>
                 <th className="text-center py-2 px-2">STATUS</th>
                 <th className="text-center py-2 px-2">AÇÕES</th>
               </tr>
@@ -1114,10 +1115,11 @@ function TabMetas({ ano }: { ano: number }) {
                         <td className="py-1 px-2"><Input className="h-6 w-24 text-xs text-right" value={form.metaVendas} placeholder="Ex: 3500" onChange={(e) => setForm((p) => ({ ...p, metaVendas: e.target.value }))} /></td>
                         <td className="text-right py-1.5 px-2">{vendasReal > 0 ? fmt(vendasReal) : "—"}</td>
                         <td className="text-right py-1.5 px-2">{metaVendasNum > 0 ? fmtPct(pctVendas) : "—"}</td>
+                        <td className="py-1 px-2"><Input className="h-6 w-20 text-xs text-right" value={form.imap} placeholder="Ex: 8.5" onChange={(e) => setForm((p) => ({ ...p, imap: e.target.value }))} /></td>
                         <td />
                         <td className="py-1 px-2">
                           <div className="flex gap-1 justify-center">
-                            <button onClick={() => salvar.mutate({ ano, mes: m.mes, metaReceita: form.metaReceita, metaCarteira: form.metaCarteira || form.metaReceita, metaAngariacao: form.metaAngariacao || "0", metaLucro: form.metaLucro || null, metaVendas: form.metaVendas || null })} className="text-green-600"><Check size={14} /></button>
+                            <button onClick={() => salvar.mutate({ ano, mes: m.mes, metaReceita: form.metaReceita, metaCarteira: form.metaCarteira || form.metaReceita, metaAngariacao: form.metaAngariacao || "0", metaLucro: form.metaLucro || null, metaVendas: form.metaVendas || null, imap: form.imap || null })} className="text-green-600"><Check size={14} /></button>
                             <button onClick={() => setEditando(null)} className="text-red-500"><X size={14} /></button>
                           </div>
                         </td>
@@ -1130,9 +1132,10 @@ function TabMetas({ ano }: { ano: number }) {
                         <td className="text-right py-1.5 px-2">{metaVendasNum > 0 ? <span className="text-blue-600">{fmt(metaVendasNum)}</span> : <span className="text-gray-300">—</span>}</td>
                         <td className="text-right py-1.5 px-2">{vendasReal > 0 ? <span className="font-medium">{fmt(vendasReal)}</span> : <span className="text-gray-300">—</span>}</td>
                         <td className={`text-right py-1.5 px-2 ${pctVendas >= 0.8 ? "text-green-600" : pctVendas > 0 ? "text-yellow-600" : "text-gray-300"}`}>{metaVendasNum > 0 && vendasReal > 0 ? fmtPct(pctVendas) : "—"}</td>
+                        <td className="text-right py-1.5 px-2">{m.imap ? <span className="font-semibold text-indigo-600">{parseFloat(m.imap).toFixed(1)}</span> : <span className="text-gray-300">—</span>}</td>
                         <td className="text-center py-1.5 px-2">{pct >= 0.8 ? "🟢" : pct > 0 ? "🟡" : "🔴"}</td>
                         <td className="text-center py-1.5 px-2">
-                          <button onClick={() => { setEditando(m.mes); setForm({ metaReceita: m.metaReceita, metaCarteira: m.metaCarteira, metaAngariacao: m.metaAngariacao, metaLucro: m.metaLucro ?? "", metaVendas: m.metaVendas ?? "" }); }} className="text-muted-foreground hover:text-primary"><Edit2 size={12} /></button>
+                          <button onClick={() => { setEditando(m.mes); setForm({ metaReceita: m.metaReceita, metaCarteira: m.metaCarteira, metaAngariacao: m.metaAngariacao, metaLucro: m.metaLucro ?? "", metaVendas: m.metaVendas ?? "", imap: m.imap ?? "" }); }} className="text-muted-foreground hover:text-primary"><Edit2 size={12} /></button>
                         </td>
                       </>
                     )}

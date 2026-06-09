@@ -15,6 +15,8 @@ import inadimplentesEnriquecerRouter from "../inadimplentesEnriquecerRouter";
 import { magBoletosExpressRouter } from "../magBoletosRouter";
 import { garantirAdminPadrao } from "../configuracoesDb";
 import { verificarEDisparar } from "../emailAutomacao";
+import { getDb } from "../db";
+import { sql } from "drizzle-orm";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -40,6 +42,12 @@ async function startServer() {
   await garantirAdminPadrao().catch(err => {
     console.warn("[Boot] Não foi possível garantir admin padrão:", err?.message || err);
   });
+
+  // Migrações seguras (idempotentes)
+  const db = await getDb();
+  if (db) {
+    await db.execute(sql`ALTER TABLE metas_anuais ADD COLUMN IF NOT EXISTS imap DECIMAL(5,2)`).catch(() => {});
+  }
 
   const app = express();
   const server = createServer(app);

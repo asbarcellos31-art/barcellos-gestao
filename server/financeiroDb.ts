@@ -299,6 +299,7 @@ export async function upsertMeta(data: {
   metaVendas?: string | null;
   metaCpfs?: number | null;
   metaPropostas?: number | null;
+  imap?: string | null;
 }) {
   const db = getDb();
   const existing = await db
@@ -306,7 +307,7 @@ export async function upsertMeta(data: {
     .from(metasAnuais)
     .where(and(eq(metasAnuais.ano, data.ano), eq(metasAnuais.mes, data.mes)));
   if (existing.length > 0) {
-    // Preserva metaCpfs/metaPropostas existentes se não foram enviados na requisição
+    // Preserva metaCpfs/metaPropostas/imap existentes se não foram enviados na requisição
     const updateSet: any = {
       metaReceita: data.metaReceita,
       metaCarteira: data.metaCarteira || data.metaReceita,
@@ -317,6 +318,7 @@ export async function upsertMeta(data: {
     };
     if (data.metaCpfs !== undefined) updateSet.metaCpfs = data.metaCpfs ?? null;
     if (data.metaPropostas !== undefined) updateSet.metaPropostas = data.metaPropostas ?? null;
+    if (data.imap !== undefined) updateSet.imap = data.imap || null;
     await db.update(metasAnuais).set(updateSet).where(eq(metasAnuais.id, existing[0].id));
   } else {
     await db.insert(metasAnuais).values({
@@ -325,6 +327,7 @@ export async function upsertMeta(data: {
       metaAngariacao: data.metaAngariacao || "0",
       metaLucro: data.metaLucro || null,
       metaVendas: data.metaVendas || null,
+      imap: data.imap || null,
     });
   }
 }

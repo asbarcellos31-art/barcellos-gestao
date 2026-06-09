@@ -676,6 +676,7 @@ export const appRouter = router({
         metaVendas: z.string().optional().nullable(),
         metaCpfs: z.number().optional().nullable(),
         metaPropostas: z.number().optional().nullable(),
+        imap: z.string().optional().nullable(),
       }))
       .mutation(({ input }) => upsertMeta(input)),
     comparativoMensal: publicProcedure.query(() => listarComparativoMensal()),
