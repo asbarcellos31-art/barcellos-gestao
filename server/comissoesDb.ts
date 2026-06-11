@@ -313,8 +313,9 @@ export async function inserirInadimplentes(linhas: InsertInadimplente[]) {
     }
 
     // Buscar registro existente pelo CPF + mês + ano
+    // Seleciona apenas id e status para evitar erro com colunas novas que ainda não existem no banco
     const existentes = await db
-      .select()
+      .select({ id: inadimplentes.id, status: inadimplentes.status })
       .from(inadimplentes)
       .where(and(
         eq(inadimplentes.cpf, linha.cpf),
