@@ -46,7 +46,20 @@ async function startServer() {
   // Migrações seguras (idempotentes)
   const db = await getDb();
   if (db) {
-    await db.execute(sql`ALTER TABLE relatorios_executivos ADD COLUMN IF NOT EXISTS imap DECIMAL(5,2)`).catch(() => {});
+    const migrations = [
+      sql`ALTER TABLE relatorios_executivos ADD COLUMN imap DECIMAL(5,2)`,
+      sql`ALTER TABLE inadimplentes ADD COLUMN boleto_pdf TEXT`,
+      sql`ALTER TABLE inadimplentes ADD COLUMN boleto_nome VARCHAR(255)`,
+    ];
+    for (const m of migrations) {
+      try {
+        await db.execute(m);
+      } catch (e: any) {
+        if (e?.errno !== 1060 && !e?.message?.includes("Duplicate column")) {
+          console.warn("[Boot] Migração:", e?.message);
+        }
+      }
+    }
   }
 
   const app = express();
