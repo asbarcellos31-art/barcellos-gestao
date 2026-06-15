@@ -739,9 +739,27 @@ export async function metricasCRMBeneficiarios() {
 // CRM LEADS
 // ============================================================
 
-export async function listarLeads(opts?: { busca?: string; status?: string; mes?: number; ano?: number; vendedor?: string; origem?: string; dataInicio?: string; dataFim?: string }) {
+export async function listarLeads(opts?: { busca?: string; status?: string; mes?: number; ano?: number; vendedor?: string; origem?: string; dataInicio?: string; dataFim?: string; cidade?: string; uf?: string; bairro?: string }) {
   const db = await getDb();
   if (!db) return { leads: [], total: 0 };
+
+  // Migração lazy: adiciona colunas novas se ainda não existirem
+  const novaColunas = [
+    "ALTER TABLE crm_leads ADD COLUMN celular2 VARCHAR(30)",
+    "ALTER TABLE crm_leads ADD COLUMN celular3 VARCHAR(30)",
+    "ALTER TABLE crm_leads ADD COLUMN fixo1 VARCHAR(30)",
+    "ALTER TABLE crm_leads ADD COLUMN fixo2 VARCHAR(30)",
+    "ALTER TABLE crm_leads ADD COLUMN fixo3 VARCHAR(30)",
+    "ALTER TABLE crm_leads ADD COLUMN logradouro VARCHAR(255)",
+    "ALTER TABLE crm_leads ADD COLUMN numero VARCHAR(20)",
+    "ALTER TABLE crm_leads ADD COLUMN complemento VARCHAR(100)",
+    "ALTER TABLE crm_leads ADD COLUMN bairro VARCHAR(100)",
+    "ALTER TABLE crm_leads ADD COLUMN cidade VARCHAR(100)",
+    "ALTER TABLE crm_leads ADD COLUMN uf VARCHAR(2)",
+  ];
+  for (const stmt of novaColunas) {
+    try { await db.execute(sql.raw(stmt)); } catch { /* coluna já existe */ }
+  }
 
   const conditions = [];
   if (opts?.status && opts.status !== "todos") {
@@ -751,9 +769,18 @@ export async function listarLeads(opts?: { busca?: string; status?: string; mes?
   if (opts?.ano) conditions.push(eq(crmLeads.ano, opts.ano));
   if (opts?.vendedor && opts.vendedor !== "todos") conditions.push(eq(crmLeads.vendedor, opts.vendedor));
   if (opts?.origem && opts.origem !== "todos") conditions.push(eq(crmLeads.origem, opts.origem));
+  if (opts?.uf && opts.uf !== "todos") conditions.push(eq(crmLeads.uf, opts.uf));
+  if (opts?.cidade) conditions.push(like(crmLeads.cidade, `%${opts.cidade}%`));
+  if (opts?.bairro) conditions.push(like(crmLeads.bairro, `%${opts.bairro}%`));
   if (opts?.busca) {
     const b = `%${opts.busca}%`;
-    conditions.push(or(like(crmLeads.nome, b), like(crmLeads.telefone, b), like(crmLeads.cpf, b)));
+    conditions.push(or(
+      like(crmLeads.nome, b),
+      like(crmLeads.cpf, b),
+      like(crmLeads.telefone, b),
+      like(crmLeads.cidade, b),
+      like(crmLeads.bairro, b),
+    ));
   }
   if (opts?.dataInicio) conditions.push(sql`DATE(${crmLeads.createdAt}) >= ${opts.dataInicio}`);
   if (opts?.dataFim) conditions.push(sql`DATE(${crmLeads.createdAt}) <= ${opts.dataFim}`);
@@ -762,6 +789,24 @@ export async function listarLeads(opts?: { busca?: string; status?: string; mes?
   const rows = await db.select().from(crmLeads).where(where).orderBy(desc(crmLeads.createdAt));
 
   return { leads: rows, total: rows.length };
+}
+
+export async function listarCidadesLeads() {
+  const db = await getDb();
+  if (!db) return [];
+  try {
+    const [rows] = await db.execute(sql`SELECT DISTINCT cidade FROM crm_leads WHERE cidade IS NOT NULL AND cidade != '' ORDER BY cidade`) as any;
+    return (rows as any[]).map((r: any) => r.cidade as string);
+  } catch { return []; }
+}
+
+export async function listarUFsLeads() {
+  const db = await getDb();
+  if (!db) return [];
+  try {
+    const [rows] = await db.execute(sql`SELECT DISTINCT uf FROM crm_leads WHERE uf IS NOT NULL AND uf != '' ORDER BY uf`) as any;
+    return (rows as any[]).map((r: any) => r.uf as string);
+  } catch { return []; }
 }
 
 export async function listarOrigensLeads() {

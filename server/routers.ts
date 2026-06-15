@@ -116,6 +116,8 @@ import {
   criarOrigemLead,
   excluirOrigemLead,
   listarVendedoresLeads,
+  listarCidadesLeads,
+  listarUFsLeads,
   listarProdutos,
   listarProdutosDoCliente,
   vincularProdutoCliente,
@@ -565,9 +567,17 @@ export const appRouter = router({
 
   crmLeads: router({
     listar: publicProcedure
-      .input(z.object({ busca: z.string().optional(), status: z.string().optional(), mes: z.number().optional(), ano: z.number().optional(), vendedor: z.string().optional(), origem: z.string().optional(), dataInicio: z.string().optional(), dataFim: z.string().optional() }))
+      .input(z.object({
+        busca: z.string().optional(), status: z.string().optional(),
+        mes: z.number().optional(), ano: z.number().optional(),
+        vendedor: z.string().optional(), origem: z.string().optional(),
+        dataInicio: z.string().optional(), dataFim: z.string().optional(),
+        cidade: z.string().optional(), uf: z.string().optional(), bairro: z.string().optional(),
+      }))
       .query(({ input }) => listarLeads(input)),
     listarOrigens: publicProcedure.query(() => listarOrigensLeads()),
+    listarCidades: publicProcedure.query(() => listarCidadesLeads()),
+    listarUFs: publicProcedure.query(() => listarUFsLeads()),
     criarOrigem: publicProcedure
       .input(z.object({ nome: z.string().min(1) }))
       .mutation(({ input }) => criarOrigemLead(input.nome)),
@@ -581,7 +591,19 @@ export const appRouter = router({
     criar: publicProcedure
       .input(z.object({
         nome: z.string(),
+        cpf: z.string().optional().nullable(),
         telefone: z.string().optional().nullable(),
+        celular2: z.string().optional().nullable(),
+        celular3: z.string().optional().nullable(),
+        fixo1: z.string().optional().nullable(),
+        fixo2: z.string().optional().nullable(),
+        fixo3: z.string().optional().nullable(),
+        logradouro: z.string().optional().nullable(),
+        numero: z.string().optional().nullable(),
+        complemento: z.string().optional().nullable(),
+        bairro: z.string().optional().nullable(),
+        cidade: z.string().optional().nullable(),
+        uf: z.string().optional().nullable(),
         dataEntrega: z.string().optional().nullable(),
         mes: z.number().optional().nullable(),
         ano: z.number().optional().nullable(),

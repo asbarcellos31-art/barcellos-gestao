@@ -44,15 +44,24 @@ const fmtDate = (d: string | Date | null | undefined) => {
 };
 
 type LeadForm = {
-  nome: string; cpf: string; telefone: string; dataEntrega: string;
-  mes: string; ano: string;
+  nome: string; cpf: string;
+  telefone: string; celular2: string; celular3: string;
+  fixo1: string; fixo2: string; fixo3: string;
+  logradouro: string; numero: string; complemento: string;
+  bairro: string; cidade: string; uf: string;
+  dataEntrega: string; mes: string; ano: string;
   status: "AGUARDANDO" | "SEM CONTATO" | "EM CONTATO" | "AGENDAMENTO" | "FECHAMENTO" | "RECUSADO" | "ENVIADO";
   valorEstimado: string; historico: string; observacao: string; dataFechamento: string;
   origem: string; vendedor: string;
 };
 
 const FORM_VAZIO: LeadForm = {
-  nome: "", cpf: "", telefone: "", dataEntrega: "",
+  nome: "", cpf: "",
+  telefone: "", celular2: "", celular3: "",
+  fixo1: "", fixo2: "", fixo3: "",
+  logradouro: "", numero: "", complemento: "",
+  bairro: "", cidade: "", uf: "",
+  dataEntrega: "",
   mes: String(new Date().getMonth() + 1), ano: String(ANO_ATUAL),
   status: "AGUARDANDO", valorEstimado: "",
   historico: "", observacao: "", dataFechamento: "",
@@ -86,10 +95,14 @@ export default function CrmLeads() {
   const [form, setForm] = useState<LeadForm>(FORM_VAZIO);
   const [dataInicio, setDataInicio] = useState("");
   const [dataFim, setDataFim] = useState("");
+  const [cidadeFiltro, setCidadeFiltro] = useState("");
+  const [ufFiltro, setUfFiltro] = useState("todos");
 
-  // Origens e vendedores
+  // Origens, vendedores, cidades e UFs
   const { data: origensData } = trpc.crmLeads.listarOrigens.useQuery();
   const { data: vendedoresData } = trpc.clientes.listarVendedores.useQuery();
+  const { data: cidadesData = [] } = trpc.crmLeads.listarCidades.useQuery();
+  const { data: ufsData = [] } = trpc.crmLeads.listarUFs.useQuery();
   const origens = origensData || [];
   // Filtrar vendedores válidos (sem "*VENDEDOR NÃO INFORMADO*" e sem múltiplos)
   const vendedores = (vendedoresData || []).filter(v =>
@@ -115,6 +128,8 @@ export default function CrmLeads() {
     origem: origemFiltro !== "todos" ? origemFiltro : undefined,
     dataInicio: dataInicio || undefined,
     dataFim: dataFim || undefined,
+    cidade: cidadeFiltro || undefined,
+    uf: ufFiltro !== "todos" ? ufFiltro : undefined,
   });
   // Métricas mensais do mês selecionado (com filtro por vendedor)
   const { data: metricasMensal } = trpc.crmLeads.metricas.useQuery({ mes: mesSelecionado, ano: anoSelecionado, vendedor: vendedorMensal !== "todos" ? vendedorMensal : undefined });
@@ -207,6 +222,17 @@ export default function CrmLeads() {
       nome: l.nome || "",
       cpf: l.cpf || "",
       telefone: l.telefone || "",
+      celular2: l.celular2 || "",
+      celular3: l.celular3 || "",
+      fixo1: l.fixo1 || "",
+      fixo2: l.fixo2 || "",
+      fixo3: l.fixo3 || "",
+      logradouro: l.logradouro || "",
+      numero: l.numero || "",
+      complemento: l.complemento || "",
+      bairro: l.bairro || "",
+      cidade: l.cidade || "",
+      uf: l.uf || "",
       dataEntrega: l.dataEntrega ? new Date(l.dataEntrega).toISOString().split("T")[0] : "",
       mes: String(l.mes || new Date().getMonth() + 1),
       ano: String(l.ano || ANO_ATUAL),
@@ -227,6 +253,17 @@ export default function CrmLeads() {
       nome: form.nome,
       cpf: form.cpf || null,
       telefone: form.telefone || null,
+      celular2: form.celular2 || null,
+      celular3: form.celular3 || null,
+      fixo1: form.fixo1 || null,
+      fixo2: form.fixo2 || null,
+      fixo3: form.fixo3 || null,
+      logradouro: form.logradouro || null,
+      numero: form.numero || null,
+      complemento: form.complemento || null,
+      bairro: form.bairro || null,
+      cidade: form.cidade || null,
+      uf: form.uf || null,
       dataEntrega: form.dataEntrega || null,
       mes: form.mes ? Number(form.mes) : null,
       ano: form.ano ? Number(form.ano) : null,
@@ -264,52 +301,98 @@ export default function CrmLeads() {
       const wb = XLSX.read(buffer, { type: "array" });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows: any[] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
-      // Detectar cabeçalho (primeira linha com conteúdo)
+
+      // Detectar cabeçalho
       let headerRow = 0;
       for (let i = 0; i < Math.min(5, rows.length); i++) {
         if (rows[i].some((c: any) => String(c).toLowerCase().includes("nome"))) { headerRow = i; break; }
       }
-      const headers = rows[headerRow].map((h: any) => String(h).toLowerCase().trim());
-      const nomeIdx = headers.findIndex((h: string) => h.includes("nome"));
-      const telIdx = headers.findIndex((h: string) => h.includes("tel") || h.includes("fone"));
-      const dataIdx = headers.findIndex((h: string) => h.includes("data") || h.includes("entrega"));
-      const mesIdx = headers.findIndex((h: string) => h === "mês" || h === "mes");
-      const anoIdx = headers.findIndex((h: string) => h === "ano");
-      const statusIdx = headers.findIndex((h: string) => h.includes("status"));
-      const valorIdx = headers.findIndex((h: string) => h.includes("valor"));
+      const headers = rows[headerRow].map((h: any) => String(h).toLowerCase().trim().replace(/\s+/g, "_"));
+
+      // Detectar se é o formato novo (DOCUMENTO, NOME, TIPO, LOGRADOURO...)
+      const isNovoFormato = headers[0] === "documento" || headers.includes("logradouro") || headers.includes("ddd_cel_1");
+
+      const fmtFone = (ddd: any, num: any): string | null => {
+        const d = String(ddd ?? "").trim();
+        const n = String(num ?? "").trim();
+        if (!n || n === "0") return null;
+        return d ? `(${d}) ${n}` : n;
+      };
 
       let count = 0;
       for (let i = headerRow + 1; i < rows.length; i++) {
         const row = rows[i];
-        const nome = nomeIdx >= 0 ? String(row[nomeIdx] || "").trim() : "";
-        if (!nome) continue;
-        const statusRaw = statusIdx >= 0 ? String(row[statusIdx] || "").trim().toUpperCase() : "AGUARDANDO";
-        const statusMap: Record<string, string> = {
-          "AGUARDANDO": "AGUARDANDO", "SEM CONTATO": "SEM CONTATO",
-          "EM CONTATO": "EM CONTATO", "AGENDAMENTO": "AGENDAMENTO",
-          "FECHAMENTO": "FECHAMENTO", "RECUSADO": "RECUSADO", "ENVIADO": "ENVIADO",
-        };
-        const status = statusMap[statusRaw] || "AGUARDANDO";
-        // Sempre usar o mês/ano selecionado no modal (ignora colunas da planilha)
-        const mesRaw = mesImport;
-        const anoRaw = anoImport;
-        const valorRaw = valorIdx >= 0 ? parseFloat(String(row[valorIdx] || "0").replace(",", ".")) : null;
-        await criarMut.mutateAsync({
-          nome,
-          telefone: telIdx >= 0 ? (String(row[telIdx] || "").trim().substring(0, 200) || null) : null,
-          dataEntrega: dataIdx >= 0 && row[dataIdx] ? String(row[dataIdx]) : null,
-          mes: mesRaw ? Number(mesRaw) : null,
-          ano: anoRaw ? Number(anoRaw) : null,
-          status: status as any,
-          valorEstimado: valorRaw && !isNaN(valorRaw) ? valorRaw : null,
-          historico: null, observacao: null, dataFechamento: null,
-          origem: origemImport || null,
-          vendedor: vendedorImport.trim(),
-        });
+
+        if (isNovoFormato) {
+          // Índices fixos do novo formato
+          const cpfRaw = String(row[0] ?? "").trim();
+          const nome = String(row[1] ?? "").trim();
+          if (!nome) continue;
+          const logradouro = [String(row[2] ?? "").trim(), String(row[3] ?? "").trim()].filter(Boolean).join(" ") || null;
+          const numero = String(row[4] ?? "").trim() || null;
+          const complemento = String(row[5] ?? "").trim() || null;
+          const bairro = String(row[6] ?? "").trim() || null;
+          const cidade = String(row[7] ?? "").trim() || null;
+          const uf = String(row[8] ?? "").trim().toUpperCase() || null;
+          const telefone = fmtFone(row[9], row[10]);
+          const celular2 = fmtFone(row[11], row[12]);
+          const celular3 = fmtFone(row[13], row[14]);
+          const fixo1 = fmtFone(row[15], row[16]);
+          const fixo2 = fmtFone(row[17], row[18]);
+          const fixo3 = fmtFone(row[19], row[20]);
+          // Formata CPF: 11 dígitos → XXX.XXX.XXX-XX
+          const cpfNum = cpfRaw.replace(/\D/g, "").padStart(11, "0");
+          const cpf = cpfNum.length === 11
+            ? `${cpfNum.slice(0,3)}.${cpfNum.slice(3,6)}.${cpfNum.slice(6,9)}-${cpfNum.slice(9)}`
+            : cpfRaw || null;
+
+          await criarMut.mutateAsync({
+            nome, cpf,
+            telefone, celular2, celular3, fixo1, fixo2, fixo3,
+            logradouro, numero, complemento, bairro, cidade, uf,
+            mes: mesImport ? Number(mesImport) : null,
+            ano: anoImport ? Number(anoImport) : null,
+            status: "AGUARDANDO",
+            historico: null, observacao: null, dataFechamento: null, dataEntrega: null,
+            valorEstimado: null,
+            origem: origemImport || null,
+            vendedor: vendedorImport.trim(),
+          });
+        } else {
+          // Formato antigo (genérico)
+          const nomeIdx = headers.findIndex((h: string) => h.includes("nome"));
+          const telIdx = headers.findIndex((h: string) => h.includes("tel") || h.includes("fone"));
+          const dataIdx = headers.findIndex((h: string) => h.includes("data") || h.includes("entrega"));
+          const statusIdx = headers.findIndex((h: string) => h.includes("status"));
+          const valorIdx = headers.findIndex((h: string) => h.includes("valor"));
+          const nome = nomeIdx >= 0 ? String(row[nomeIdx] || "").trim() : "";
+          if (!nome) continue;
+          const statusRaw = statusIdx >= 0 ? String(row[statusIdx] || "").trim().toUpperCase() : "AGUARDANDO";
+          const statusMap: Record<string, string> = {
+            "AGUARDANDO": "AGUARDANDO", "SEM CONTATO": "SEM CONTATO",
+            "EM CONTATO": "EM CONTATO", "AGENDAMENTO": "AGENDAMENTO",
+            "FECHAMENTO": "FECHAMENTO", "RECUSADO": "RECUSADO", "ENVIADO": "ENVIADO",
+          };
+          const valorRaw = valorIdx >= 0 ? parseFloat(String(row[valorIdx] || "0").replace(",", ".")) : null;
+          await criarMut.mutateAsync({
+            nome,
+            telefone: telIdx >= 0 ? (String(row[telIdx] || "").trim().slice(0, 30) || null) : null,
+            dataEntrega: dataIdx >= 0 && row[dataIdx] ? String(row[dataIdx]) : null,
+            mes: mesImport ? Number(mesImport) : null,
+            ano: anoImport ? Number(anoImport) : null,
+            status: (statusMap[statusRaw] || "AGUARDANDO") as any,
+            valorEstimado: valorRaw && !isNaN(valorRaw) ? valorRaw : null,
+            historico: null, observacao: null, dataFechamento: null,
+            origem: origemImport || null,
+            vendedor: vendedorImport.trim(),
+          });
+        }
         count++;
       }
       toast.success(`${count} lead(s) importado(s) para ${vendedorImport}!`);
       utils.crmLeads.listar.invalidate();
+      utils.crmLeads.listarCidades.invalidate();
+      utils.crmLeads.listarUFs.invalidate();
       setModalImport(false);
       setArquivoImport(null);
       setVendedorImport("");
@@ -403,6 +486,22 @@ export default function CrmLeads() {
             <Plus className="h-4 w-4" /> Novo Lead
           </Button>
         </div>
+      </div>
+
+      {/* Busca geral */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Buscar lead por nome, CPF ou telefone..."
+          className="pl-9"
+          value={busca}
+          onChange={e => setBusca(e.target.value)}
+        />
+        {busca && (
+          <button onClick={() => setBusca("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+            <X className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
       <Tabs value={aba} onValueChange={setAba}>
@@ -860,15 +959,6 @@ export default function CrmLeads() {
         <TabsContent value="lista" className="space-y-4 mt-4">
           {/* Filtros */}
           <div className="flex flex-wrap gap-3">
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar por nome ou telefone..."
-                className="pl-9"
-                value={busca}
-                onChange={e => setBusca(e.target.value)}
-              />
-            </div>
             <Select value={statusFiltro} onValueChange={setStatusFiltro}>
               <SelectTrigger className="w-44"><SelectValue placeholder="Status" /></SelectTrigger>
               <SelectContent>
@@ -918,6 +1008,30 @@ export default function CrmLeads() {
                 <X className="h-4 w-4 mr-1" /> Limpar datas
               </Button>
             )}
+            {ufsData.length > 0 && (
+              <Select value={ufFiltro} onValueChange={setUfFiltro}>
+                <SelectTrigger className="w-28"><SelectValue placeholder="UF" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todos UFs</SelectItem>
+                  {ufsData.map(uf => <SelectItem key={uf} value={uf}>{uf}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )}
+            {cidadesData.length > 0 && (
+              <div className="relative">
+                <Input
+                  className="w-40 pl-3"
+                  placeholder="Cidade..."
+                  value={cidadeFiltro}
+                  onChange={e => setCidadeFiltro(e.target.value)}
+                />
+                {cidadeFiltro && (
+                  <button onClick={() => setCidadeFiltro("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+            )}
             <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setModalOrigens(true)}>
               <Settings2 className="h-4 w-4" /> Origens
             </Button>
@@ -944,16 +1058,14 @@ export default function CrmLeads() {
                   <table className="w-full text-sm">
                     <thead className="bg-muted/50 border-b">
                       <tr>
-                        <th className="p-3 text-left font-medium text-muted-foreground">ID</th>
+                        <th className="p-3 text-left font-medium text-muted-foreground">#</th>
                         <th className="p-3 text-left font-medium text-muted-foreground">Nome</th>
-                        <th className="p-3 text-left font-medium text-muted-foreground">Telefone</th>
+                        <th className="p-3 text-left font-medium text-muted-foreground">Telefones</th>
+                        <th className="p-3 text-left font-medium text-muted-foreground">Localização</th>
                         <th className="p-3 text-left font-medium text-muted-foreground">Origem</th>
                         <th className="p-3 text-left font-medium text-muted-foreground">Vendedor</th>
-                        <th className="p-3 text-left font-medium text-muted-foreground">Data da Entrega</th>
-                        <th className="p-3 text-left font-medium text-muted-foreground">Mês</th>
-                        <th className="p-3 text-left font-medium text-muted-foreground">Ano</th>
+                        <th className="p-3 text-left font-medium text-muted-foreground">Mês/Ano</th>
                         <th className="p-3 text-left font-medium text-muted-foreground">Status</th>
-                        <th className="p-3 text-right font-medium text-muted-foreground">Valor Est.</th>
                         <th className="p-3 text-center font-medium text-muted-foreground">Ações</th>
                       </tr>
                     </thead>
@@ -973,11 +1085,25 @@ export default function CrmLeads() {
                                 )}
                               </div>
                             </td>
-                            <td className="p-3 text-muted-foreground">
-                              {lead.telefone ? (
-                                <span className="flex items-center gap-1">
-                                  <Phone className="h-3 w-3" /> {lead.telefone}
-                                </span>
+                            <td className="p-3 text-xs text-muted-foreground">
+                              <div className="space-y-0.5">
+                                {[lead.telefone, lead.celular2, lead.celular3, lead.fixo1, lead.fixo2, lead.fixo3]
+                                  .filter(Boolean)
+                                  .map((t, i) => (
+                                    <div key={i} className="flex items-center gap-1 whitespace-nowrap">
+                                      <Phone className="h-3 w-3 shrink-0" /> {t}
+                                    </div>
+                                  ))
+                                }
+                                {!lead.telefone && !lead.celular2 && !lead.celular3 && !lead.fixo1 && "—"}
+                              </div>
+                            </td>
+                            <td className="p-3 text-xs text-muted-foreground">
+                              {lead.cidade || lead.uf ? (
+                                <div>
+                                  {lead.cidade && <div className="font-medium text-foreground">{lead.cidade}{lead.uf ? `/${lead.uf}` : ""}</div>}
+                                  {lead.bairro && <div className="text-xs">{lead.bairro}</div>}
+                                </div>
                               ) : "—"}
                             </td>
                             <td className="p-3 text-muted-foreground">
@@ -986,14 +1112,11 @@ export default function CrmLeads() {
                               ) : "—"}
                             </td>
                             <td className="p-3 text-muted-foreground text-xs">{lead.vendedor || "—"}</td>
-                            <td className="p-3 text-muted-foreground">{fmtDate(lead.dataEntrega)}</td>
-                            <td className="p-3 text-muted-foreground">{lead.mes ? MESES_ABREV[lead.mes - 1] : "—"}</td>
-                            <td className="p-3 text-muted-foreground">{lead.ano || "—"}</td>
+                            <td className="p-3 text-muted-foreground text-xs whitespace-nowrap">
+                              {lead.mes ? MESES_ABREV[lead.mes - 1] : "—"}{lead.ano ? `/${lead.ano}` : ""}
+                            </td>
                             <td className="p-3">
                               <Badge className={`${st.cls} border text-xs`}>{st.label}</Badge>
-                            </td>
-                            <td className="p-3 text-right font-medium">
-                              {lead.valorEstimado ? fmt(Number(lead.valorEstimado)) : "—"}
                             </td>
                             <td className="p-3">
                               <div className="flex items-center justify-center gap-1">
@@ -1063,14 +1186,69 @@ export default function CrmLeads() {
               />
             </div>
 
-            {/* Telefone */}
+            {/* Telefones */}
             <div className="space-y-1.5">
-              <Label>Telefone</Label>
-              <Input
-                placeholder="(47) 99999-9999"
-                value={form.telefone}
-                onChange={e => setForm(f => ({ ...f, telefone: e.target.value }))}
-              />
+              <Label>Celular 1</Label>
+              <Input placeholder="(47) 99999-9999" value={form.telefone} onChange={e => setForm(f => ({ ...f, telefone: e.target.value }))} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Celular 2</Label>
+                <Input placeholder="(47) 99999-9999" value={form.celular2} onChange={e => setForm(f => ({ ...f, celular2: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Celular 3</Label>
+                <Input placeholder="(47) 99999-9999" value={form.celular3} onChange={e => setForm(f => ({ ...f, celular3: e.target.value }))} />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Fixo 1</Label>
+                <Input placeholder="(47) 3333-4444" value={form.fixo1} onChange={e => setForm(f => ({ ...f, fixo1: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Fixo 2</Label>
+                <Input placeholder="(47) 3333-4444" value={form.fixo2} onChange={e => setForm(f => ({ ...f, fixo2: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Fixo 3</Label>
+                <Input placeholder="(47) 3333-4444" value={form.fixo3} onChange={e => setForm(f => ({ ...f, fixo3: e.target.value }))} />
+              </div>
+            </div>
+
+            {/* Endereço */}
+            <div className="border-t pt-3 space-y-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Endereço</p>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2 space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Logradouro</Label>
+                  <Input placeholder="Rua das Flores" value={form.logradouro} onChange={e => setForm(f => ({ ...f, logradouro: e.target.value }))} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Número</Label>
+                  <Input placeholder="123" value={form.numero} onChange={e => setForm(f => ({ ...f, numero: e.target.value }))} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Complemento</Label>
+                  <Input placeholder="Apto 201" value={form.complemento} onChange={e => setForm(f => ({ ...f, complemento: e.target.value }))} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Bairro</Label>
+                  <Input placeholder="Centro" value={form.bairro} onChange={e => setForm(f => ({ ...f, bairro: e.target.value }))} />
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2 space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Cidade</Label>
+                  <Input placeholder="Joinville" value={form.cidade} onChange={e => setForm(f => ({ ...f, cidade: e.target.value }))} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">UF</Label>
+                  <Input placeholder="SC" maxLength={2} value={form.uf} onChange={e => setForm(f => ({ ...f, uf: e.target.value.toUpperCase() }))} />
+                </div>
+              </div>
             </div>
 
             {/* Data da Entrega */}
