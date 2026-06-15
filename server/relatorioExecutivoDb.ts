@@ -9,10 +9,18 @@ const MESES_NOMES = ["", "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Jun
 export async function obterRelatorio(mes: number, ano: number) {
   const db = await getDb();
   if (!db) return null;
-  const rows = await db.select().from(relatoriosExecutivos)
-    .where(and(eq(relatoriosExecutivos.mes, mes), eq(relatoriosExecutivos.ano, ano)))
-    .limit(1);
-  return rows[0] || null;
+  try {
+    const rows = await db.select().from(relatoriosExecutivos)
+      .where(and(eq(relatoriosExecutivos.mes, mes), eq(relatoriosExecutivos.ano, ano)))
+      .limit(1);
+    return rows[0] || null;
+  } catch {
+    // Fallback: coluna imap pode não existir ainda — usa SQL sem ela
+    const [rows] = await db.execute(
+      sql`SELECT id, mes, ano, acaoNecessaria, insightReceita, insightColaboradores, acoesCorretivas, metaProximoMes, observacoesGerais, metaReceitaManual, metaCpfsManual, metaPropostasManual, createdAt, updatedAt FROM relatorios_executivos WHERE mes=${mes} AND ano=${ano} LIMIT 1`
+    ) as any;
+    return (rows as any[])[0] || null;
+  }
 }
 
 export async function salvarRelatorio(mes: number, ano: number, dados: {
@@ -29,15 +37,38 @@ export async function salvarRelatorio(mes: number, ano: number, dados: {
 }) {
   const db = await getDb();
   if (!db) return null;
+
+  // Tenta adicionar coluna imap se ainda não existir
+  try {
+    await db.execute(sql`ALTER TABLE relatorios_executivos ADD COLUMN imap DECIMAL(5,2)`);
+  } catch (e: any) {
+    if (e?.errno !== 1060 && !e?.message?.includes("Duplicate column")) {
+      console.warn("[salvarRelatorio] imap column issue:", e?.message);
+    }
+  }
+
   const existente = await obterRelatorio(mes, ano);
   if (existente) {
-    await db.update(relatoriosExecutivos)
-      .set({ ...dados, updatedAt: new Date() })
-      .where(eq(relatoriosExecutivos.id, existente.id));
+    try {
+      await db.update(relatoriosExecutivos)
+        .set({ ...dados, updatedAt: new Date() })
+        .where(eq(relatoriosExecutivos.id, existente.id));
+    } catch (errUpdate) {
+      const { imap: imapVal, ...dadosSemImap } = dados;
+      await db.update(relatoriosExecutivos)
+        .set({ ...dadosSemImap, updatedAt: new Date() })
+        .where(eq(relatoriosExecutivos.id, existente.id));
+    }
     return { ...existente, ...dados };
   } else {
-    const [result] = await db.insert(relatoriosExecutivos).values({ mes, ano, ...dados });
-    return { id: (result as any).insertId, mes, ano, ...dados };
+    try {
+      const [result] = await db.insert(relatoriosExecutivos).values({ mes, ano, ...dados });
+      return { id: (result as any).insertId, mes, ano, ...dados };
+    } catch (errInsert) {
+      const { imap: imapVal, ...dadosSemImap } = dados;
+      const [result] = await db.insert(relatoriosExecutivos).values({ mes, ano, ...dadosSemImap });
+      return { id: (result as any).insertId, mes, ano, ...dadosSemImap };
+    }
   }
 }
 
@@ -346,7 +377,7 @@ export async function obterMetricasMes(mes: number, ano: number) {
     imapValores12 = rows.map((r: any) => ({
       mes: parseInt(r.mes), ano: parseInt(r.ano), valor: parseFloat(String(r.imap))
     }));
-  } catch (_) {}
+  } catch {}
   const imapMedia = imapValores12.length > 0 ? imapValores12.reduce((s, v) => s + v.valor, 0) / imapValores12.length : null;
   const imapMax = imapValores12.length > 0 ? Math.max(...imapValores12.map((v) => v.valor)) : null;
   const imapMin = imapValores12.length > 0 ? Math.min(...imapValores12.map((v) => v.valor)) : null;
@@ -517,7 +548,14 @@ export async function obterMetricasMes(mes: number, ano: number) {
 export async function listarRelatorios(ano: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(relatoriosExecutivos)
-    .where(eq(relatoriosExecutivos.ano, ano))
-    .orderBy(desc(relatoriosExecutivos.mes));
+  try {
+    return await db.select().from(relatoriosExecutivos)
+      .where(eq(relatoriosExecutivos.ano, ano))
+      .orderBy(desc(relatoriosExecutivos.mes));
+  } catch {
+    const [rows] = await db.execute(
+      sql`SELECT id, mes, ano, acaoNecessaria, insightReceita, insightColaboradores, acoesCorretivas, metaProximoMes, observacoesGerais, metaReceitaManual, metaCpfsManual, metaPropostasManual, createdAt, updatedAt FROM relatorios_executivos WHERE ano=${ano} ORDER BY mes DESC`
+    ) as any;
+    return rows as any[];
+  }
 }
