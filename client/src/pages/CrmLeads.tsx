@@ -98,6 +98,8 @@ export default function CrmLeads() {
   const [dataFim, setDataFim] = useState("");
   const [cidadeFiltro, setCidadeFiltro] = useState("todos");
   const [ufFiltro, setUfFiltro] = useState("todos");
+  const [leadsSelecionados, setLeadsSelecionados] = useState<number[]>([]);
+  const [pdfFromTable, setPdfFromTable] = useState(false);
 
   // PDF lista vendedor
   const [pdfLeadsOpen, setPdfLeadsOpen] = useState(false);
@@ -443,7 +445,8 @@ export default function CrmLeads() {
   };
 
   const gerarListaPdf = async () => {
-    const leadsParaPdf = (leadsPdfData?.leads || []).filter((l: any) => pdfSelecionados.includes(l.id));
+    const fonte = pdfFromTable ? leads : (leadsPdfData?.leads || []);
+    const leadsParaPdf = fonte.filter((l: any) => pdfSelecionados.includes(l.id));
     if (!leadsParaPdf.length) { toast.error("Nenhum lead encontrado para o período selecionado."); return; }
 
     const [{ default: jsPDF }, { addBarcellosHeader, addBarcellosFooter }] = await Promise.all([
@@ -543,6 +546,8 @@ export default function CrmLeads() {
     await marcarEnviadosMut.mutateAsync({ ids });
     toast.success(`Lista gerada! ${ids.length} lead(s) marcados como ENVIADO.`);
     setPdfLeadsOpen(false);
+    setLeadsSelecionados([]);
+    setPdfFromTable(false);
   };
 
   const exportarCSV = () => {
@@ -611,8 +616,21 @@ export default function CrmLeads() {
           <p className="text-muted-foreground text-sm">Gestão de leads e funil de conversão — {anoFiltro}</p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <Button variant="outline" onClick={() => setPdfLeadsOpen(true)} className="gap-2">
-            <FileText className="h-4 w-4" /> Gerar Lista PDF
+          <Button
+            variant={leadsSelecionados.length > 0 ? "default" : "outline"}
+            onClick={() => {
+              if (leadsSelecionados.length > 0) {
+                setPdfFromTable(true);
+                setPdfSelecionados(leadsSelecionados);
+              } else {
+                setPdfFromTable(false);
+              }
+              setPdfLeadsOpen(true);
+            }}
+            className="gap-2"
+          >
+            <FileText className="h-4 w-4" />
+            Gerar Lista PDF{leadsSelecionados.length > 0 ? ` (${leadsSelecionados.length})` : ""}
           </Button>
           <Button variant="outline" onClick={exportarCSV} className="gap-2">
             <Download className="h-4 w-4" /> Exportar CSV
@@ -1193,6 +1211,12 @@ export default function CrmLeads() {
                   <table className="w-full text-sm">
                     <thead className="bg-muted/50 border-b">
                       <tr>
+                        <th className="p-3 w-10">
+                          <Checkbox
+                            checked={leads.length > 0 && leadsSelecionados.length === leads.length}
+                            onCheckedChange={v => setLeadsSelecionados(v ? leads.map((l: any) => l.id) : [])}
+                          />
+                        </th>
                         <th className="p-3 text-left font-medium text-muted-foreground">#</th>
                         <th className="p-3 text-left font-medium text-muted-foreground">Nome</th>
                         <th className="p-3 text-left font-medium text-muted-foreground">Telefones</th>
@@ -1208,7 +1232,18 @@ export default function CrmLeads() {
                       {leads.map((lead: any, idx: number) => {
                         const st = STATUS_LEAD[lead.status] || STATUS_LEAD["AGUARDANDO"];
                         return (
-                          <tr key={lead.id} className="border-b hover:bg-muted/30 transition-colors">
+                          <tr
+                            key={lead.id}
+                            className={`border-b hover:bg-muted/30 transition-colors ${leadsSelecionados.includes(lead.id) ? "bg-blue-50/60" : ""}`}
+                          >
+                            <td className="p-3">
+                              <Checkbox
+                                checked={leadsSelecionados.includes(lead.id)}
+                                onCheckedChange={v => setLeadsSelecionados(sel =>
+                                  v ? [...sel, lead.id] : sel.filter(id => id !== lead.id)
+                                )}
+                              />
+                            </td>
                             <td className="p-3 text-muted-foreground text-xs">{idx + 1}</td>
                             <td className="p-3 font-medium">
                               <div className="flex items-center gap-1.5">
@@ -1646,33 +1681,41 @@ export default function CrmLeads() {
           <DialogTitle>Gerar Lista de Leads — PDF</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-2">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>Mês base</Label>
-              <Select value={pdfMes} onValueChange={setPdfMes}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {MESES_FULL.map((m, i) => (
-                    <SelectItem key={i + 1} value={String(i + 1)}>{m}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Ano</Label>
-              <Input type="number" value={pdfAno} onChange={e => setPdfAno(e.target.value)} min={2020} max={2050} />
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label>Vendedor</Label>
-            <Select value={pdfVendedor} onValueChange={setPdfVendedor}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="todos">Todos os vendedores</SelectItem>
-                {vendedores.map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
+          {pdfFromTable ? (
+            <p className="text-xs bg-blue-50 text-blue-700 rounded px-3 py-2">
+              {leadsSelecionados.length} lead(s) selecionados da tabela
+            </p>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Mês base</Label>
+                  <Select value={pdfMes} onValueChange={setPdfMes}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {MESES_FULL.map((m, i) => (
+                        <SelectItem key={i + 1} value={String(i + 1)}>{m}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Ano</Label>
+                  <Input type="number" value={pdfAno} onChange={e => setPdfAno(e.target.value)} min={2020} max={2050} />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Vendedor</Label>
+                <Select value={pdfVendedor} onValueChange={setPdfVendedor}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos os vendedores</SelectItem>
+                    {vendedores.map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </>
+          )}
           <div className="border-t pt-3">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Campos a exibir</p>
             <div className="grid grid-cols-2 gap-2">
@@ -1702,56 +1745,56 @@ export default function CrmLeads() {
             </div>
           </div>
           <div className="border-t pt-3">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                Leads {fetchingPdf ? "carregando..." : `(${pdfSelecionados.length}/${leadsPdfData?.leads?.length ?? 0} selecionados)`}
-              </p>
-              {!fetchingPdf && (leadsPdfData?.leads?.length ?? 0) > 0 && (
-                <div className="flex gap-2">
-                  <button
-                    className="text-xs text-blue-600 hover:underline"
-                    onClick={() => setPdfSelecionados((leadsPdfData?.leads || []).map((l: any) => l.id))}
-                  >
-                    Todos
-                  </button>
-                  <span className="text-muted-foreground text-xs">|</span>
-                  <button
-                    className="text-xs text-blue-600 hover:underline"
-                    onClick={() => setPdfSelecionados([])}
-                  >
-                    Nenhum
-                  </button>
-                </div>
-              )}
-            </div>
-            {fetchingPdf ? (
-              <p className="text-xs text-muted-foreground text-center py-3">Carregando...</p>
-            ) : (leadsPdfData?.leads?.length ?? 0) === 0 ? (
-              <p className="text-xs text-center text-muted-foreground py-3">Nenhum lead no período selecionado.</p>
-            ) : (
-              <div className="max-h-48 overflow-y-auto space-y-1 border rounded-md p-2 bg-muted/20">
-                {(leadsPdfData?.leads || []).map((lead: any) => {
-                  const checked = pdfSelecionados.includes(lead.id);
-                  return (
-                    <label key={lead.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
-                      <Checkbox
-                        checked={checked}
-                        onCheckedChange={v => setPdfSelecionados(sel =>
-                          v ? [...sel, lead.id] : sel.filter(id => id !== lead.id)
-                        )}
-                      />
-                      <span className="text-sm font-medium flex-1">{lead.nome}</span>
-                      {lead.cidade && <span className="text-xs text-muted-foreground">{lead.cidade}/{lead.uf}</span>}
-                    </label>
-                  );
-                })}
-              </div>
-            )}
-            {pdfSelecionados.length > 0 && (
-              <p className="text-xs text-blue-700 bg-blue-50 rounded px-2 py-1.5 mt-2">
-                {pdfSelecionados.length} lead(s) serão marcados como <strong>ENVIADO</strong> ao gerar.
-              </p>
-            )}
+            {(() => {
+              const fonteLista = pdfFromTable ? leads : (leadsPdfData?.leads || []);
+              const carregando = !pdfFromTable && fetchingPdf;
+              return (
+                <>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      Leads {carregando ? "carregando..." : `(${pdfSelecionados.length}/${fonteLista.length} selecionados)`}
+                    </p>
+                    {!carregando && fonteLista.length > 0 && (
+                      <div className="flex gap-2">
+                        <button className="text-xs text-blue-600 hover:underline" onClick={() => setPdfSelecionados(fonteLista.map((l: any) => l.id))}>Todos</button>
+                        <span className="text-muted-foreground text-xs">|</span>
+                        <button className="text-xs text-blue-600 hover:underline" onClick={() => setPdfSelecionados([])}>Nenhum</button>
+                      </div>
+                    )}
+                  </div>
+                  {carregando ? (
+                    <p className="text-xs text-muted-foreground text-center py-3">Carregando...</p>
+                  ) : fonteLista.length === 0 ? (
+                    <p className="text-xs text-center text-muted-foreground py-3">Nenhum lead no período selecionado.</p>
+                  ) : (
+                    <div className="max-h-52 overflow-y-auto space-y-0.5 border rounded-md p-2 bg-muted/20">
+                      {fonteLista.map((lead: any) => {
+                        const checked = pdfSelecionados.includes(lead.id);
+                        const temFone = !!(lead.telefone || lead.celular2 || lead.celular3 || lead.fixo1);
+                        return (
+                          <label key={lead.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
+                            <Checkbox
+                              checked={checked}
+                              onCheckedChange={v => setPdfSelecionados(sel =>
+                                v ? [...sel, lead.id] : sel.filter(id => id !== lead.id)
+                              )}
+                            />
+                            <span className={`text-sm font-medium flex-1 ${!temFone ? "text-muted-foreground" : ""}`}>{lead.nome}</span>
+                            {!temFone && <span className="text-xs text-orange-400">sem fone</span>}
+                            {lead.telefone && <span className="text-xs text-muted-foreground">{lead.telefone}</span>}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {pdfSelecionados.length > 0 && (
+                    <p className="text-xs text-blue-700 bg-blue-50 rounded px-2 py-1.5 mt-2">
+                      {pdfSelecionados.length} lead(s) serão marcados como <strong>ENVIADO</strong> ao gerar.
+                    </p>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </div>
         <DialogFooter>
