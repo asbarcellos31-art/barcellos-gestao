@@ -739,7 +739,7 @@ export async function metricasCRMBeneficiarios() {
 // CRM LEADS
 // ============================================================
 
-export async function listarLeads(opts?: { busca?: string; status?: string; mes?: number; ano?: number; vendedor?: string; origem?: string; dataInicio?: string; dataFim?: string; cidade?: string; uf?: string; bairro?: string }) {
+export async function listarLeads(opts?: { busca?: string; status?: string; mes?: number; ano?: number; vendedor?: string; origem?: string; dataInicio?: string; dataFim?: string; cidades?: string[]; uf?: string; bairro?: string }) {
   const db = await getDb();
   if (!db) return { leads: [], total: 0 };
 
@@ -770,7 +770,9 @@ export async function listarLeads(opts?: { busca?: string; status?: string; mes?
   if (opts?.vendedor && opts.vendedor !== "todos") conditions.push(eq(crmLeads.vendedor, opts.vendedor));
   if (opts?.origem && opts.origem !== "todos") conditions.push(eq(crmLeads.origem, opts.origem));
   if (opts?.uf && opts.uf !== "todos") conditions.push(eq(crmLeads.uf, opts.uf));
-  if (opts?.cidade) conditions.push(like(crmLeads.cidade, `%${opts.cidade}%`));
+  if (opts?.cidades && opts.cidades.length > 0) {
+    conditions.push(or(...opts.cidades.map(c => eq(crmLeads.cidade, c)))!);
+  }
   if (opts?.bairro) conditions.push(like(crmLeads.bairro, `%${opts.bairro}%`));
   if (opts?.busca) {
     const b = `%${opts.busca}%`;

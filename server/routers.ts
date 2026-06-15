@@ -573,7 +573,7 @@ export const appRouter = router({
         mes: z.number().optional(), ano: z.number().optional(),
         vendedor: z.string().optional(), origem: z.string().optional(),
         dataInicio: z.string().optional(), dataFim: z.string().optional(),
-        cidade: z.string().optional(), uf: z.string().optional(), bairro: z.string().optional(),
+        cidades: z.array(z.string()).optional(), uf: z.string().optional(), bairro: z.string().optional(),
       }))
       .query(({ input }) => listarLeads(input)),
     listarOrigens: publicProcedure.query(() => listarOrigensLeads()),

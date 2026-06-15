@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
@@ -96,7 +97,7 @@ export default function CrmLeads() {
   const [form, setForm] = useState<LeadForm>(FORM_VAZIO);
   const [dataInicio, setDataInicio] = useState("");
   const [dataFim, setDataFim] = useState("");
-  const [cidadeFiltro, setCidadeFiltro] = useState("todos");
+  const [cidadesFiltro, setCidadesFiltro] = useState<string[]>([]);
   const [ufFiltro, setUfFiltro] = useState("todos");
   const [leadsSelecionados, setLeadsSelecionados] = useState<number[]>([]);
   const [pdfFromTable, setPdfFromTable] = useState(false);
@@ -161,7 +162,7 @@ export default function CrmLeads() {
     origem: origemFiltro !== "todos" ? origemFiltro : undefined,
     dataInicio: dataInicio || undefined,
     dataFim: dataFim || undefined,
-    cidade: cidadeFiltro !== "todos" ? cidadeFiltro : undefined,
+    cidades: cidadesFiltro.length > 0 ? cidadesFiltro : undefined,
     uf: ufFiltro !== "todos" ? ufFiltro : undefined,
   });
   // Métricas mensais do mês selecionado (com filtro por vendedor)
@@ -1177,13 +1178,48 @@ export default function CrmLeads() {
               </Select>
             )}
             {cidadesData.length > 0 && (
-              <Select value={cidadeFiltro} onValueChange={setCidadeFiltro}>
-                <SelectTrigger className="w-44"><SelectValue placeholder="Cidade" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todas as cidades</SelectItem>
-                  {cidadesData.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-48 justify-between font-normal text-sm">
+                    {cidadesFiltro.length === 0
+                      ? "Todas as cidades"
+                      : cidadesFiltro.length === 1
+                      ? cidadesFiltro[0]
+                      : `${cidadesFiltro.length} cidades`}
+                    {cidadesFiltro.length > 0 && (
+                      <span
+                        className="ml-1 text-muted-foreground hover:text-foreground"
+                        onClick={e => { e.stopPropagation(); setCidadesFiltro([]); }}
+                      >
+                        <X className="h-3 w-3" />
+                      </span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-56 p-2" align="start">
+                  <div className="max-h-60 overflow-y-auto space-y-0.5">
+                    {cidadesData.map(c => (
+                      <label key={c} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-muted cursor-pointer">
+                        <Checkbox
+                          checked={cidadesFiltro.includes(c)}
+                          onCheckedChange={v => setCidadesFiltro(sel =>
+                            v ? [...sel, c] : sel.filter(x => x !== c)
+                          )}
+                        />
+                        <span className="text-sm">{c}</span>
+                      </label>
+                    ))}
+                  </div>
+                  {cidadesFiltro.length > 0 && (
+                    <button
+                      className="mt-2 w-full text-xs text-center text-blue-600 hover:underline"
+                      onClick={() => setCidadesFiltro([])}
+                    >
+                      Limpar seleção
+                    </button>
+                  )}
+                </PopoverContent>
+              </Popover>
             )}
             <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setModalOrigens(true)}>
               <Settings2 className="h-4 w-4" /> Origens
