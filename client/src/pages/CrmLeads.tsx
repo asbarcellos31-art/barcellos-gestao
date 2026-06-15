@@ -1,5 +1,5 @@
 import AppLayout from "@/components/AppLayout";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -110,6 +110,7 @@ export default function CrmLeads() {
     logradouro: false, bairro: true, cidade: true,
     origem: false, status: false, valorEstimado: false,
   });
+  const [pdfSelecionados, setPdfSelecionados] = useState<number[]>([]);
 
   // Query de leads para o PDF (ativa só com o dialog aberto)
   const { data: leadsPdfData, isFetching: fetchingPdf } = trpc.crmLeads.listar.useQuery(
@@ -120,6 +121,13 @@ export default function CrmLeads() {
     },
     { enabled: pdfLeadsOpen }
   );
+
+  // Auto-seleciona todos ao carregar
+  useEffect(() => {
+    if (leadsPdfData?.leads) {
+      setPdfSelecionados(leadsPdfData.leads.map((l: any) => l.id));
+    }
+  }, [leadsPdfData]);
 
   // Origens, vendedores, cidades e UFs
   const { data: origensData } = trpc.crmLeads.listarOrigens.useQuery();
@@ -435,7 +443,7 @@ export default function CrmLeads() {
   };
 
   const gerarListaPdf = async () => {
-    const leadsParaPdf = leadsPdfData?.leads || [];
+    const leadsParaPdf = (leadsPdfData?.leads || []).filter((l: any) => pdfSelecionados.includes(l.id));
     if (!leadsParaPdf.length) { toast.error("Nenhum lead encontrado para o período selecionado."); return; }
 
     const [{ default: jsPDF }, { addBarcellosHeader, addBarcellosFooter }] = await Promise.all([
@@ -1693,21 +1701,64 @@ export default function CrmLeads() {
               ))}
             </div>
           </div>
-          {fetchingPdf ? (
-            <p className="text-xs text-muted-foreground text-center">Carregando leads...</p>
-          ) : leadsPdfData?.leads?.length ? (
-            <p className="text-xs text-center text-blue-700 bg-blue-50 rounded px-3 py-1.5">
-              {leadsPdfData.leads.length} lead(s) encontrado(s) — serão marcados como <strong>ENVIADO</strong> ao gerar.
-            </p>
-          ) : (
-            <p className="text-xs text-center text-muted-foreground">Nenhum lead no período selecionado.</p>
-          )}
+          <div className="border-t pt-3">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                Leads {fetchingPdf ? "carregando..." : `(${pdfSelecionados.length}/${leadsPdfData?.leads?.length ?? 0} selecionados)`}
+              </p>
+              {!fetchingPdf && (leadsPdfData?.leads?.length ?? 0) > 0 && (
+                <div className="flex gap-2">
+                  <button
+                    className="text-xs text-blue-600 hover:underline"
+                    onClick={() => setPdfSelecionados((leadsPdfData?.leads || []).map((l: any) => l.id))}
+                  >
+                    Todos
+                  </button>
+                  <span className="text-muted-foreground text-xs">|</span>
+                  <button
+                    className="text-xs text-blue-600 hover:underline"
+                    onClick={() => setPdfSelecionados([])}
+                  >
+                    Nenhum
+                  </button>
+                </div>
+              )}
+            </div>
+            {fetchingPdf ? (
+              <p className="text-xs text-muted-foreground text-center py-3">Carregando...</p>
+            ) : (leadsPdfData?.leads?.length ?? 0) === 0 ? (
+              <p className="text-xs text-center text-muted-foreground py-3">Nenhum lead no período selecionado.</p>
+            ) : (
+              <div className="max-h-48 overflow-y-auto space-y-1 border rounded-md p-2 bg-muted/20">
+                {(leadsPdfData?.leads || []).map((lead: any) => {
+                  const checked = pdfSelecionados.includes(lead.id);
+                  return (
+                    <label key={lead.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
+                      <Checkbox
+                        checked={checked}
+                        onCheckedChange={v => setPdfSelecionados(sel =>
+                          v ? [...sel, lead.id] : sel.filter(id => id !== lead.id)
+                        )}
+                      />
+                      <span className="text-sm font-medium flex-1">{lead.nome}</span>
+                      {lead.cidade && <span className="text-xs text-muted-foreground">{lead.cidade}/{lead.uf}</span>}
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+            {pdfSelecionados.length > 0 && (
+              <p className="text-xs text-blue-700 bg-blue-50 rounded px-2 py-1.5 mt-2">
+                {pdfSelecionados.length} lead(s) serão marcados como <strong>ENVIADO</strong> ao gerar.
+              </p>
+            )}
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setPdfLeadsOpen(false)}>Cancelar</Button>
           <Button
             onClick={gerarListaPdf}
-            disabled={fetchingPdf || !leadsPdfData?.leads?.length || marcarEnviadosMut.isPending}
+            disabled={fetchingPdf || pdfSelecionados.length === 0 || marcarEnviadosMut.isPending}
             className="gap-2"
           >
             <FileText className="h-4 w-4" />
