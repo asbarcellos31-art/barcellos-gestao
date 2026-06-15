@@ -239,6 +239,24 @@ export default function CrmLeads() {
     onSuccess: () => { utils.crmLeads.listar.invalidate(); utils.crmLeads.metricas.invalidate(); },
   });
 
+  const excluirLoteMut = trpc.crmLeads.excluirLote.useMutation({
+    onSuccess: (res) => {
+      utils.crmLeads.listar.invalidate();
+      utils.crmLeads.metricas.invalidate();
+      utils.crmLeads.listarCidades.invalidate();
+      utils.crmLeads.listarUFs.invalidate();
+      toast.success(`${res.deletados} lead(s) excluído(s)!`);
+      setLeadsSelecionados([]);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const excluirSelecionados = () => {
+    if (!leadsSelecionados.length) return;
+    if (!confirm(`Excluir ${leadsSelecionados.length} lead(s) selecionado(s)? Esta ação não pode ser desfeita.`)) return;
+    excluirLoteMut.mutate({ ids: leadsSelecionados });
+  };
+
   const excluirTodosMut = trpc.crmLeads.excluirTodos.useMutation({
     onSuccess: (res) => {
       utils.crmLeads.listar.invalidate();
@@ -617,6 +635,17 @@ export default function CrmLeads() {
           <p className="text-muted-foreground text-sm">Gestão de leads e funil de conversão — {anoFiltro}</p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          {leadsSelecionados.length > 0 && (
+            <Button
+              variant="outline"
+              onClick={excluirSelecionados}
+              disabled={excluirLoteMut.isPending}
+              className="gap-2 text-red-600 border-red-200 hover:bg-red-50 hover:border-red-400"
+            >
+              <Trash2 className="h-4 w-4" />
+              {excluirLoteMut.isPending ? "Excluindo..." : `Excluir (${leadsSelecionados.length})`}
+            </Button>
+          )}
           <Button
             variant={leadsSelecionados.length > 0 ? "default" : "outline"}
             onClick={() => {

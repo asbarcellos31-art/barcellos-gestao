@@ -920,6 +920,15 @@ export async function excluirLeadsPorMesAno(mes: number, ano: number) {
   return { success: true, deletados: (result as any).affectedRows ?? 0 };
 }
 
+export async function excluirLeadsEmLote(ids: number[]) {
+  const db = await getDb();
+  if (!db) throw new Error("DB não disponível");
+  if (!ids.length) return { success: true, deletados: 0 };
+  await db.delete(crmLeads)
+    .where(sql`id IN (${sql.join(ids.map(id => sql`${id}`), sql`, `)})`);
+  return { success: true, deletados: ids.length };
+}
+
 export async function marcarLeadsEnviados(ids: number[]) {
   const db = await getDb();
   if (!db) throw new Error("DB não disponível");
