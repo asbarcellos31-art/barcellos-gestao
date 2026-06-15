@@ -112,6 +112,7 @@ import {
   atualizarLead,
   excluirLead,
   excluirLeadsPorMesAno,
+  marcarLeadsEnviados,
   listarOrigensLeads,
   criarOrigemLead,
   excluirOrigemLead,
@@ -625,6 +626,9 @@ export const appRouter = router({
     excluirTodos: publicProcedure
       .input(z.object({ mes: z.number(), ano: z.number() }))
       .mutation(({ input }) => excluirLeadsPorMesAno(input.mes, input.ano)),
+    marcarEnviados: publicProcedure
+      .input(z.object({ ids: z.array(z.number()) }))
+      .mutation(({ input }) => marcarLeadsEnviados(input.ids)),
   }),
 
   produtos: router({

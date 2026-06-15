@@ -918,6 +918,16 @@ export async function excluirLeadsPorMesAno(mes: number, ano: number) {
   return { success: true, deletados: (result as any).affectedRows ?? 0 };
 }
 
+export async function marcarLeadsEnviados(ids: number[]) {
+  const db = await getDb();
+  if (!db) throw new Error("DB não disponível");
+  if (!ids.length) return { success: true, atualizados: 0 };
+  await db.update(crmLeads)
+    .set({ status: "ENVIADO", updatedAt: new Date() })
+    .where(sql`id IN (${sql.join(ids.map(id => sql`${id}`), sql`, `)})`);
+  return { success: true, atualizados: ids.length };
+}
+
 // ============================================================
 // CRM BENEFICIÁRIOS — Página dedicada (todos os beneficiários)
 // ============================================================

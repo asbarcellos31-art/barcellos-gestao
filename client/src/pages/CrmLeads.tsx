@@ -8,13 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import {
   Plus, Search, Edit2, Trash2, Download, Phone, Calendar,
   TrendingUp, Users, CheckCircle, XCircle, Clock, AlertCircle, Upload, UserPlus,
-  ChevronLeft, ChevronRight, Target, BarChart2, Settings2, X, MessageSquare
+  ChevronLeft, ChevronRight, Target, BarChart2, Settings2, X, MessageSquare, FileText
 } from "lucide-react";
 
 // ─── Status da esteira (fiel à planilha CRM_LEADS_ELISIA_BARCELLOS) ─────────
@@ -95,8 +96,30 @@ export default function CrmLeads() {
   const [form, setForm] = useState<LeadForm>(FORM_VAZIO);
   const [dataInicio, setDataInicio] = useState("");
   const [dataFim, setDataFim] = useState("");
-  const [cidadeFiltro, setCidadeFiltro] = useState("");
+  const [cidadeFiltro, setCidadeFiltro] = useState("todos");
   const [ufFiltro, setUfFiltro] = useState("todos");
+
+  // PDF lista vendedor
+  const [pdfLeadsOpen, setPdfLeadsOpen] = useState(false);
+  const [pdfMes, setPdfMes] = useState(String(new Date().getMonth() + 1));
+  const [pdfAno, setPdfAno] = useState(String(ANO_ATUAL));
+  const [pdfVendedor, setPdfVendedor] = useState("todos");
+  const [pdfCampos, setPdfCampos] = useState({
+    cpf: true, telefone: true, celular2: true, celular3: false,
+    fixo1: true, fixo2: false, fixo3: false,
+    logradouro: false, bairro: true, cidade: true,
+    origem: false, status: false, valorEstimado: false,
+  });
+
+  // Query de leads para o PDF (ativa só com o dialog aberto)
+  const { data: leadsPdfData, isFetching: fetchingPdf } = trpc.crmLeads.listar.useQuery(
+    {
+      mes: Number(pdfMes) || undefined,
+      ano: Number(pdfAno),
+      vendedor: pdfVendedor !== "todos" ? pdfVendedor : undefined,
+    },
+    { enabled: pdfLeadsOpen }
+  );
 
   // Origens, vendedores, cidades e UFs
   const { data: origensData } = trpc.crmLeads.listarOrigens.useQuery();
@@ -128,7 +151,7 @@ export default function CrmLeads() {
     origem: origemFiltro !== "todos" ? origemFiltro : undefined,
     dataInicio: dataInicio || undefined,
     dataFim: dataFim || undefined,
-    cidade: cidadeFiltro || undefined,
+    cidade: cidadeFiltro !== "todos" ? cidadeFiltro : undefined,
     uf: ufFiltro !== "todos" ? ufFiltro : undefined,
   });
   // Métricas mensais do mês selecionado (com filtro por vendedor)
@@ -199,6 +222,10 @@ export default function CrmLeads() {
       toast.success("Lead removido!");
     },
     onError: (e) => toast.error(e.message),
+  });
+
+  const marcarEnviadosMut = trpc.crmLeads.marcarEnviados.useMutation({
+    onSuccess: () => { utils.crmLeads.listar.invalidate(); utils.crmLeads.metricas.invalidate(); },
   });
 
   const excluirTodosMut = trpc.crmLeads.excluirTodos.useMutation({
@@ -407,6 +434,109 @@ export default function CrmLeads() {
     }
   };
 
+  const gerarListaPdf = async () => {
+    const leadsParaPdf = leadsPdfData?.leads || [];
+    if (!leadsParaPdf.length) { toast.error("Nenhum lead encontrado para o período selecionado."); return; }
+
+    const [{ default: jsPDF }, { addBarcellosHeader, addBarcellosFooter }] = await Promise.all([
+      import("jspdf"),
+      import("@/lib/pdfHelpers"),
+    ]);
+
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const margin = 14;
+    const contentW = pageW - margin * 2;
+    const mesLabel = MESES_FULL[Number(pdfMes) - 1] || "";
+    const subtitleParts = [`${mesLabel} ${pdfAno}`, pdfVendedor !== "todos" ? pdfVendedor : ""].filter(Boolean);
+    const subtitle = subtitleParts.join(" — ");
+
+    const buildBullets = (lead: any): string[] => {
+      const b: string[] = [];
+      if (pdfCampos.cpf && lead.cpf) b.push(`CPF: ${lead.cpf}`);
+      const fones = [
+        pdfCampos.telefone && lead.telefone ? `Cel: ${lead.telefone}` : null,
+        pdfCampos.celular2 && lead.celular2 ? `Cel 2: ${lead.celular2}` : null,
+        pdfCampos.celular3 && lead.celular3 ? `Cel 3: ${lead.celular3}` : null,
+        pdfCampos.fixo1 && lead.fixo1 ? `Fixo: ${lead.fixo1}` : null,
+        pdfCampos.fixo2 && lead.fixo2 ? `Fixo 2: ${lead.fixo2}` : null,
+        pdfCampos.fixo3 && lead.fixo3 ? `Fixo 3: ${lead.fixo3}` : null,
+      ].filter(Boolean) as string[];
+      b.push(...fones);
+      if (pdfCampos.logradouro) {
+        const end = [lead.logradouro, lead.numero, lead.complemento].filter(Boolean).join(", ");
+        if (end) b.push(`Endereço: ${end}`);
+      }
+      if (pdfCampos.bairro && lead.bairro) b.push(`Bairro: ${lead.bairro}`);
+      if (pdfCampos.cidade && (lead.cidade || lead.uf))
+        b.push(`Cidade: ${[lead.cidade, lead.uf].filter(Boolean).join("/")}`);
+      if (pdfCampos.origem && lead.origem) b.push(`Origem: ${lead.origem}`);
+      if (pdfCampos.status) b.push(`Status: ${STATUS_LEAD[lead.status]?.label || lead.status}`);
+      if (pdfCampos.valorEstimado && lead.valorEstimado)
+        b.push(`Valor Est.: ${fmt(Number(lead.valorEstimado))}`);
+      return b;
+    };
+
+    let y = addBarcellosHeader(doc, "Lista de Leads para Envio", subtitle);
+    const annotH = 18;
+
+    for (let i = 0; i < leadsParaPdf.length; i++) {
+      const lead = leadsParaPdf[i];
+      const bullets = buildBullets(lead);
+      const cardH = 9 + bullets.length * 5 + annotH + 6;
+
+      if (y + cardH > pageH - 18) {
+        addBarcellosFooter(doc);
+        doc.addPage();
+        y = addBarcellosHeader(doc, "Lista de Leads para Envio", subtitle);
+      }
+
+      // Nome em destaque
+      doc.setFontSize(13);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(30, 64, 175);
+      doc.text(lead.nome.toUpperCase(), margin, y + 6);
+      y += 9;
+
+      // Bullets
+      doc.setFontSize(8.5);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(45, 45, 60);
+      for (const bullet of bullets) {
+        doc.text(`—  ${bullet}`, margin + 4, y + 4);
+        y += 5;
+      }
+      y += 2;
+
+      // Caixa de anotações
+      doc.setDrawColor(200, 212, 235);
+      doc.setFillColor(249, 251, 255);
+      doc.roundedRect(margin, y, contentW, annotH, 2, 2, "FD");
+      doc.setFontSize(6.5);
+      doc.setTextColor(190, 195, 215);
+      doc.text("Anotações do vendedor:", margin + 3, y + 4.5);
+      y += annotH + 2;
+
+      // Separador
+      if (i < leadsParaPdf.length - 1) {
+        doc.setDrawColor(218, 225, 245);
+        doc.line(margin, y + 1.5, pageW - margin, y + 1.5);
+        y += 5;
+      }
+    }
+
+    addBarcellosFooter(doc);
+    const safeName = (pdfVendedor !== "todos" ? pdfVendedor : "todos").replace(/\s+/g, "_");
+    doc.save(`lista_leads_${mesLabel}_${pdfAno}_${safeName}.pdf`);
+
+    // Marca todos os leads como ENVIADO
+    const ids = leadsParaPdf.map((l: any) => l.id);
+    await marcarEnviadosMut.mutateAsync({ ids });
+    toast.success(`Lista gerada! ${ids.length} lead(s) marcados como ENVIADO.`);
+    setPdfLeadsOpen(false);
+  };
+
   const exportarCSV = () => {
     const rows = leads;
     const header = ["ID", "Nome", "Telefone", "Data da Entrega", "Mês", "Ano", "Status", "Valor Estimado", "Histórico"];
@@ -473,6 +603,9 @@ export default function CrmLeads() {
           <p className="text-muted-foreground text-sm">Gestão de leads e funil de conversão — {anoFiltro}</p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" onClick={() => setPdfLeadsOpen(true)} className="gap-2">
+            <FileText className="h-4 w-4" /> Gerar Lista PDF
+          </Button>
           <Button variant="outline" onClick={exportarCSV} className="gap-2">
             <Download className="h-4 w-4" /> Exportar CSV
           </Button>
@@ -1018,19 +1151,13 @@ export default function CrmLeads() {
               </Select>
             )}
             {cidadesData.length > 0 && (
-              <div className="relative">
-                <Input
-                  className="w-40 pl-3"
-                  placeholder="Cidade..."
-                  value={cidadeFiltro}
-                  onChange={e => setCidadeFiltro(e.target.value)}
-                />
-                {cidadeFiltro && (
-                  <button onClick={() => setCidadeFiltro("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                    <X className="h-3 w-3" />
-                  </button>
-                )}
-              </div>
+              <Select value={cidadeFiltro} onValueChange={setCidadeFiltro}>
+                <SelectTrigger className="w-44"><SelectValue placeholder="Cidade" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todas as cidades</SelectItem>
+                  {cidadesData.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
             )}
             <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setModalOrigens(true)}>
               <Settings2 className="h-4 w-4" /> Origens
@@ -1500,6 +1627,91 @@ export default function CrmLeads() {
             disabled={!vendedorImport.trim() || importando}
           >
             {importando ? "Importando..." : "Confirmar Importação"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    {/* ─── Dialog: Gerar Lista PDF para Vendedor ────────────────────────── */}
+    <Dialog open={pdfLeadsOpen} onOpenChange={setPdfLeadsOpen}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Gerar Lista de Leads — PDF</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Mês base</Label>
+              <Select value={pdfMes} onValueChange={setPdfMes}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {MESES_FULL.map((m, i) => (
+                    <SelectItem key={i + 1} value={String(i + 1)}>{m}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Ano</Label>
+              <Input type="number" value={pdfAno} onChange={e => setPdfAno(e.target.value)} min={2020} max={2050} />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Vendedor</Label>
+            <Select value={pdfVendedor} onValueChange={setPdfVendedor}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos os vendedores</SelectItem>
+                {vendedores.map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="border-t pt-3">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Campos a exibir</p>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { key: "cpf",          label: "CPF" },
+                { key: "telefone",     label: "Celular 1" },
+                { key: "celular2",     label: "Celular 2" },
+                { key: "celular3",     label: "Celular 3" },
+                { key: "fixo1",        label: "Fixo 1" },
+                { key: "fixo2",        label: "Fixo 2" },
+                { key: "fixo3",        label: "Fixo 3" },
+                { key: "logradouro",   label: "Endereço" },
+                { key: "bairro",       label: "Bairro" },
+                { key: "cidade",       label: "Cidade/UF" },
+                { key: "origem",       label: "Origem" },
+                { key: "status",       label: "Status" },
+                { key: "valorEstimado",label: "Valor Est." },
+              ].map(({ key, label }) => (
+                <label key={key} className="flex items-center gap-2 cursor-pointer select-none">
+                  <Checkbox
+                    checked={pdfCampos[key as keyof typeof pdfCampos]}
+                    onCheckedChange={v => setPdfCampos(c => ({ ...c, [key]: !!v }))}
+                  />
+                  <span className="text-sm">{label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+          {fetchingPdf ? (
+            <p className="text-xs text-muted-foreground text-center">Carregando leads...</p>
+          ) : leadsPdfData?.leads?.length ? (
+            <p className="text-xs text-center text-blue-700 bg-blue-50 rounded px-3 py-1.5">
+              {leadsPdfData.leads.length} lead(s) encontrado(s) — serão marcados como <strong>ENVIADO</strong> ao gerar.
+            </p>
+          ) : (
+            <p className="text-xs text-center text-muted-foreground">Nenhum lead no período selecionado.</p>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setPdfLeadsOpen(false)}>Cancelar</Button>
+          <Button
+            onClick={gerarListaPdf}
+            disabled={fetchingPdf || !leadsPdfData?.leads?.length || marcarEnviadosMut.isPending}
+            className="gap-2"
+          >
+            <FileText className="h-4 w-4" />
+            {marcarEnviadosMut.isPending ? "Salvando..." : "Gerar PDF"}
           </Button>
         </DialogFooter>
       </DialogContent>
