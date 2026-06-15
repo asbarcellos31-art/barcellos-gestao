@@ -122,12 +122,12 @@ export default function CrmLeads() {
       ano: Number(pdfAno),
       vendedor: pdfVendedor !== "todos" ? pdfVendedor : undefined,
     },
-    { enabled: pdfLeadsOpen }
+    { enabled: pdfLeadsOpen && !pdfFromTable }
   );
 
-  // Auto-seleciona todos ao carregar
+  // Auto-seleciona todos ao carregar (só quando NÃO vem da seleção da tabela)
   useEffect(() => {
-    if (leadsPdfData?.leads) {
+    if (!pdfFromTable && leadsPdfData?.leads) {
       setPdfSelecionados(leadsPdfData.leads.map((l: any) => l.id));
     }
   }, [leadsPdfData]);
