@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { addBarcellosHeader, addBarcellosFooter } from "@/lib/pdfHelpers";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -657,29 +658,20 @@ export default function Vendas() {
 
   const exportarPDF = () => {
     const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-    // Cabeçalho
-    doc.setFillColor(30, 64, 175);
-    doc.rect(0, 0, 297, 20, "F");
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(13);
-    doc.setFont("helvetica", "bold");
-    doc.text("BARCELLOS SEGUROS — Controle de Vendas", 14, 13);
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
     const filtroLabel = [
       mesSel ? MESES[mesSel] : "Ano todo",
       ano,
       corretorFiltro ? `| ${corretorFiltro}` : "",
     ].filter(Boolean).join(" ");
-    doc.text(filtroLabel, 297 - 14, 13, { align: "right" });
-    // Totais
+    const nextY = addBarcellosHeader(doc, "Controle de Vendas", filtroLabel);
+
     const totalPremio = vendas.reduce((s, v) => s + (v.valorPremio ? Number(v.valorPremio) : 0), 0);
     const totalComissao = vendas.reduce((s, v) => s + (v.valorComissao ? Number(v.valorComissao) : 0), 0);
     const fmt = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(9);
-    doc.text(`Total: ${vendas.length} lançamentos  |  Valor Prêmio: ${fmt(totalPremio)}  |  Comissão: ${fmt(totalComissao)}`, 14, 27);
-    // Tabela
+    doc.setFontSize(8);
+    doc.setTextColor(80, 80, 100);
+    doc.text(`Total: ${vendas.length} lançamentos  |  Prêmio: ${fmt(totalPremio)}  |  Comissão: ${fmt(totalComissao)}`, 14, nextY);
+
     const body = vendas.map(v => [
       v.dataVenda ? formatDate(v.dataVenda) : "",
       (v.nomeCliente || "").slice(0, 28),
@@ -693,7 +685,7 @@ export default function Vendas() {
       v.implantada || "",
     ]);
     autoTable(doc, {
-      startY: 31,
+      startY: nextY + 5,
       head: [["Data", "Cliente", "CPF", "Corretor", "Produto", "Valor Prêmio", "CPF Novo", "Comissão", "Com. Paga", "Implantada"]],
       body,
       styles: { fontSize: 7, cellPadding: 1.5 },
@@ -712,14 +704,7 @@ export default function Vendas() {
       },
       margin: { left: 14, right: 14 },
     });
-    // Rodapé
-    const pageCount = doc.getNumberOfPages();
-    for (let i = 1; i <= pageCount; i++) {
-      doc.setPage(i);
-      doc.setFontSize(7);
-      doc.setTextColor(150);
-      doc.text(`Barcellos Seguros — gerado em ${new Date().toLocaleString("pt-BR")} — pág. ${i}/${pageCount}`, 14, 205);
-    }
+    addBarcellosFooter(doc);
     doc.save(`Vendas_${periodoLabel}${corretorFiltro ? `_${corretorFiltro}` : ""}.pdf`);
     toast.success("PDF exportado!");
   };

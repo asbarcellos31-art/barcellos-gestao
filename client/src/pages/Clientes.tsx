@@ -21,6 +21,7 @@ import {
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { addBarcellosHeader, addBarcellosFooter } from "@/lib/pdfHelpers";
 import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
 
@@ -658,12 +659,7 @@ export default function Clientes() {
     import('jspdf').then(({ default: jsPDF }) => {
       import('jspdf-autotable').then(() => {
         const doc = new (jsPDF as any)({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-        doc.setFontSize(14);
-        doc.setTextColor(30, 64, 175);
-        doc.text('Barcellos Seguros — Base de Clientes', 14, 15);
-        doc.setFontSize(9);
-        doc.setTextColor(100);
-        doc.text(`Gerado em ${new Date().toLocaleString('pt-BR')} — ${clientesParaExportar.length} clientes`, 14, 22);
+        const nextY = addBarcellosHeader(doc as any, 'Base de Clientes', `${clientesParaExportar.length} clientes`);
         const head = [['Nome', 'CPF', 'Vendedor', 'Origem', 'Status', 'Produtos', 'Contribuição', 'Comissão', 'Data Nasc.']];
         const body = clientesParaExportar.map((c: any) => [
           c.nome || '',
@@ -677,18 +673,12 @@ export default function Clientes() {
           c.dataNascimento ? fmtDate(c.dataNascimento) : '',
         ]);
         (doc as any).autoTable({
-          head, body, startY: 27,
+          head, body, startY: nextY,
           styles: { fontSize: 7, cellPadding: 2 },
           headStyles: { fillColor: [30, 64, 175], textColor: 255, fontStyle: 'bold' },
           alternateRowStyles: { fillColor: [245, 247, 255] },
         });
-        const pageCount = (doc as any).internal.getNumberOfPages();
-        for (let i = 1; i <= pageCount; i++) {
-          doc.setPage(i);
-          doc.setFontSize(7);
-          doc.setTextColor(150);
-          doc.text(`Página ${i} de ${pageCount}`, doc.internal.pageSize.getWidth() - 30, doc.internal.pageSize.getHeight() - 5);
-        }
+        addBarcellosFooter(doc as any);
         doc.save(`clientes_${new Date().toISOString().split('T')[0]}.pdf`);
         toast.success('PDF gerado!');
       });

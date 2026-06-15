@@ -15,6 +15,7 @@ import AppLayout from "@/components/AppLayout";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { addBarcellosHeader, addBarcellosFooter } from "@/lib/pdfHelpers";
 
 const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 const MESES_CURTOS = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
@@ -183,39 +184,17 @@ export default function Comissoes() {
     doc.text(value, x + w / 2, y + 15, { align: "center" });
   }
 
-  function addPdfFooter(doc: jsPDF) {
-    const n = doc.getNumberOfPages();
-    for (let i = 1; i <= n; i++) {
-      doc.setPage(i);
-      doc.setFontSize(7);
-      doc.setTextColor(150);
-      doc.text(`Barcellos Seguros — ${new Date().toLocaleString("pt-BR")} — pág. ${i}/${n}`, 14, 205);
-    }
-  }
-
   function exportarPDFPendentes() {
     const mesLabel = MESES[mesPendentes - 1];
     const soCorretor = vendedorPendentes !== "todos";
     const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
 
-    // ── Cabeçalho ────────────────────────────────────────────────────────────
-    doc.setFillColor(220, 38, 38);
-    doc.rect(0, 0, 297, 20, "F");
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(13);
-    doc.setFont("helvetica", "bold");
-    doc.text(
-      soCorretor
-        ? `${vendedorPendentes} — Comissões Pendentes`
-        : "BARCELLOS SEGUROS — Comissões Pendentes",
-      14, 13
-    );
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "normal");
-    doc.text(`${mesLabel}/${ano}`, 297 - 14, 13, { align: "right" });
+    const titlePend = soCorretor
+      ? `${vendedorPendentes} — Comissões Pendentes`
+      : "Comissões Pendentes";
+    let nextY = addBarcellosHeader(doc, titlePend, `${mesLabel} / ${ano}`);
 
     const totalContrib = pendentesFiltrados.reduce((s, p) => s + parseFloat(String(p.contribuicao ?? "0")), 0);
-    let nextY = 26;
 
     if (soCorretor) {
       // ── Dashboard 3 KPIs ────────────────────────────────────────────────
@@ -273,7 +252,7 @@ export default function Comissoes() {
       margin: { left: 14, right: 14 },
     });
 
-    addPdfFooter(doc);
+    addBarcellosFooter(doc);
     doc.save(`Pendentes_${soCorretor ? vendedorPendentes + "_" : ""}${mesLabel}_${ano}.pdf`);
     toast.success("PDF exportado!");
   }
@@ -287,18 +266,8 @@ export default function Comissoes() {
       : null;
     const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
 
-    // ── Cabeçalho ─────────────────────────────────────────────────────────────
-    doc.setFillColor(30, 64, 175);
-    doc.rect(0, 0, 297, 20, "F");
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(13);
-    doc.setFont("helvetica", "bold");
-    doc.text(soCorretor ? `${targetCorretor} — Relatório de Comissões` : "BARCELLOS SEGUROS — Relatório de Comissões", 14, 13);
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "normal");
-    doc.text(periodoLabel, 297 - 14, 13, { align: "right" });
-
-    let nextY = 26;
+    const titlePDF = soCorretor ? `${targetCorretor} — Relatório de Comissões` : "Relatório de Comissões";
+    let nextY = addBarcellosHeader(doc, titlePDF, periodoLabel);
 
     if (soCorretor && corr) {
       // ── Dashboard 5 KPIs ───────────────────────────────────────────────────
@@ -410,15 +379,7 @@ export default function Comissoes() {
       // Detalhe de um corretor específico em página separada (se expandido)
       if (corretorDetalhe && (detalhe as Record<string, unknown>[]).length > 0) {
         doc.addPage();
-        doc.setFillColor(30, 64, 175);
-        doc.rect(0, 0, 297, 20, "F");
-        doc.setTextColor(255, 255, 255);
-        doc.setFontSize(13);
-        doc.setFont("helvetica", "bold");
-        doc.text(`Detalhe — ${corretorDetalhe}`, 14, 13);
-        doc.setFontSize(9);
-        doc.setFont("helvetica", "normal");
-        doc.text(periodoLabel, 297 - 14, 13, { align: "right" });
+        addBarcellosHeader(doc, `Detalhe — ${corretorDetalhe}`, periodoLabel);
 
         const detalheBody = (detalhe as Record<string, unknown>[]).map(d => [
           String(d.nomeCliente ?? "").slice(0, 30),
@@ -431,7 +392,7 @@ export default function Comissoes() {
           parseFloat(String(d.realizado50 ?? "0")).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
         ]);
         autoTable(doc, {
-          startY: 26,
+          startY: 32,
           head: [["Cliente", "CPF", "Produto", "Contribuição", "Total Comissão", "% Parte", "Previsão 15%", "Realizado"]],
           body: detalheBody,
           styles: { fontSize: 7, cellPadding: 1.5 },
@@ -442,7 +403,7 @@ export default function Comissoes() {
       }
     }
 
-    addPdfFooter(doc);
+    addBarcellosFooter(doc);
     const fileName = soCorretor
       ? `Comissoes_${targetCorretor}_${periodoLabel.replace(/ /g, "_")}.pdf`
       : `Comissoes_${periodoLabel.replace(/ /g, "_").replace(/—/g, "-")}.pdf`;
