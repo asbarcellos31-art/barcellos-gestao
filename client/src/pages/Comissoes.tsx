@@ -8,8 +8,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Upload, Trash2, TrendingUp, Users, FileText, DollarSign, Filter, Search, AlertCircle, ChevronDown, ChevronRight, Target, Download } from "lucide-react";
+import { Upload, Trash2, TrendingUp, Users, FileText, DollarSign, Filter, Search, AlertCircle, ChevronDown, ChevronRight, Target, Download, Settings2 } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
 import AppLayout from "@/components/AppLayout";
 import * as XLSX from "xlsx";
@@ -47,6 +50,30 @@ export default function Comissoes() {
   const [vendedorPendentes, setVendedorPendentes] = useState<string>("todos");
   const [mesPendentes, setMesPendentes] = useState(new Date().getMonth() + 1);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // ── Configuração do PDF ────────────────────────────────────────────────────
+  const [pdfConfigOpen, setPdfConfigOpen] = useState(false);
+  const [pdfPendConfigOpen, setPdfPendConfigOpen] = useState(false);
+  const [colsCfg, setColsCfg] = useState({
+    contribuicao: true,
+    valorComissao: true,
+    valorIncentivo: false,
+    totalComissao: true,
+    percentualParte: false,
+    previsao15: true,
+    realizado: true,
+  });
+  const [colsPendCfg, setColsPendCfg] = useState({
+    contribuicao: true,
+    previsao15: true,
+  });
+
+  function toggleCol(key: keyof typeof colsCfg) {
+    setColsCfg(prev => ({ ...prev, [key]: !prev[key] }));
+  }
+  function togglePendCol(key: keyof typeof colsPendCfg) {
+    setColsPendCfg(prev => ({ ...prev, [key]: !prev[key] }));
+  }
 
   const utils = trpc.useUtils();
   const { data: uploads = [] } = trpc.comissoes.uploads.useQuery();
@@ -197,13 +224,17 @@ export default function Comissoes() {
     const totalContrib = pendentesFiltrados.reduce((s, p) => s + parseFloat(String(p.contribuicao ?? "0")), 0);
 
     if (soCorretor) {
-      // ── Dashboard 3 KPIs ────────────────────────────────────────────────
-      const bw = 80, bh = 20, gap = 10;
-      const startX = (297 - (bw * 3 + gap * 2)) / 2;
-      kpiBox(doc, startX,           nextY, bw, bh, "Clientes Pendentes",    String(pendentesFiltrados.length),                                        180, 0,  0);
-      kpiBox(doc, startX + bw + gap, nextY, bw, bh, "Contribuição Total",   totalContrib.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }), 120, 53, 15);
-      kpiBox(doc, startX + (bw + gap) * 2, nextY, bw, bh, "Previsão Perdida (15%)", totalPrevisaoPendentes.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }), 161, 98, 7);
-      nextY += bh + 8;
+      // ── Dashboard KPIs (habilitados) ──────────────────────────────────────
+      const pendKpis = [
+        { label: "Clientes Pendentes",  value: String(pendentesFiltrados.length),                                                                           r: 180, g: 0,   b: 0,  always: true },
+        { label: "Contribuição Total",  value: totalContrib.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),                               r: 120, g: 53,  b: 15, always: false, cfgKey: "contribuicao" as const },
+        { label: "Previsão Perdida 15%", value: totalPrevisaoPendentes.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),                    r: 161, g: 98,  b: 7,  always: false, cfgKey: "previsao15" as const },
+      ].filter(k => k.always || colsPendCfg[k.cfgKey!]);
+      const bh2 = 20, gap2 = 10;
+      const bw2 = Math.min(88, (297 - 28 - gap2 * (pendKpis.length - 1)) / pendKpis.length);
+      const startX = (297 - (bw2 * pendKpis.length + gap2 * (pendKpis.length - 1))) / 2;
+      pendKpis.forEach((k, i) => kpiBox(doc, startX + i * (bw2 + gap2), nextY, bw2, bh2, k.label, k.value, k.r, k.g, k.b));
+      nextY += bh2 + 8;
     }
 
     // ── Tabela ───────────────────────────────────────────────────────────────
@@ -213,30 +244,31 @@ export default function Comissoes() {
     doc.text(`Clientes sem comissão — ${mesLabel}/${ano}`, 14, nextY + 4);
     nextY += 8;
 
-    const head = soCorretor
-      ? [["Nome", "CPF", "Produto", "Contribuição", "Previsão 15%"]]
-      : [["Nome", "CPF", "Vendedor", "Produto", "Contribuição", "Previsão 15%"]];
+    const pendHead = ["Nome", "CPF"];
+    if (!soCorretor) pendHead.push("Vendedor");
+    pendHead.push("Produto");
+    if (colsPendCfg.contribuicao) pendHead.push("Contribuição");
+    if (colsPendCfg.previsao15)   pendHead.push("Previsão 15%");
 
     const body = pendentesFiltrados.map(p => {
-      const row = [
-        String(p.nome ?? ""),
-        String(p.cpf ?? ""),
-        ...(soCorretor ? [] : [String(p.vendedor ?? "—")]),
-        String(p.produtos ?? "—"),
-        parseFloat(String(p.contribuicao ?? "0")).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-        p.previsao15 != null ? parseFloat(String(p.previsao15)).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—",
-      ];
+      const row: string[] = [String(p.nome ?? ""), String(p.cpf ?? "")];
+      if (!soCorretor) row.push(String(p.vendedor ?? "—"));
+      row.push(String(p.produtos ?? "—"));
+      if (colsPendCfg.contribuicao) row.push(parseFloat(String(p.contribuicao ?? "0")).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
+      if (colsPendCfg.previsao15)   row.push(p.previsao15 != null ? parseFloat(String(p.previsao15)).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—");
       return row;
     });
 
-    const totalRow = soCorretor
-      ? ["TOTAL", `${pendentesFiltrados.length} clientes`, "", totalContrib.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }), totalPrevisaoPendentes.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })]
-      : ["TOTAL", "", "", `${pendentesFiltrados.length} clientes`, totalContrib.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }), totalPrevisaoPendentes.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })];
+    const totalRow: string[] = ["TOTAL", `${pendentesFiltrados.length} clientes`];
+    if (!soCorretor) totalRow.push("");
+    totalRow.push("");
+    if (colsPendCfg.contribuicao) totalRow.push(totalContrib.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
+    if (colsPendCfg.previsao15)   totalRow.push(totalPrevisaoPendentes.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
     body.push(totalRow);
 
     autoTable(doc, {
       startY: nextY + 2,
-      head,
+      head: [pendHead],
       body,
       styles: { fontSize: 8, cellPadding: 2 },
       headStyles: { fillColor: [220, 38, 38], textColor: 255, fontStyle: "bold" },
@@ -246,9 +278,7 @@ export default function Comissoes() {
           data.cell.styles.fillColor = [255, 235, 235];
         }
       },
-      columnStyles: soCorretor
-        ? { 0: { cellWidth: 65 }, 1: { cellWidth: 35 }, 2: { cellWidth: 55 } }
-        : { 0: { cellWidth: 55 }, 1: { cellWidth: 32 }, 3: { cellWidth: 45 } },
+      columnStyles: { 0: { cellWidth: soCorretor ? 70 : 58 }, 1: { cellWidth: 34 } },
       margin: { left: 14, right: 14 },
     });
 
@@ -270,18 +300,20 @@ export default function Comissoes() {
     let nextY = addBarcellosHeader(doc, titlePDF, periodoLabel);
 
     if (soCorretor && corr) {
-      // ── Dashboard 5 KPIs ───────────────────────────────────────────────────
-      const bw = 50, bh = 20, gap = 4;
-      const totalW = bw * 5 + gap * 4;
+      // ── Dashboard KPIs (apenas os habilitados) ────────────────────────────
+      const kpiAll = [
+        { key: "clientes",      label: "Clientes",       value: String(corr.totalClientes),                                                            r: 30,  g: 64,  b: 175, always: true },
+        { key: "contribuicao",  label: "Contribuição",   value: corr.totalBase.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),         r: 79,  g: 70,  b: 229, always: false },
+        { key: "totalComissao", label: "Comissão Total", value: corr.totalComissao.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),     r: 5,   g: 150, b: 105, always: false },
+        { key: "previsao15",    label: "Previsão 15%",   value: corr.totalPrevisao15.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),   r: 217, g: 119, b: 6,   always: false },
+        { key: "realizado",     label: "Realizado",      value: corr.totalRealizado50.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),  r: 22,  g: 163, b: 74,  always: false },
+      ] as const;
+      const kpisVis = kpiAll.filter(k => k.always || colsCfg[k.key as keyof typeof colsCfg]);
+      const bh = 20, gap = 4;
+      const bw = Math.min(55, (297 - 28 - gap * (kpisVis.length - 1)) / kpisVis.length);
+      const totalW = bw * kpisVis.length + gap * (kpisVis.length - 1);
       const sx = (297 - totalW) / 2;
-      const kpis = [
-        { label: "Clientes",       value: String(corr.totalClientes),                                                                    r: 30,  g: 64,  b: 175 },
-        { label: "Contribuição",   value: corr.totalBase.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),                 r: 79,  g: 70,  b: 229 },
-        { label: "Comissão Total", value: corr.totalComissao.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),             r: 5,   g: 150, b: 105 },
-        { label: "Previsão 15%",   value: corr.totalPrevisao15.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),           r: 217, g: 119, b: 6   },
-        { label: "Realizado",      value: corr.totalRealizado50.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),          r: 22,  g: 163, b: 74  },
-      ];
-      kpis.forEach((k, i) => kpiBox(doc, sx + i * (bw + gap), nextY, bw, bh, k.label, k.value, k.r, k.g, k.b));
+      kpisVis.forEach((k, i) => kpiBox(doc, sx + i * (bw + gap), nextY, bw, bh, k.label, k.value, k.r, k.g, k.b));
       nextY += bh + 8;
 
       // ── Detalhe dos clientes ───────────────────────────────────────────────
@@ -298,27 +330,45 @@ export default function Comissoes() {
         doc.setTextColor(150);
         doc.text("(Abra o detalhamento do corretor na tela antes de exportar para incluir os clientes)", 14, nextY + 6);
       } else {
-        const detBody = det.map(d => [
-          String(d.nomeCliente ?? "").slice(0, 35),
-          String(d.cpfCliente ?? ""),
-          String(d.descricaoProduto ?? "").slice(0, 28),
-          parseFloat(String(d.valorBase ?? "0")).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-          parseFloat(String(d.valorComissaoTotal ?? "0")).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-          `${parseFloat(String(d.percentualVendedor ?? "100")).toFixed(0)}%`,
-          parseFloat(String(d.previsao15 ?? "0")).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-          parseFloat(String(d.realizado50 ?? "0")).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-        ]);
-        detBody.push([
-          "TOTAL", "", "",
-          det.reduce((s, d) => s + parseFloat(String(d.valorBase ?? "0")), 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-          det.reduce((s, d) => s + parseFloat(String(d.valorComissaoTotal ?? "0")), 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-          "",
-          det.reduce((s, d) => s + parseFloat(String(d.previsao15 ?? "0")), 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-          det.reduce((s, d) => s + parseFloat(String(d.realizado50 ?? "0")), 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-        ]);
+        const fmt2 = (v: unknown) => parseFloat(String(v ?? "0")).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+        const detHead = ["Cliente", "CPF", "Produto"];
+        if (colsCfg.contribuicao)   detHead.push("Contribuição");
+        if (colsCfg.valorComissao)  detHead.push("Comissão");
+        if (colsCfg.valorIncentivo) detHead.push("Incentivo");
+        if (colsCfg.totalComissao)  detHead.push("Total Comissão");
+        if (colsCfg.percentualParte) detHead.push("% Parte");
+        if (colsCfg.previsao15)     detHead.push("Previsão 15%");
+        if (colsCfg.realizado)      detHead.push("Realizado");
+
+        const detBody = det.map(d => {
+          const row: string[] = [
+            String(d.nomeCliente ?? "").slice(0, 35),
+            String(d.cpfCliente ?? ""),
+            String(d.descricaoProduto ?? "").slice(0, 28),
+          ];
+          if (colsCfg.contribuicao)    row.push(fmt2(d.valorBase));
+          if (colsCfg.valorComissao)   row.push(fmt2(d.valorComissao));
+          if (colsCfg.valorIncentivo)  row.push(fmt2(d.valorIncentivo));
+          if (colsCfg.totalComissao)   row.push(fmt2(d.valorComissaoTotal));
+          if (colsCfg.percentualParte) row.push(`${parseFloat(String(d.percentualVendedor ?? "100")).toFixed(0)}%`);
+          if (colsCfg.previsao15)      row.push(fmt2(d.previsao15));
+          if (colsCfg.realizado)       row.push(fmt2(d.realizado50));
+          return row;
+        });
+
+        const totalRow: string[] = ["TOTAL", "", ""];
+        if (colsCfg.contribuicao)    totalRow.push(det.reduce((s, d) => s + parseFloat(String(d.valorBase ?? "0")), 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
+        if (colsCfg.valorComissao)   totalRow.push(det.reduce((s, d) => s + parseFloat(String(d.valorComissao ?? "0")), 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
+        if (colsCfg.valorIncentivo)  totalRow.push(det.reduce((s, d) => s + parseFloat(String(d.valorIncentivo ?? "0")), 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
+        if (colsCfg.totalComissao)   totalRow.push(det.reduce((s, d) => s + parseFloat(String(d.valorComissaoTotal ?? "0")), 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
+        if (colsCfg.percentualParte) totalRow.push("");
+        if (colsCfg.previsao15)      totalRow.push(det.reduce((s, d) => s + parseFloat(String(d.previsao15 ?? "0")), 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
+        if (colsCfg.realizado)       totalRow.push(det.reduce((s, d) => s + parseFloat(String(d.realizado50 ?? "0")), 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
+        detBody.push(totalRow);
+
         autoTable(doc, {
           startY: nextY + 2,
-          head: [["Cliente", "CPF", "Produto", "Contribuição", "Total Comissão", "% Parte", "Previsão 15%", "Realizado"]],
+          head: [detHead],
           body: detBody,
           styles: { fontSize: 7.5, cellPadding: 2 },
           headStyles: { fillColor: [30, 64, 175], textColor: 255, fontStyle: "bold" },
@@ -328,7 +378,7 @@ export default function Comissoes() {
               data.cell.styles.fillColor = [220, 230, 255];
             }
           },
-          columnStyles: { 0: { cellWidth: 45 }, 2: { cellWidth: 38 } },
+          columnStyles: { 0: { cellWidth: 42 }, 2: { cellWidth: 36 } },
           margin: { left: 14, right: 14 },
         });
       }
@@ -339,30 +389,37 @@ export default function Comissoes() {
       doc.setFont("helvetica", "bold");
       doc.text("Resumo por Corretor", 14, nextY + 4);
 
-      const resumoBody = resumoTyped.map(r => [
-        r.corretor,
-        r.totalClientes,
-        r.totalBase.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-        r.totalValorComissao.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-        r.totalValorIncentivo.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-        r.totalComissao.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-        r.totalPrevisao15.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-        r.totalRealizado50.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-      ]);
-      resumoBody.push([
-        "TOTAL",
-        String(resumoTyped.reduce((s, r) => s + r.totalClientes, 0)),
-        totalBaseGeral.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-        resumoTyped.reduce((s, r) => s + r.totalValorComissao, 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-        resumoTyped.reduce((s, r) => s + r.totalValorIncentivo, 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-        totalGeral.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-        totalPrevisaoGeral.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-        totalRealizadoGeral.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-      ]);
+      const sumHead = ["Corretor", "Clientes"];
+      if (colsCfg.contribuicao)   sumHead.push("Contribuição");
+      if (colsCfg.valorComissao)  sumHead.push("Comissão");
+      if (colsCfg.valorIncentivo) sumHead.push("Incentivo");
+      if (colsCfg.totalComissao)  sumHead.push("Total Comissão");
+      if (colsCfg.previsao15)     sumHead.push("Previsão 15%");
+      if (colsCfg.realizado)      sumHead.push("Realizado");
+
+      const resumoBody = resumoTyped.map(r => {
+        const row: (string | number)[] = [r.corretor, r.totalClientes];
+        if (colsCfg.contribuicao)   row.push(r.totalBase.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
+        if (colsCfg.valorComissao)  row.push(r.totalValorComissao.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
+        if (colsCfg.valorIncentivo) row.push(r.totalValorIncentivo.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
+        if (colsCfg.totalComissao)  row.push(r.totalComissao.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
+        if (colsCfg.previsao15)     row.push(r.totalPrevisao15.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
+        if (colsCfg.realizado)      row.push(r.totalRealizado50.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
+        return row;
+      });
+
+      const totalSumRow: (string | number)[] = ["TOTAL", resumoTyped.reduce((s, r) => s + r.totalClientes, 0)];
+      if (colsCfg.contribuicao)   totalSumRow.push(totalBaseGeral.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
+      if (colsCfg.valorComissao)  totalSumRow.push(resumoTyped.reduce((s, r) => s + r.totalValorComissao, 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
+      if (colsCfg.valorIncentivo) totalSumRow.push(resumoTyped.reduce((s, r) => s + r.totalValorIncentivo, 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
+      if (colsCfg.totalComissao)  totalSumRow.push(totalGeral.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
+      if (colsCfg.previsao15)     totalSumRow.push(totalPrevisaoGeral.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
+      if (colsCfg.realizado)      totalSumRow.push(totalRealizadoGeral.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
+      resumoBody.push(totalSumRow);
 
       autoTable(doc, {
         startY: nextY + 8,
-        head: [["Corretor", "Clientes", "Contribuição", "Comissão", "Incentivo", "Total Comissão", "Previsão 15%", "Realizado"]],
+        head: [sumHead],
         body: resumoBody,
         styles: { fontSize: 8, cellPadding: 2 },
         headStyles: { fillColor: [30, 64, 175], textColor: 255, fontStyle: "bold" },
@@ -444,9 +501,70 @@ export default function Comissoes() {
     }
   }
 
+  // ── Dialog de configuração do PDF principal ──────────────────────────────
+  const ColCheck = ({ id, label, checked, onChange }: { id: string; label: string; checked: boolean; onChange: () => void }) => (
+    <div className="flex items-center gap-2 py-1">
+      <Checkbox id={id} checked={checked} onCheckedChange={onChange} />
+      <Label htmlFor={id} className="cursor-pointer text-sm">{label}</Label>
+    </div>
+  );
+
   return (
     <AppLayout>
       <div className="p-3 md:p-6 space-y-4 md:space-y-6">
+
+        {/* Dialog config PDF principal */}
+        <Dialog open={pdfConfigOpen} onOpenChange={setPdfConfigOpen}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Settings2 className="w-4 h-4 text-blue-600" />
+                Configurar Relatório PDF
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-1 py-2">
+              <p className="text-xs text-muted-foreground mb-3">Selecione as informações que devem aparecer no relatório:</p>
+              <ColCheck id="cfg-contribuicao"   label="Contribuição"       checked={colsCfg.contribuicao}    onChange={() => toggleCol("contribuicao")} />
+              <ColCheck id="cfg-valorComissao"  label="Valor Comissão"     checked={colsCfg.valorComissao}   onChange={() => toggleCol("valorComissao")} />
+              <ColCheck id="cfg-valorIncentivo" label="Valor Incentivo"    checked={colsCfg.valorIncentivo}  onChange={() => toggleCol("valorIncentivo")} />
+              <ColCheck id="cfg-totalComissao"  label="Total Comissão"     checked={colsCfg.totalComissao}   onChange={() => toggleCol("totalComissao")} />
+              <ColCheck id="cfg-percentual"     label="% Parte"            checked={colsCfg.percentualParte} onChange={() => toggleCol("percentualParte")} />
+              <ColCheck id="cfg-previsao"       label="Previsão 15%"       checked={colsCfg.previsao15}      onChange={() => toggleCol("previsao15")} />
+              <ColCheck id="cfg-realizado"      label="Realizado (50%)"    checked={colsCfg.realizado}       onChange={() => toggleCol("realizado")} />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setPdfConfigOpen(false)}>Cancelar</Button>
+              <Button className="bg-blue-700 hover:bg-blue-800" onClick={() => { setPdfConfigOpen(false); exportarPDF(); }}>
+                <FileText className="w-4 h-4 mr-2" />
+                Gerar PDF
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Dialog config PDF Pendentes */}
+        <Dialog open={pdfPendConfigOpen} onOpenChange={setPdfPendConfigOpen}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Settings2 className="w-4 h-4 text-red-600" />
+                Configurar PDF — Pendentes
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-1 py-2">
+              <p className="text-xs text-muted-foreground mb-3">Selecione as informações que devem aparecer no relatório:</p>
+              <ColCheck id="pend-contribuicao" label="Contribuição"   checked={colsPendCfg.contribuicao} onChange={() => togglePendCol("contribuicao")} />
+              <ColCheck id="pend-previsao"     label="Previsão 15%"  checked={colsPendCfg.previsao15}   onChange={() => togglePendCol("previsao15")} />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setPdfPendConfigOpen(false)}>Cancelar</Button>
+              <Button className="bg-red-700 hover:bg-red-800" onClick={() => { setPdfPendConfigOpen(false); exportarPDFPendentes(); }}>
+                <FileText className="w-4 h-4 mr-2" />
+                Gerar PDF
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Cabeçalho */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -478,7 +596,7 @@ export default function Comissoes() {
               <Download className="w-4 h-4" />
               Baixar Excel
             </Button>
-            <Button variant="outline" onClick={exportarPDF} className="gap-2 border-red-600 text-red-700 hover:bg-red-50">
+            <Button variant="outline" onClick={() => setPdfConfigOpen(true)} className="gap-2 border-red-600 text-red-700 hover:bg-red-50">
               <FileText className="w-4 h-4" />
               Baixar PDF
             </Button>
@@ -906,7 +1024,7 @@ export default function Comissoes() {
               </div>
               <Button
                 variant="outline"
-                onClick={exportarPDFPendentes}
+                onClick={() => setPdfPendConfigOpen(true)}
                 disabled={pendentesFiltrados.length === 0}
                 className="gap-2 border-red-600 text-red-700 hover:bg-red-50 shrink-0"
               >
