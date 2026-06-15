@@ -384,18 +384,21 @@ export default function CrmLeads() {
           const cpfRaw = String(row[0] ?? "").trim();
           const nome = String(row[1] ?? "").trim();
           if (!nome) continue;
+          // col 2=TIPO, 3=LOGRADOURO, 4=NUMERO, 5=COMPLEMENTO, 6=BAIRRO, 7=CIDADE, 8=UF, 9=CEP (ignorado)
           const logradouro = [String(row[2] ?? "").trim(), String(row[3] ?? "").trim()].filter(Boolean).join(" ") || null;
           const numero = String(row[4] ?? "").trim() || null;
           const complemento = String(row[5] ?? "").trim() || null;
           const bairro = String(row[6] ?? "").trim() || null;
           const cidade = String(row[7] ?? "").trim() || null;
           const uf = String(row[8] ?? "").trim().toUpperCase() || null;
-          const telefone = fmtFone(row[9], row[10]);
-          const celular2 = fmtFone(row[11], row[12]);
-          const celular3 = fmtFone(row[13], row[14]);
-          const fixo1 = fmtFone(row[15], row[16]);
-          const fixo2 = fmtFone(row[17], row[18]);
-          const fixo3 = fmtFone(row[19], row[20]);
+          // col 9=CEP, 10=DDD_CEL_1, 11=CEL_1, 12=DDD_CEL_2, 13=CEL_2, 14=DDD_CEL_3, 15=CEL_3
+          // col 16=DDD_FIX_1, 17=FIX_1, 18=DDD_FIX_2, 19=FIX_2, 20=DDD_FIX_3, 21=FIX_3
+          const telefone = fmtFone(row[10], row[11]);
+          const celular2 = fmtFone(row[12], row[13]);
+          const celular3 = fmtFone(row[14], row[15]);
+          const fixo1 = fmtFone(row[16], row[17]);
+          const fixo2 = fmtFone(row[18], row[19]);
+          const fixo3 = fmtFone(row[20], row[21]);
           // Formata CPF: 11 dígitos → XXX.XXX.XXX-XX
           const cpfNum = cpfRaw.replace(/\D/g, "").padStart(11, "0");
           const cpf = cpfNum.length === 11
