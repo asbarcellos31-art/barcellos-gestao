@@ -171,6 +171,75 @@ export default function Comissoes() {
     toast.success("Relatório exportado com sucesso!");
   }
 
+  function exportarPDFPendentes() {
+    const mesLabel = MESES[mesPendentes - 1];
+    const vendLabel = vendedorPendentes === "todos" ? "Todos os vendedores" : vendedorPendentes;
+    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+
+    // Cabeçalho
+    doc.setFillColor(220, 38, 38);
+    doc.rect(0, 0, 297, 20, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(13);
+    doc.setFont("helvetica", "bold");
+    doc.text("BARCELLOS SEGUROS — Comissões Pendentes", 14, 13);
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.text(`${mesLabel}/${ano} — ${vendLabel}`, 297 - 14, 13, { align: "right" });
+
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.text(`Clientes sem comissão em ${mesLabel}/${ano}`, 14, 30);
+
+    const body = pendentesFiltrados.map(p => [
+      String(p.nome ?? ""),
+      String(p.cpf ?? ""),
+      String(p.vendedor ?? "—"),
+      String(p.produtos ?? "—"),
+      parseFloat(String(p.contribuicao ?? "0")).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+      p.previsao15 != null
+        ? parseFloat(String(p.previsao15)).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+        : "—",
+    ]);
+
+    // Linha de totais
+    body.push([
+      "TOTAL", "", "", `${pendentesFiltrados.length} clientes`,
+      pendentesFiltrados.reduce((s, p) => s + parseFloat(String(p.contribuicao ?? "0")), 0)
+        .toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+      totalPrevisaoPendentes.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+    ]);
+
+    autoTable(doc, {
+      startY: 34,
+      head: [["Nome", "CPF", "Vendedor", "Produto", "Contribuição", "Previsão 15%"]],
+      body,
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [220, 38, 38], textColor: 255, fontStyle: "bold" },
+      didParseCell: (data) => {
+        if (data.row.index === body.length - 1) {
+          data.cell.styles.fontStyle = "bold";
+          data.cell.styles.fillColor = [255, 235, 235];
+        }
+      },
+      columnStyles: { 0: { cellWidth: 55 }, 1: { cellWidth: 32 }, 3: { cellWidth: 45 } },
+      margin: { left: 14, right: 14 },
+    });
+
+    // Rodapé
+    const pageCount = doc.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFontSize(7);
+      doc.setTextColor(150);
+      doc.text(`Barcellos Seguros — gerado em ${new Date().toLocaleString("pt-BR")} — pág. ${i}/${pageCount}`, 14, 205);
+    }
+
+    doc.save(`Pendentes_${mesLabel}_${ano}_${vendLabel.replace(/ /g, "_")}.pdf`);
+    toast.success("PDF de pendentes exportado!");
+  }
+
   function exportarPDF() {
     const periodoLabel = mesSel ? `${MESES[mesSel - 1]} ${ano}` : `Todos os meses — ${ano}`;
     const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
@@ -774,6 +843,15 @@ export default function Comissoes() {
                   onChange={e => setBuscaPendentes(e.target.value)}
                 />
               </div>
+              <Button
+                variant="outline"
+                onClick={exportarPDFPendentes}
+                disabled={pendentesFiltrados.length === 0}
+                className="gap-2 border-red-600 text-red-700 hover:bg-red-50 shrink-0"
+              >
+                <FileText className="w-4 h-4" />
+                Exportar PDF
+              </Button>
             </div>
 
             {/* KPIs pendentes */}
