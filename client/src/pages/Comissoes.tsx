@@ -171,49 +171,93 @@ export default function Comissoes() {
     toast.success("Relatório exportado com sucesso!");
   }
 
+  function kpiBox(doc: jsPDF, x: number, y: number, w: number, h: number, label: string, value: string, r: number, g: number, b: number) {
+    doc.setFillColor(r, g, b);
+    doc.roundedRect(x, y, w, h, 2, 2, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(7);
+    doc.setFont("helvetica", "normal");
+    doc.text(label.toUpperCase(), x + w / 2, y + 7, { align: "center" });
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.text(value, x + w / 2, y + 15, { align: "center" });
+  }
+
+  function addPdfFooter(doc: jsPDF) {
+    const n = doc.getNumberOfPages();
+    for (let i = 1; i <= n; i++) {
+      doc.setPage(i);
+      doc.setFontSize(7);
+      doc.setTextColor(150);
+      doc.text(`Barcellos Seguros — ${new Date().toLocaleString("pt-BR")} — pág. ${i}/${n}`, 14, 205);
+    }
+  }
+
   function exportarPDFPendentes() {
     const mesLabel = MESES[mesPendentes - 1];
-    const vendLabel = vendedorPendentes === "todos" ? "Todos os vendedores" : vendedorPendentes;
+    const soCorretor = vendedorPendentes !== "todos";
     const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
 
-    // Cabeçalho
+    // ── Cabeçalho ────────────────────────────────────────────────────────────
     doc.setFillColor(220, 38, 38);
     doc.rect(0, 0, 297, 20, "F");
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(13);
     doc.setFont("helvetica", "bold");
-    doc.text("BARCELLOS SEGUROS — Comissões Pendentes", 14, 13);
+    doc.text(
+      soCorretor
+        ? `${vendedorPendentes} — Comissões Pendentes`
+        : "BARCELLOS SEGUROS — Comissões Pendentes",
+      14, 13
+    );
     doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
-    doc.text(`${mesLabel}/${ano} — ${vendLabel}`, 297 - 14, 13, { align: "right" });
+    doc.text(`${mesLabel}/${ano}`, 297 - 14, 13, { align: "right" });
 
+    const totalContrib = pendentesFiltrados.reduce((s, p) => s + parseFloat(String(p.contribuicao ?? "0")), 0);
+    let nextY = 26;
+
+    if (soCorretor) {
+      // ── Dashboard 3 KPIs ────────────────────────────────────────────────
+      const bw = 80, bh = 20, gap = 10;
+      const startX = (297 - (bw * 3 + gap * 2)) / 2;
+      kpiBox(doc, startX,           nextY, bw, bh, "Clientes Pendentes",    String(pendentesFiltrados.length),                                        180, 0,  0);
+      kpiBox(doc, startX + bw + gap, nextY, bw, bh, "Contribuição Total",   totalContrib.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }), 120, 53, 15);
+      kpiBox(doc, startX + (bw + gap) * 2, nextY, bw, bh, "Previsão Perdida (15%)", totalPrevisaoPendentes.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }), 161, 98, 7);
+      nextY += bh + 8;
+    }
+
+    // ── Tabela ───────────────────────────────────────────────────────────────
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(10);
     doc.setFont("helvetica", "bold");
-    doc.text(`Clientes sem comissão em ${mesLabel}/${ano}`, 14, 30);
+    doc.text(`Clientes sem comissão — ${mesLabel}/${ano}`, 14, nextY + 4);
+    nextY += 8;
 
-    const body = pendentesFiltrados.map(p => [
-      String(p.nome ?? ""),
-      String(p.cpf ?? ""),
-      String(p.vendedor ?? "—"),
-      String(p.produtos ?? "—"),
-      parseFloat(String(p.contribuicao ?? "0")).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-      p.previsao15 != null
-        ? parseFloat(String(p.previsao15)).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
-        : "—",
-    ]);
+    const head = soCorretor
+      ? [["Nome", "CPF", "Produto", "Contribuição", "Previsão 15%"]]
+      : [["Nome", "CPF", "Vendedor", "Produto", "Contribuição", "Previsão 15%"]];
 
-    // Linha de totais
-    body.push([
-      "TOTAL", "", "", `${pendentesFiltrados.length} clientes`,
-      pendentesFiltrados.reduce((s, p) => s + parseFloat(String(p.contribuicao ?? "0")), 0)
-        .toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-      totalPrevisaoPendentes.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-    ]);
+    const body = pendentesFiltrados.map(p => {
+      const row = [
+        String(p.nome ?? ""),
+        String(p.cpf ?? ""),
+        ...(soCorretor ? [] : [String(p.vendedor ?? "—")]),
+        String(p.produtos ?? "—"),
+        parseFloat(String(p.contribuicao ?? "0")).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+        p.previsao15 != null ? parseFloat(String(p.previsao15)).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—",
+      ];
+      return row;
+    });
+
+    const totalRow = soCorretor
+      ? ["TOTAL", `${pendentesFiltrados.length} clientes`, "", totalContrib.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }), totalPrevisaoPendentes.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })]
+      : ["TOTAL", "", "", `${pendentesFiltrados.length} clientes`, totalContrib.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }), totalPrevisaoPendentes.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })];
+    body.push(totalRow);
 
     autoTable(doc, {
-      startY: 34,
-      head: [["Nome", "CPF", "Vendedor", "Produto", "Contribuição", "Previsão 15%"]],
+      startY: nextY + 2,
+      head,
       body,
       styles: { fontSize: 8, cellPadding: 2 },
       headStyles: { fillColor: [220, 38, 38], textColor: 255, fontStyle: "bold" },
@@ -223,129 +267,182 @@ export default function Comissoes() {
           data.cell.styles.fillColor = [255, 235, 235];
         }
       },
-      columnStyles: { 0: { cellWidth: 55 }, 1: { cellWidth: 32 }, 3: { cellWidth: 45 } },
+      columnStyles: soCorretor
+        ? { 0: { cellWidth: 65 }, 1: { cellWidth: 35 }, 2: { cellWidth: 55 } }
+        : { 0: { cellWidth: 55 }, 1: { cellWidth: 32 }, 3: { cellWidth: 45 } },
       margin: { left: 14, right: 14 },
     });
 
-    // Rodapé
-    const pageCount = doc.getNumberOfPages();
-    for (let i = 1; i <= pageCount; i++) {
-      doc.setPage(i);
-      doc.setFontSize(7);
-      doc.setTextColor(150);
-      doc.text(`Barcellos Seguros — gerado em ${new Date().toLocaleString("pt-BR")} — pág. ${i}/${pageCount}`, 14, 205);
-    }
-
-    doc.save(`Pendentes_${mesLabel}_${ano}_${vendLabel.replace(/ /g, "_")}.pdf`);
-    toast.success("PDF de pendentes exportado!");
+    addPdfFooter(doc);
+    doc.save(`Pendentes_${soCorretor ? vendedorPendentes + "_" : ""}${mesLabel}_${ano}.pdf`);
+    toast.success("PDF exportado!");
   }
 
   function exportarPDF() {
     const periodoLabel = mesSel ? `${MESES[mesSel - 1]} ${ano}` : `Todos os meses — ${ano}`;
+    const soCorretor = vendedorSel !== "todos";
+    const corr = soCorretor ? resumoTyped[0] : null;
     const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
 
-    // Cabeçalho
+    // ── Cabeçalho ─────────────────────────────────────────────────────────────
     doc.setFillColor(30, 64, 175);
     doc.rect(0, 0, 297, 20, "F");
     doc.setTextColor(255, 255, 255);
-    doc.setFontSize(14);
+    doc.setFontSize(13);
     doc.setFont("helvetica", "bold");
-    doc.text("BARCELLOS SEGUROS — Relatório de Comissões", 14, 13);
-    doc.setFontSize(10);
+    doc.text(soCorretor ? `${vendedorSel} — Relatório de Comissões` : "BARCELLOS SEGUROS — Relatório de Comissões", 14, 13);
+    doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
     doc.text(periodoLabel, 297 - 14, 13, { align: "right" });
 
-    // Tabela resumo
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "bold");
-    doc.text("Resumo por Corretor", 14, 30);
+    let nextY = 26;
 
-    const resumoBody = resumoTyped.map(r => [
-      r.corretor,
-      r.totalClientes,
-      r.totalBase.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-      r.totalValorComissao.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-      r.totalValorIncentivo.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-      r.totalComissao.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-      r.totalPrevisao15.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-      r.totalRealizado50.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-    ]);
-    // Linha de totais
-    resumoBody.push([
-      "TOTAL",
-      String(resumoTyped.reduce((s, r) => s + r.totalClientes, 0)),
-      totalBaseGeral.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-      resumoTyped.reduce((s, r) => s + r.totalValorComissao, 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-      resumoTyped.reduce((s, r) => s + r.totalValorIncentivo, 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-      totalGeral.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-      totalPrevisaoGeral.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-      totalRealizadoGeral.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-    ]);
+    if (soCorretor && corr) {
+      // ── Dashboard 5 KPIs ───────────────────────────────────────────────────
+      const bw = 50, bh = 20, gap = 4;
+      const totalW = bw * 5 + gap * 4;
+      const sx = (297 - totalW) / 2;
+      const kpis = [
+        { label: "Clientes",       value: String(corr.totalClientes),                                                                    r: 30,  g: 64,  b: 175 },
+        { label: "Contribuição",   value: corr.totalBase.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),                 r: 79,  g: 70,  b: 229 },
+        { label: "Comissão Total", value: corr.totalComissao.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),             r: 5,   g: 150, b: 105 },
+        { label: "Previsão 15%",   value: corr.totalPrevisao15.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),           r: 217, g: 119, b: 6   },
+        { label: "Realizado",      value: corr.totalRealizado50.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),          r: 22,  g: 163, b: 74  },
+      ];
+      kpis.forEach((k, i) => kpiBox(doc, sx + i * (bw + gap), nextY, bw, bh, k.label, k.value, k.r, k.g, k.b));
+      nextY += bh + 8;
 
-    autoTable(doc, {
-      startY: 34,
-      head: [["Corretor", "Clientes", "Contribuição", "Comissão", "Incentivo", "Total Comissão", "Previsão 15%", "Realizado"]],
-      body: resumoBody,
-      styles: { fontSize: 8, cellPadding: 2 },
-      headStyles: { fillColor: [30, 64, 175], textColor: 255, fontStyle: "bold" },
-      footStyles: { fillColor: [240, 240, 240], fontStyle: "bold" },
-      didParseCell: (data) => {
-        if (data.row.index === resumoBody.length - 1) {
-          data.cell.styles.fontStyle = "bold";
-          data.cell.styles.fillColor = [220, 230, 255];
-        }
-      },
-      columnStyles: { 0: { cellWidth: 35 }, 1: { cellWidth: 16, halign: "center" } },
-      margin: { left: 14, right: 14 },
-    });
-
-    // Detalhe do corretor (se houver)
-    if (corretorDetalhe && (detalhe as Record<string, unknown>[]).length > 0) {
-      doc.addPage();
-      doc.setFillColor(30, 64, 175);
-      doc.rect(0, 0, 297, 20, "F");
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(13);
+      // ── Detalhe dos clientes ───────────────────────────────────────────────
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(10);
       doc.setFont("helvetica", "bold");
-      doc.text(`Detalhe — ${corretorDetalhe}`, 14, 13);
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "normal");
-      doc.text(periodoLabel, 297 - 14, 13, { align: "right" });
+      doc.text("Detalhamento por Cliente", 14, nextY + 4);
+      nextY += 8;
 
-      const detalheBody = (detalhe as Record<string, unknown>[]).map(d => [
-        String(d.nomeCliente ?? "").slice(0, 30),
-        String(d.cpfCliente ?? ""),
-        String(d.descricaoProduto ?? "").slice(0, 25),
-        parseFloat(String(d.valorBase ?? "0")).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-        parseFloat(String(d.valorComissaoTotal ?? "0")).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-        `${parseFloat(String(d.percentualVendedor ?? "100"))}%`,
-        parseFloat(String(d.previsao15 ?? "0")).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-        parseFloat(String(d.realizado50 ?? "0")).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-        String(d.competenciaComissionada ?? ""),
+      const det = detalhe as Record<string, unknown>[];
+      if (det.length === 0) {
+        doc.setFontSize(9);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(150);
+        doc.text("(Abra o detalhamento do corretor na tela antes de exportar para incluir os clientes)", 14, nextY + 6);
+      } else {
+        const detBody = det.map(d => [
+          String(d.nomeCliente ?? "").slice(0, 35),
+          String(d.cpfCliente ?? ""),
+          String(d.descricaoProduto ?? "").slice(0, 28),
+          parseFloat(String(d.valorBase ?? "0")).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+          parseFloat(String(d.valorComissaoTotal ?? "0")).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+          `${parseFloat(String(d.percentualVendedor ?? "100")).toFixed(0)}%`,
+          parseFloat(String(d.previsao15 ?? "0")).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+          parseFloat(String(d.realizado50 ?? "0")).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+        ]);
+        detBody.push([
+          "TOTAL", "", "",
+          det.reduce((s, d) => s + parseFloat(String(d.valorBase ?? "0")), 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+          det.reduce((s, d) => s + parseFloat(String(d.valorComissaoTotal ?? "0")), 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+          "",
+          det.reduce((s, d) => s + parseFloat(String(d.previsao15 ?? "0")), 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+          det.reduce((s, d) => s + parseFloat(String(d.realizado50 ?? "0")), 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+        ]);
+        autoTable(doc, {
+          startY: nextY + 2,
+          head: [["Cliente", "CPF", "Produto", "Contribuição", "Total Comissão", "% Parte", "Previsão 15%", "Realizado"]],
+          body: detBody,
+          styles: { fontSize: 7.5, cellPadding: 2 },
+          headStyles: { fillColor: [30, 64, 175], textColor: 255, fontStyle: "bold" },
+          didParseCell: (data) => {
+            if (data.row.index === detBody.length - 1) {
+              data.cell.styles.fontStyle = "bold";
+              data.cell.styles.fillColor = [220, 230, 255];
+            }
+          },
+          columnStyles: { 0: { cellWidth: 45 }, 2: { cellWidth: 38 } },
+          margin: { left: 14, right: 14 },
+        });
+      }
+    } else {
+      // ── Modo geral: resumo de todos os corretores ──────────────────────────
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.text("Resumo por Corretor", 14, nextY + 4);
+
+      const resumoBody = resumoTyped.map(r => [
+        r.corretor,
+        r.totalClientes,
+        r.totalBase.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+        r.totalValorComissao.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+        r.totalValorIncentivo.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+        r.totalComissao.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+        r.totalPrevisao15.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+        r.totalRealizado50.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+      ]);
+      resumoBody.push([
+        "TOTAL",
+        String(resumoTyped.reduce((s, r) => s + r.totalClientes, 0)),
+        totalBaseGeral.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+        resumoTyped.reduce((s, r) => s + r.totalValorComissao, 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+        resumoTyped.reduce((s, r) => s + r.totalValorIncentivo, 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+        totalGeral.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+        totalPrevisaoGeral.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+        totalRealizadoGeral.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
       ]);
 
       autoTable(doc, {
-        startY: 26,
-        head: [["Cliente", "CPF", "Produto", "Contribuição", "Total Comissão", "% Parte", "Previsão 15%", "Realizado", "Competência"]],
-        body: detalheBody,
-        styles: { fontSize: 7, cellPadding: 1.5 },
+        startY: nextY + 8,
+        head: [["Corretor", "Clientes", "Contribuição", "Comissão", "Incentivo", "Total Comissão", "Previsão 15%", "Realizado"]],
+        body: resumoBody,
+        styles: { fontSize: 8, cellPadding: 2 },
         headStyles: { fillColor: [30, 64, 175], textColor: 255, fontStyle: "bold" },
-        columnStyles: { 0: { cellWidth: 40 }, 2: { cellWidth: 35 } },
+        didParseCell: (data) => {
+          if (data.row.index === resumoBody.length - 1) {
+            data.cell.styles.fontStyle = "bold";
+            data.cell.styles.fillColor = [220, 230, 255];
+          }
+        },
+        columnStyles: { 0: { cellWidth: 35 }, 1: { cellWidth: 16, halign: "center" as const } },
         margin: { left: 14, right: 14 },
       });
+
+      // Detalhe de um corretor específico em página separada (se expandido)
+      if (corretorDetalhe && (detalhe as Record<string, unknown>[]).length > 0) {
+        doc.addPage();
+        doc.setFillColor(30, 64, 175);
+        doc.rect(0, 0, 297, 20, "F");
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(13);
+        doc.setFont("helvetica", "bold");
+        doc.text(`Detalhe — ${corretorDetalhe}`, 14, 13);
+        doc.setFontSize(9);
+        doc.setFont("helvetica", "normal");
+        doc.text(periodoLabel, 297 - 14, 13, { align: "right" });
+
+        const detalheBody = (detalhe as Record<string, unknown>[]).map(d => [
+          String(d.nomeCliente ?? "").slice(0, 30),
+          String(d.cpfCliente ?? ""),
+          String(d.descricaoProduto ?? "").slice(0, 25),
+          parseFloat(String(d.valorBase ?? "0")).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+          parseFloat(String(d.valorComissaoTotal ?? "0")).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+          `${parseFloat(String(d.percentualVendedor ?? "100")).toFixed(0)}%`,
+          parseFloat(String(d.previsao15 ?? "0")).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+          parseFloat(String(d.realizado50 ?? "0")).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+        ]);
+        autoTable(doc, {
+          startY: 26,
+          head: [["Cliente", "CPF", "Produto", "Contribuição", "Total Comissão", "% Parte", "Previsão 15%", "Realizado"]],
+          body: detalheBody,
+          styles: { fontSize: 7, cellPadding: 1.5 },
+          headStyles: { fillColor: [30, 64, 175], textColor: 255, fontStyle: "bold" },
+          columnStyles: { 0: { cellWidth: 40 }, 2: { cellWidth: 35 } },
+          margin: { left: 14, right: 14 },
+        });
+      }
     }
 
-    // Rodapé
-    const pageCount = doc.getNumberOfPages();
-    for (let i = 1; i <= pageCount; i++) {
-      doc.setPage(i);
-      doc.setFontSize(7);
-      doc.setTextColor(150);
-      doc.text(`Barcellos Seguros — gerado em ${new Date().toLocaleString("pt-BR")} — pág. ${i}/${pageCount}`, 14, 205);
-    }
-
-    const fileName = `Comissoes_${periodoLabel.replace(/ /g, "_").replace(/—/g, "-")}.pdf`;
+    addPdfFooter(doc);
+    const fileName = soCorretor
+      ? `Comissoes_${vendedorSel}_${periodoLabel.replace(/ /g, "_")}.pdf`
+      : `Comissoes_${periodoLabel.replace(/ /g, "_").replace(/—/g, "-")}.pdf`;
     doc.save(fileName);
     toast.success("PDF exportado com sucesso!");
   }
@@ -396,7 +493,7 @@ export default function Comissoes() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Select value={vendedorSel} onValueChange={setVendedorSel}>
+            <Select value={vendedorSel} onValueChange={v => { setVendedorSel(v); setCorretorDetalhe(v === "todos" ? null : v); }}>
               <SelectTrigger className="w-44">
                 <Filter className="w-3 h-3 mr-1" />
                 <SelectValue placeholder="Todos os corretores" />
