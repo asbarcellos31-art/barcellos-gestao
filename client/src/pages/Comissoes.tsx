@@ -280,8 +280,11 @@ export default function Comissoes() {
 
   function exportarPDF() {
     const periodoLabel = mesSel ? `${MESES[mesSel - 1]} ${ano}` : `Todos os meses — ${ano}`;
-    const soCorretor = vendedorSel !== "todos";
-    const corr = soCorretor ? resumoTyped[0] : null;
+    const targetCorretor = vendedorSel !== "todos" ? vendedorSel : corretorDetalhe;
+    const soCorretor = !!targetCorretor;
+    const corr = soCorretor
+      ? resumoTyped.find(r => r.corretor === targetCorretor) ?? resumoTyped[0]
+      : null;
     const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
 
     // ── Cabeçalho ─────────────────────────────────────────────────────────────
@@ -290,7 +293,7 @@ export default function Comissoes() {
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(13);
     doc.setFont("helvetica", "bold");
-    doc.text(soCorretor ? `${vendedorSel} — Relatório de Comissões` : "BARCELLOS SEGUROS — Relatório de Comissões", 14, 13);
+    doc.text(soCorretor ? `${targetCorretor} — Relatório de Comissões` : "BARCELLOS SEGUROS — Relatório de Comissões", 14, 13);
     doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
     doc.text(periodoLabel, 297 - 14, 13, { align: "right" });
@@ -441,7 +444,7 @@ export default function Comissoes() {
 
     addPdfFooter(doc);
     const fileName = soCorretor
-      ? `Comissoes_${vendedorSel}_${periodoLabel.replace(/ /g, "_")}.pdf`
+      ? `Comissoes_${targetCorretor}_${periodoLabel.replace(/ /g, "_")}.pdf`
       : `Comissoes_${periodoLabel.replace(/ /g, "_").replace(/—/g, "-")}.pdf`;
     doc.save(fileName);
     toast.success("PDF exportado com sucesso!");
