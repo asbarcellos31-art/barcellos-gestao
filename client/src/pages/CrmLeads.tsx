@@ -130,7 +130,7 @@ export default function CrmLeads() {
     if (!pdfFromTable && leadsPdfData?.leads) {
       setPdfSelecionados(leadsPdfData.leads.map((l: any) => l.id));
     }
-  }, [leadsPdfData]);
+  }, [leadsPdfData, pdfFromTable]);
 
   // Origens, vendedores, cidades e UFs
   const { data: origensData } = trpc.crmLeads.listarOrigens.useQuery();
