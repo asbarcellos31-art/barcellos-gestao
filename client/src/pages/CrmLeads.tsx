@@ -1744,58 +1744,51 @@ export default function CrmLeads() {
               ))}
             </div>
           </div>
-          <div className="border-t pt-3">
-            {(() => {
-              const fonteLista = pdfFromTable ? leads : (leadsPdfData?.leads || []);
-              const carregando = !pdfFromTable && fetchingPdf;
-              return (
-                <>
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                      Leads {carregando ? "carregando..." : `(${pdfSelecionados.length}/${fonteLista.length} selecionados)`}
-                    </p>
-                    {!carregando && fonteLista.length > 0 && (
-                      <div className="flex gap-2">
-                        <button className="text-xs text-blue-600 hover:underline" onClick={() => setPdfSelecionados(fonteLista.map((l: any) => l.id))}>Todos</button>
-                        <span className="text-muted-foreground text-xs">|</span>
-                        <button className="text-xs text-blue-600 hover:underline" onClick={() => setPdfSelecionados([])}>Nenhum</button>
-                      </div>
-                    )}
+          {!pdfFromTable && (
+            <div className="border-t pt-3">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Leads {fetchingPdf ? "carregando..." : `(${pdfSelecionados.length}/${leadsPdfData?.leads?.length ?? 0} selecionados)`}
+                </p>
+                {!fetchingPdf && (leadsPdfData?.leads?.length ?? 0) > 0 && (
+                  <div className="flex gap-2">
+                    <button className="text-xs text-blue-600 hover:underline" onClick={() => setPdfSelecionados((leadsPdfData?.leads || []).map((l: any) => l.id))}>Todos</button>
+                    <span className="text-muted-foreground text-xs">|</span>
+                    <button className="text-xs text-blue-600 hover:underline" onClick={() => setPdfSelecionados([])}>Nenhum</button>
                   </div>
-                  {carregando ? (
-                    <p className="text-xs text-muted-foreground text-center py-3">Carregando...</p>
-                  ) : fonteLista.length === 0 ? (
-                    <p className="text-xs text-center text-muted-foreground py-3">Nenhum lead no período selecionado.</p>
-                  ) : (
-                    <div className="max-h-52 overflow-y-auto space-y-0.5 border rounded-md p-2 bg-muted/20">
-                      {fonteLista.map((lead: any) => {
-                        const checked = pdfSelecionados.includes(lead.id);
-                        const temFone = !!(lead.telefone || lead.celular2 || lead.celular3 || lead.fixo1);
-                        return (
-                          <label key={lead.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
-                            <Checkbox
-                              checked={checked}
-                              onCheckedChange={v => setPdfSelecionados(sel =>
-                                v ? [...sel, lead.id] : sel.filter(id => id !== lead.id)
-                              )}
-                            />
-                            <span className={`text-sm font-medium flex-1 ${!temFone ? "text-muted-foreground" : ""}`}>{lead.nome}</span>
-                            {!temFone && <span className="text-xs text-orange-400">sem fone</span>}
-                            {lead.telefone && <span className="text-xs text-muted-foreground">{lead.telefone}</span>}
-                          </label>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {pdfSelecionados.length > 0 && (
-                    <p className="text-xs text-blue-700 bg-blue-50 rounded px-2 py-1.5 mt-2">
-                      {pdfSelecionados.length} lead(s) serão marcados como <strong>ENVIADO</strong> ao gerar.
-                    </p>
-                  )}
-                </>
-              );
-            })()}
-          </div>
+                )}
+              </div>
+              {fetchingPdf ? (
+                <p className="text-xs text-muted-foreground text-center py-3">Carregando...</p>
+              ) : (leadsPdfData?.leads?.length ?? 0) === 0 ? (
+                <p className="text-xs text-center text-muted-foreground py-3">Nenhum lead no período selecionado.</p>
+              ) : (
+                <div className="max-h-52 overflow-y-auto space-y-0.5 border rounded-md p-2 bg-muted/20">
+                  {(leadsPdfData?.leads || []).map((lead: any) => {
+                    const temFone = !!(lead.telefone || lead.celular2 || lead.celular3 || lead.fixo1);
+                    return (
+                      <label key={lead.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
+                        <Checkbox
+                          checked={pdfSelecionados.includes(lead.id)}
+                          onCheckedChange={v => setPdfSelecionados(sel =>
+                            v ? [...sel, lead.id] : sel.filter(id => id !== lead.id)
+                          )}
+                        />
+                        <span className={`text-sm font-medium flex-1 ${!temFone ? "text-muted-foreground" : ""}`}>{lead.nome}</span>
+                        {!temFone && <span className="text-xs text-orange-400">sem fone</span>}
+                        {lead.telefone && <span className="text-xs text-muted-foreground">{lead.telefone}</span>}
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+          {pdfSelecionados.length > 0 && (
+            <p className="text-xs text-blue-700 bg-blue-50 rounded px-2 py-1.5">
+              {pdfSelecionados.length} lead(s) serão marcados como <strong>ENVIADO</strong> ao gerar.
+            </p>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setPdfLeadsOpen(false)}>Cancelar</Button>
