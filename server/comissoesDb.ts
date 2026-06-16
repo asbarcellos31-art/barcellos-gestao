@@ -191,19 +191,30 @@ export async function resumoComissoesPorCorretor(mes?: number, ano?: number, ven
       isElisia: true,
     });
   }
-  // Contagem real de clientes únicos (sem dupla contagem por corretor compartilhado)
-  const queryUnicos = `
-    SELECT COUNT(DISTINCT e.cpfCliente) as totalUnicos
+  // Totais reais da corretora (sem JOIN com cliente_vendedores — cada CPF contado uma vez)
+  const queryBarcellos = `
+    SELECT
+      COUNT(DISTINCT e.cpfCliente) as totalClientes,
+      COALESCE(SUM(e.valorBase), 0) as totalBase,
+      COALESCE(SUM(e.valorComissao), 0) as totalValorComissao,
+      COALESCE(SUM(e.valorIncentivo), 0) as totalValorIncentivo,
+      COALESCE(SUM(e.valorComissaoTotal), 0) as totalComissao
     FROM extrato_comissao e
-    INNER JOIN clientes c ON LPAD(REGEXP_REPLACE(e.cpfCliente, '[^0-9]', ''), IF(LENGTH(REGEXP_REPLACE(e.cpfCliente, '[^0-9]', '')) <= 11, 11, 14), '0') = LPAD(REGEXP_REPLACE(c.cpf, '[^0-9]', ''), IF(LENGTH(REGEXP_REPLACE(c.cpf, '[^0-9]', '')) <= 11, 11, 14), '0')
     WHERE 1=1 ${mesAnoFiltro}
   `;
-  const [unicosRow] = await queryPool<Record<string, unknown>>(queryUnicos, params);
-  const clientesUnicos = Number(unicosRow?.totalUnicos ?? 0);
+  const [barcellosRow] = await queryPool<Record<string, unknown>>(queryBarcellos, params);
+  const barcellosTotal = {
+    totalClientes: Number(barcellosRow?.totalClientes ?? 0),
+    totalBase: parseFloat(String(barcellosRow?.totalBase ?? "0")),
+    totalValorComissao: parseFloat(String(barcellosRow?.totalValorComissao ?? "0")),
+    totalValorIncentivo: parseFloat(String(barcellosRow?.totalValorIncentivo ?? "0")),
+    totalComissao: parseFloat(String(barcellosRow?.totalComissao ?? "0")),
+  };
 
   return {
     rows: mapeado.sort((a, b) => b.totalComissao - a.totalComissao),
-    clientesUnicos,
+    clientesUnicos: barcellosTotal.totalClientes,
+    barcellosTotal,
   };
 }
 

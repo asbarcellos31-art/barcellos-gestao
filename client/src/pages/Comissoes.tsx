@@ -113,6 +113,7 @@ export default function Comissoes() {
 
   const resumoTyped: ResumoCorretor[] = (resumoData as any)?.rows ?? [];
   const clientesUnicos: number = (resumoData as any)?.clientesUnicos ?? 0;
+  const barcellosTotal = (resumoData as any)?.barcellosTotal as { totalClientes: number; totalBase: number; totalValorComissao: number; totalValorIncentivo: number; totalComissao: number } | undefined;
   const totalGeral = resumoTyped.reduce((s, r) => s + r.totalComissao, 0);
   const totalBaseGeral = resumoTyped.reduce((s, r) => s + r.totalBase, 0);
   const totalPrevisaoGeral = resumoTyped.reduce((s, r) => s + r.totalPrevisao15, 0);
@@ -746,7 +747,7 @@ export default function Comissoes() {
                             </TableCell>
                           </TableRow>
                         ))}
-                        {/* Linha de totais */}
+                        {/* Linha de totais por corretor (soma das linhas) */}
                         {resumoTyped.length > 0 && (
                           <TableRow className="border-t-2 font-bold bg-muted/30">
                             <TableCell>TOTAL</TableCell>
@@ -756,6 +757,21 @@ export default function Comissoes() {
                             <TableCell className="text-right text-amber-600">{fmt(totalPrevisaoGeral)}</TableCell>
                             <TableCell className="text-right text-emerald-600">{fmt(totalRealizadoGeral)}</TableCell>
                             <TableCell className="text-right">100%</TableCell>
+                          </TableRow>
+                        )}
+                        {/* Linha BARCELLOS — totais reais sem dupla contagem */}
+                        {barcellosTotal && resumoTyped.length > 0 && (
+                          <TableRow className="border-t font-bold bg-blue-50 text-blue-900">
+                            <TableCell className="flex items-center gap-1">
+                              <span className="text-xs bg-blue-700 text-white rounded px-1.5 py-0.5">BARCELLOS</span>
+                              <span className="text-xs font-normal text-blue-500">real</span>
+                            </TableCell>
+                            <TableCell className="text-right">{barcellosTotal.totalClientes}</TableCell>
+                            <TableCell className="text-right text-indigo-700">{fmt(barcellosTotal.totalBase)}</TableCell>
+                            <TableCell className="text-right text-green-700">{fmt(barcellosTotal.totalComissao)}</TableCell>
+                            <TableCell className="text-right text-amber-700">—</TableCell>
+                            <TableCell className="text-right text-emerald-700">—</TableCell>
+                            <TableCell className="text-right">—</TableCell>
                           </TableRow>
                         )}
                       </TableBody>
@@ -881,6 +897,21 @@ export default function Comissoes() {
                           <TableCell className="text-right text-green-600">{fmt(totalGeral)}</TableCell>
                           <TableCell className="text-right text-amber-600">{fmt(totalPrevisaoGeral)}</TableCell>
                           <TableCell className="text-right text-green-600">{fmt(totalRealizadoGeral)}</TableCell>
+                        </TableRow>
+                      )}
+                      {barcellosTotal && resumoTyped.length > 0 && (
+                        <TableRow className="bg-blue-50 font-bold text-blue-900">
+                          <TableCell>
+                            <span className="text-xs bg-blue-700 text-white rounded px-1.5 py-0.5">BARCELLOS</span>
+                            <span className="text-xs font-normal text-blue-500 ml-1">real</span>
+                          </TableCell>
+                          <TableCell className="text-right">{barcellosTotal.totalClientes}</TableCell>
+                          <TableCell className="text-right text-indigo-700">{fmt(barcellosTotal.totalBase)}</TableCell>
+                          <TableCell className="text-right">{fmt(barcellosTotal.totalValorComissao)}</TableCell>
+                          <TableCell className="text-right">{fmt(barcellosTotal.totalValorIncentivo)}</TableCell>
+                          <TableCell className="text-right text-green-700">{fmt(barcellosTotal.totalComissao)}</TableCell>
+                          <TableCell className="text-right text-muted-foreground">—</TableCell>
+                          <TableCell className="text-right text-muted-foreground">—</TableCell>
                         </TableRow>
                       )}
                     </TableBody>
