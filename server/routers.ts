@@ -247,15 +247,14 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         const { mesesRecorrencia, ...base } = input;
         const criadas: number[] = [];
+        const [, , dd] = base.dataVencimento.split("-");
         for (let i = 0; i < mesesRecorrencia; i++) {
           let mes = base.mes + i;
           let ano = base.ano;
           while (mes > 12) { mes -= 12; ano++; }
-          // Ajustar dataVencimento para o mesmo dia no mês correto
-          const [yyyy, mm, dd] = base.dataVencimento.split("-");
-          const novoMes = String(mes).padStart(2, "0");
-          const novoAno = String(ano);
-          const novaData = `${novoAno}-${novoMes}-${dd}`;
+          const lastDay = new Date(ano, mes, 0).getDate();
+          const dia = String(Math.min(parseInt(dd), lastDay)).padStart(2, "0");
+          const novaData = `${String(ano)}-${String(mes).padStart(2, "0")}-${dia}`;
           await criarConta({
             ...base,
             mes,
@@ -276,12 +275,14 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         const { numParcelas, ...base } = input;
         const criadas: number[] = [];
+        const [, , dd] = base.dataVencimento.split("-");
         for (let i = 0; i < numParcelas; i++) {
           let mes = base.mes + i;
           let ano = base.ano;
           while (mes > 12) { mes -= 12; ano++; }
-          const [yyyy, mm, dd] = base.dataVencimento.split("-");
-          const novaData = `${String(ano)}-${String(mes).padStart(2, "0")}-${dd}`;
+          const lastDay = new Date(ano, mes, 0).getDate();
+          const dia = String(Math.min(parseInt(dd), lastDay)).padStart(2, "0");
+          const novaData = `${String(ano)}-${String(mes).padStart(2, "0")}-${dia}`;
           await criarConta({
             ...base,
             descricao: `${base.descricao} ${i + 1}/${numParcelas}`,
