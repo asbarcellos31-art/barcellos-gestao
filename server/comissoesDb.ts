@@ -191,8 +191,20 @@ export async function resumoComissoesPorCorretor(mes?: number, ano?: number, ven
       isElisia: true,
     });
   }
-  // Reordenar por totalComissao desc
-  return mapeado.sort((a, b) => b.totalComissao - a.totalComissao);
+  // Contagem real de clientes únicos (sem dupla contagem por corretor compartilhado)
+  const queryUnicos = `
+    SELECT COUNT(DISTINCT e.cpfCliente) as totalUnicos
+    FROM extrato_comissao e
+    INNER JOIN clientes c ON LPAD(REGEXP_REPLACE(e.cpfCliente, '[^0-9]', ''), IF(LENGTH(REGEXP_REPLACE(e.cpfCliente, '[^0-9]', '')) <= 11, 11, 14), '0') = LPAD(REGEXP_REPLACE(c.cpf, '[^0-9]', ''), IF(LENGTH(REGEXP_REPLACE(c.cpf, '[^0-9]', '')) <= 11, 11, 14), '0')
+    WHERE 1=1 ${mesAnoFiltro}
+  `;
+  const [unicosRow] = await queryPool<Record<string, unknown>>(queryUnicos, params);
+  const clientesUnicos = Number(unicosRow?.totalUnicos ?? 0);
+
+  return {
+    rows: mapeado.sort((a, b) => b.totalComissao - a.totalComissao),
+    clientesUnicos,
+  };
 }
 
 // ─── DETALHE DOS CLIENTES DE UM CORRETOR ─────────────────────────────────────────

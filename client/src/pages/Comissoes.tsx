@@ -80,7 +80,7 @@ export default function Comissoes() {
 
   const vendedorParam = vendedorSel === "todos" ? undefined : vendedorSel;
 
-  const { data: resumo = [] } = trpc.comissoes.resumoPorCorretor.useQuery({
+  const { data: resumoData } = trpc.comissoes.resumoPorCorretor.useQuery({
     mes: mesSel ?? null, ano, vendedor: vendedorParam,
   });
 
@@ -111,15 +111,16 @@ export default function Comissoes() {
     },
   });
 
-  const resumoTyped = resumo as ResumoCorretor[];
+  const resumoTyped: ResumoCorretor[] = (resumoData as any)?.rows ?? [];
+  const clientesUnicos: number = (resumoData as any)?.clientesUnicos ?? 0;
   const totalGeral = resumoTyped.reduce((s, r) => s + r.totalComissao, 0);
   const totalBaseGeral = resumoTyped.reduce((s, r) => s + r.totalBase, 0);
   const totalPrevisaoGeral = resumoTyped.reduce((s, r) => s + r.totalPrevisao15, 0);
   const totalRealizadoGeral = resumoTyped.reduce((s, r) => s + r.totalRealizado50, 0);
 
   // Lista de vendedores para filtros
-  const { data: todosCorretores = [] } = trpc.comissoes.resumoPorCorretor.useQuery({ mes: null, ano });
-  const listaVendedores = (todosCorretores as ResumoCorretor[]).map(r => r.corretor).filter(Boolean).sort();
+  const { data: todosCorretoresData } = trpc.comissoes.resumoPorCorretor.useQuery({ mes: null, ano });
+  const listaVendedores = ((todosCorretoresData as any)?.rows as ResumoCorretor[] ?? []).map(r => r.corretor).filter(Boolean).sort();
 
   const pieData = resumoTyped
     .filter(r => r.totalComissao > 0)
@@ -161,7 +162,7 @@ export default function Comissoes() {
     // Linha de totais
     resumoRows.push({
       "Corretor": "TOTAL",
-      "Clientes": resumoTyped.reduce((s, r) => s + r.totalClientes, 0),
+      "Clientes": clientesUnicos,
       "Contribuição (R$)": totalBaseGeral,
       "Valor Comissão (R$)": resumoTyped.reduce((s, r) => s + r.totalValorComissao, 0),
       "Valor Incentivo (R$)": resumoTyped.reduce((s, r) => s + r.totalValorIncentivo, 0),
@@ -408,7 +409,7 @@ export default function Comissoes() {
         return row;
       });
 
-      const totalSumRow: (string | number)[] = ["TOTAL", resumoTyped.reduce((s, r) => s + r.totalClientes, 0)];
+      const totalSumRow: (string | number)[] = ["TOTAL", clientesUnicos];
       if (colsCfg.contribuicao)   totalSumRow.push(totalBaseGeral.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
       if (colsCfg.valorComissao)  totalSumRow.push(resumoTyped.reduce((s, r) => s + r.totalValorComissao, 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
       if (colsCfg.valorIncentivo) totalSumRow.push(resumoTyped.reduce((s, r) => s + r.totalValorIncentivo, 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
@@ -749,7 +750,7 @@ export default function Comissoes() {
                         {resumoTyped.length > 0 && (
                           <TableRow className="border-t-2 font-bold bg-muted/30">
                             <TableCell>TOTAL</TableCell>
-                            <TableCell className="text-right">{resumoTyped.reduce((s, r) => s + r.totalClientes, 0)}</TableCell>
+                            <TableCell className="text-right">{clientesUnicos}</TableCell>
                             <TableCell className="text-right text-indigo-600">{fmt(totalBaseGeral)}</TableCell>
                             <TableCell className="text-right text-green-600">{fmt(totalGeral)}</TableCell>
                             <TableCell className="text-right text-amber-600">{fmt(totalPrevisaoGeral)}</TableCell>
@@ -873,7 +874,7 @@ export default function Comissoes() {
                       {resumoTyped.length > 0 && (
                         <TableRow className="bg-muted/50 font-bold">
                           <TableCell>TOTAL</TableCell>
-                          <TableCell className="text-right">{resumoTyped.reduce((s, r) => s + r.totalClientes, 0)}</TableCell>
+                          <TableCell className="text-right">{clientesUnicos}</TableCell>
                           <TableCell className="text-right text-indigo-600">{fmt(totalBaseGeral)}</TableCell>
                           <TableCell className="text-right">{fmt(resumoTyped.reduce((s, r) => s + r.totalValorComissao, 0))}</TableCell>
                           <TableCell className="text-right">{fmt(resumoTyped.reduce((s, r) => s + r.totalValorIncentivo, 0))}</TableCell>
