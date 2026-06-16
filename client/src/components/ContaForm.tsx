@@ -20,7 +20,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { CATEGORIAS, VINCULOS, MESES } from "../../../shared/constants";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, CreditCard } from "lucide-react";
 
 interface ContaFormProps {
   open: boolean;
@@ -58,6 +58,8 @@ export default function ContaForm({ open, onClose, onSuccess, contaId, defaultMe
 
   const [recorrente, setRecorrente] = useState(false);
   const [mesesRecorrencia, setMesesRecorrencia] = useState(12);
+  const [parcelado, setParcelado] = useState(false);
+  const [numParcelas, setNumParcelas] = useState(2);
 
   // Gerenciar carregamento de dados quando modal abre/fecha
   useEffect(() => {
@@ -77,6 +79,7 @@ export default function ContaForm({ open, onClose, onSuccess, contaId, defaultMe
         tipo: "DESPESA",
       });
       setRecorrente(false);
+      setParcelado(false);
     } else if (open && contaExistente) {
       // Carregar dados da conta existente
       const venc = String(contaExistente.dataVencimento).substring(0, 10);
@@ -126,6 +129,16 @@ export default function ContaForm({ open, onClose, onSuccess, contaId, defaultMe
     onError: (e) => toast.error("Erro ao criar conta: " + e.message),
   });
 
+  const criarParcelado = trpc.contas.criarParcelado.useMutation({
+    onSuccess: (data) => {
+      toast.success(`${data.criadas} parcela(s) criada(s) com sucesso!`);
+      invalidateAll();
+      onSuccess();
+      onClose();
+    },
+    onError: (e) => toast.error("Erro ao criar parcelas: " + e.message),
+  });
+
   const criarRecorrente = trpc.contas.criarRecorrente.useMutation({
     onSuccess: (data) => {
       toast.success(`${data.criadas} conta(s) recorrente(s) criada(s) com sucesso!`);
@@ -163,6 +176,8 @@ export default function ContaForm({ open, onClose, onSuccess, contaId, defaultMe
     };
     if (isEdit) {
       atualizar.mutate({ id: contaId!, data: payload });
+    } else if (parcelado) {
+      criarParcelado.mutate({ ...payload, numParcelas });
     } else if (recorrente) {
       criarRecorrente.mutate({ ...payload, mesesRecorrencia });
     } else {
@@ -171,7 +186,7 @@ export default function ContaForm({ open, onClose, onSuccess, contaId, defaultMe
   };
 
   const set = (key: string, value: any) => setForm(f => ({ ...f, [key]: value }));
-  const isPending = criar.isPending || atualizar.isPending || criarRecorrente.isPending;
+  const isPending = criar.isPending || atualizar.isPending || criarRecorrente.isPending || criarParcelado.isPending;
 
   // Calcular preview dos meses que serão criados
   const previewMeses = () => {
@@ -302,44 +317,86 @@ export default function ContaForm({ open, onClose, onSuccess, contaId, defaultMe
             </div>
           )}
 
-          {/* Seção de Recorrência — apenas no cadastro */}
+          {/* Seção de Parcelado + Recorrente — apenas no cadastro */}
           {!isEdit && (
-            <div className="border rounded-lg p-4 bg-muted/30 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <RefreshCw className="h-4 w-4 text-primary" />
-                  <Label className="text-sm font-medium cursor-pointer" htmlFor="recorrente-switch">
-                    Conta Recorrente
-                  </Label>
-                </div>
-                <Switch
-                  id="recorrente-switch"
-                  checked={recorrente}
-                  onCheckedChange={setRecorrente}
-                />
-              </div>
-              {recorrente && (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-3">
-                    <Label className="text-sm whitespace-nowrap">Repetir por</Label>
-                    <Input
-                      type="number"
-                      min={2}
-                      max={60}
-                      value={mesesRecorrencia}
-                      onChange={e => setMesesRecorrencia(Number(e.target.value))}
-                      className="w-20"
-                    />
-                    <span className="text-sm text-muted-foreground">meses</span>
+            <div className="space-y-2">
+              {/* Parcelado */}
+              <div className="border rounded-lg p-4 bg-muted/30 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CreditCard className="h-4 w-4 text-primary" />
+                    <Label className="text-sm font-medium cursor-pointer" htmlFor="parcelado-switch">
+                      Parcelado
+                    </Label>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Será criada em: <span className="font-medium text-foreground">{previewMeses()}</span>
-                  </p>
-                  <p className="text-xs text-amber-600">
-                    Os meses seguintes serão criados como <strong>Pendente</strong>. Ajuste os valores individualmente depois.
-                  </p>
+                  <Switch
+                    id="parcelado-switch"
+                    checked={parcelado}
+                    onCheckedChange={v => { setParcelado(v); if (v) setRecorrente(false); }}
+                  />
                 </div>
-              )}
+                {parcelado && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3">
+                      <Label className="text-sm whitespace-nowrap">Número de parcelas</Label>
+                      <Input
+                        type="number"
+                        min={2}
+                        max={60}
+                        value={numParcelas}
+                        onChange={e => setNumParcelas(Number(e.target.value))}
+                        className="w-20"
+                      />
+                      <span className="text-sm text-muted-foreground">x</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Serão criadas: <span className="font-medium text-foreground">{previewMeses().split(",").slice(0, numParcelas).join(", ")}</span>
+                    </p>
+                    <p className="text-xs text-blue-600">
+                      Cada parcela será nomeada <strong>"{form.descricao || "Descrição"} 1/{numParcelas}"</strong>, <strong>"2/{numParcelas}"</strong>...
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Recorrente */}
+              <div className="border rounded-lg p-4 bg-muted/30 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <RefreshCw className="h-4 w-4 text-primary" />
+                    <Label className="text-sm font-medium cursor-pointer" htmlFor="recorrente-switch">
+                      Conta Recorrente
+                    </Label>
+                  </div>
+                  <Switch
+                    id="recorrente-switch"
+                    checked={recorrente}
+                    onCheckedChange={v => { setRecorrente(v); if (v) setParcelado(false); }}
+                  />
+                </div>
+                {recorrente && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3">
+                      <Label className="text-sm whitespace-nowrap">Repetir por</Label>
+                      <Input
+                        type="number"
+                        min={2}
+                        max={60}
+                        value={mesesRecorrencia}
+                        onChange={e => setMesesRecorrencia(Number(e.target.value))}
+                        className="w-20"
+                      />
+                      <span className="text-sm text-muted-foreground">meses</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Será criada em: <span className="font-medium text-foreground">{previewMeses()}</span>
+                    </p>
+                    <p className="text-xs text-amber-600">
+                      Os meses seguintes serão criados como <strong>Pendente</strong>. Ajuste os valores individualmente depois.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -350,9 +407,11 @@ export default function ContaForm({ open, onClose, onSuccess, contaId, defaultMe
                 ? "Salvando..."
                 : isEdit
                   ? "Atualizar"
-                  : recorrente
-                    ? `Criar ${mesesRecorrencia} meses`
-                    : "Criar"}
+                  : parcelado
+                    ? `Criar ${numParcelas}x`
+                    : recorrente
+                      ? `Criar ${mesesRecorrencia} meses`
+                      : "Criar"}
             </Button>
           </DialogFooter>
         </form>

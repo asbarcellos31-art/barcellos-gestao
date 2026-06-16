@@ -112,6 +112,7 @@ import {
   atualizarLead,
   excluirLead,
   excluirLeadsPorMesAno,
+  verificarDuplicatasLeads,
   excluirLeadsEmLote,
   marcarLeadsEnviados,
   listarOrigensLeads,
@@ -257,6 +258,33 @@ export const appRouter = router({
           const novaData = `${novoAno}-${novoMes}-${dd}`;
           await criarConta({
             ...base,
+            mes,
+            ano,
+            dataVencimento: novaData as unknown as Date,
+            dataPagamento: i === 0 && base.dataPagamento ? (base.dataPagamento as unknown as Date) : null,
+            status: i === 0 ? base.status : "PENDENTE",
+          });
+          criadas.push(i);
+        }
+        return { criadas: criadas.length };
+      }),
+
+    criarParcelado: publicProcedure
+      .input(contaInput.extend({
+        numParcelas: z.number().int().min(2).max(60),
+      }))
+      .mutation(async ({ input }) => {
+        const { numParcelas, ...base } = input;
+        const criadas: number[] = [];
+        for (let i = 0; i < numParcelas; i++) {
+          let mes = base.mes + i;
+          let ano = base.ano;
+          while (mes > 12) { mes -= 12; ano++; }
+          const [yyyy, mm, dd] = base.dataVencimento.split("-");
+          const novaData = `${String(ano)}-${String(mes).padStart(2, "0")}-${dd}`;
+          await criarConta({
+            ...base,
+            descricao: `${base.descricao} ${i + 1}/${numParcelas}`,
             mes,
             ano,
             dataVencimento: novaData as unknown as Date,
@@ -633,6 +661,12 @@ export const appRouter = router({
     excluirLote: publicProcedure
       .input(z.object({ ids: z.array(z.number()) }))
       .mutation(({ input }) => excluirLeadsEmLote(input.ids)),
+    verificarDuplicatas: publicProcedure
+      .input(z.object({
+        cpfs: z.array(z.string().nullable()),
+        nomes: z.array(z.string()),
+      }))
+      .mutation(({ input }) => verificarDuplicatasLeads(input.cpfs, input.nomes)),
   }),
 
   produtos: router({
