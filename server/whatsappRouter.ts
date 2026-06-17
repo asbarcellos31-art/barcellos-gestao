@@ -443,8 +443,7 @@ export const whatsappRouter = router({
 
       // Envia primeiro o vídeo de boas-vindas como mídia (sem o link no texto)
       const mensagemSemLink = input.mensagem.replace(/https?:\/\/\S+/g, "").trim();
-      const captionVideo = `Olá, ${input.nome || "cliente"}! Seja bem-vindo(a) à família Barcellos Seguros! 🎉`;
-      const resultadoVideo = await enviarVideoEvolution(input.telefone, VIDEO_BOAS_VINDAS_URL, captionVideo, instancia);
+      const resultadoVideo = await enviarVideoEvolution(input.telefone, VIDEO_BOAS_VINDAS_URL, "", instancia);
 
       // Depois envia a mensagem de texto (sem o link do vídeo)
       const resultado = await enviarMensagemEvolution(input.telefone, mensagemSemLink, instancia);
