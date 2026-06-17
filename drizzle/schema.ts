@@ -583,7 +583,7 @@ export const tarefaOcorrencias = mysqlTable("tarefa_ocorrencias", {
   tarefaId: int("tarefaId").notNull(),
   appUserId: int("appUserId").notNull(),
   data: date("data").notNull(), // "YYYY-MM-DD" da ocorrência
-  status: mysqlEnum("status", ["PENDENTE", "CONCLUIDA", "ATRASADA"]).default("PENDENTE").notNull(),
+  status: mysqlEnum("status", ["PENDENTE", "CONCLUIDA", "ATRASADA", "CANCELADA"]).default("PENDENTE").notNull(),
   tempoExecucaoSeg: int("tempoExecucaoSeg").default(0),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
