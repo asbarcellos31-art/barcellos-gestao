@@ -142,7 +142,7 @@ export async function enviarMensagemEvolution(
 }
 
 // URL do vídeo de boas-vindas hospedado no CDN
-export const VIDEO_BOAS_VINDAS_URL = "https://d2xsxph8kpxj0f.cloudfront.net/310519663348080686/8JHGDJiU4qZSTzCTFQYFKy/boas-vindas-barcellos_7492e1dd.mp4";
+export const VIDEO_BOAS_VINDAS_URL = "https://github.com/asbarcellos31-art/barcellos-gestao/releases/download/v-assets-1/boas-vindas-barcellos.mp4";
 
 /**
  * Envia um vídeo como mídia via Evolution API
