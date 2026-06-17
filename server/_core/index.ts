@@ -127,6 +127,39 @@ async function startServer() {
   app.use("/api", inadimplentesEnriquecerRouter);
   app.use("/api", magBoletosExpressRouter);
 
+  // Página pública de boas-vindas com player de vídeo
+  app.get("/boas-vindas", (_req, res) => {
+    const VIDEO_URL = "https://github.com/asbarcellos31-art/barcellos-gestao/releases/download/v-assets-1/boas-vindas-barcellos.mp4";
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(`<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bem-vindo(a) à Barcellos Seguros</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0f1e3d; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: Arial, sans-serif; padding: 24px; }
+    .logo { color: #fff; font-size: 22px; font-weight: 700; letter-spacing: 1px; margin-bottom: 8px; text-align: center; }
+    .tagline { color: #a8c4e8; font-size: 13px; margin-bottom: 32px; text-align: center; }
+    .video-wrap { width: 100%; max-width: 420px; border-radius: 16px; overflow: hidden; box-shadow: 0 8px 40px rgba(0,0,0,0.5); background: #000; }
+    video { width: 100%; display: block; }
+    .footer { color: #4a6fa5; font-size: 12px; margin-top: 24px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="logo">Barcellos Seguros</div>
+  <div class="tagline">Proteção com quem você pode confiar</div>
+  <div class="video-wrap">
+    <video controls autoplay playsinline preload="auto">
+      <source src="${VIDEO_URL}" type="video/mp4">
+    </video>
+  </div>
+  <div class="footer">© Barcellos Seguros — Florianópolis, SC</div>
+</body>
+</html>`);
+  });
+
   // tRPC API
   app.use(
     "/api/trpc",
