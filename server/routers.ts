@@ -9,6 +9,7 @@ import {
   atualizarTarefa,
   concluirTarefa,
   excluirTarefa,
+  excluirOcorrenciaTarefa,
   duplicarTarefa,
   obterScoreProdutividade,
   buscarTarefas,
@@ -1038,6 +1039,10 @@ export const appRouter = router({
     excluir: publicProcedure
       .input(z.object({ id: z.number(), appUserId: z.number() }))
       .mutation(({ input }) => excluirTarefa(input.id, input.appUserId)),
+
+    excluirOcorrencia: publicProcedure
+      .input(z.object({ id: z.number(), appUserId: z.number(), data: z.string() }))
+      .mutation(({ input }) => excluirOcorrenciaTarefa(input.id, input.appUserId, input.data)),
 
     // Duplicar tarefa: cria cópia idêntica (PENDENTE, tempo zerado).
     // novaData: undefined = mesmo dia | null = sem data (backlog) | "YYYY-MM-DD" = data específica

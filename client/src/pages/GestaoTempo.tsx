@@ -562,6 +562,18 @@ export default function GestaoTempo() {
   const excluirMut = trpc.gestaoTempo.excluir.useMutation({
     onSuccess: () => { utils.gestaoTempo.listarDia.invalidate(); utils.gestaoTempo.listarSemana.invalidate(); utils.gestaoTempo.listarBacklog.invalidate(); toast.success("Tarefa excluída."); },
   });
+  const excluirOcorrenciaMut = trpc.gestaoTempo.excluirOcorrencia.useMutation({
+    onSuccess: () => { utils.gestaoTempo.listarDia.invalidate(); utils.gestaoTempo.listarSemana.invalidate(); toast.success("Ocorrência de hoje removida."); },
+  });
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: number; titulo: string; recorrente: boolean; dataOcorrencia: string | null } | null>(null);
+
+  function handleDelete(tarefa: { id: number; titulo: string; recorrente?: boolean | null; _dataOcorrencia?: string | null }) {
+    if (tarefa.recorrente) {
+      setDeleteConfirm({ id: tarefa.id, titulo: tarefa.titulo, recorrente: true, dataOcorrencia: (tarefa._dataOcorrencia as string | null) ?? null });
+    } else {
+      excluirMut.mutate({ id: tarefa.id, appUserId });
+    }
+  }
   // ── DUPLICAR TAREFA ──────────────────────────────────────────────────────────
   // Abrimos o MESMO modal de edição com os dados pré-preenchidos. O usuário pode
   // ajustar título, descrição, data, hora, duração, tríade, categoria, etc.
@@ -1018,11 +1030,7 @@ export default function GestaoTempo() {
                           )}
                           {/* Excluir */}
                           <button
-                            onClick={() => {
-                              if (confirm(`Excluir "${t.titulo}"?`)) {
-                                excluirMut.mutate({ id: t.id, appUserId });
-                              }
-                            }}
+                            onClick={() => handleDelete(t as any)}
                             className="p-1.5 rounded hover:bg-red-100 text-gray-400 hover:text-red-600"
                             title="Excluir tarefa"
                           >
@@ -1190,7 +1198,7 @@ export default function GestaoTempo() {
                                   key={tarefa.id}
                                   tarefa={tarefa}
                                   onEdit={() => abrirEdicao(tarefa as typeof tarefasDia[0])}
-                                  onDelete={() => excluirMut.mutate({ id: tarefa.id, appUserId })}
+                                  onDelete={() => handleDelete(tarefa as any)}
                                   onDuplicate={() => abrirDuplicacao(tarefa as any)}
                                   onConcluir={() => {
                                     const dataOc = (tarefa as any)._dataOcorrencia ??
@@ -1215,7 +1223,7 @@ export default function GestaoTempo() {
                                       key={tarefa.id}
                                       tarefa={tarefa}
                                       onEdit={() => abrirEdicao(tarefa as typeof tarefasDia[0])}
-                                      onDelete={() => excluirMut.mutate({ id: tarefa.id, appUserId })}
+                                      onDelete={() => handleDelete(tarefa as any)}
                                   onDuplicate={() => abrirDuplicacao(tarefa as any)}
                                       onConcluir={() => {
                                         const dataOc = (tarefa as any)._dataOcorrencia ??
@@ -1720,7 +1728,7 @@ export default function GestaoTempo() {
                           key={tarefa.id}
                           tarefa={tarefa}
                           onEdit={() => abrirEdicao(tarefa as unknown as typeof tarefasDia[0])}
-                          onDelete={() => excluirMut.mutate({ id: tarefa.id, appUserId })}
+                          onDelete={() => handleDelete(tarefa as any)}
                                   onDuplicate={() => abrirDuplicacao(tarefa as any)}
                         />
                       ))}
@@ -1743,7 +1751,7 @@ export default function GestaoTempo() {
                             key={`${tarefa.id}-${String(tarefa.dataAgendada).substring(0,10)}`}
                             tarefa={tarefa as typeof tarefasDia[0]}
                             onEdit={() => abrirEdicao(tarefa as unknown as typeof tarefasDia[0])}
-                            onDelete={() => excluirMut.mutate({ id: tarefa.id, appUserId })}
+                            onDelete={() => handleDelete(tarefa as any)}
                                   onDuplicate={() => abrirDuplicacao(tarefa as any)}
                           />
                         ))}
@@ -1945,6 +1953,50 @@ export default function GestaoTempo() {
               <Button variant="outline" onClick={() => setModalAberto(false)}>Cancelar</Button>
               <Button onClick={salvarTarefa} className="bg-blue-600 hover:bg-blue-700 text-white">
                 {modoDuplicacao ? "Salvar Cópia" : tarefaEditando ? "Salvar" : "Criar Tarefa"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* ─── DIALOG: EXCLUIR TAREFA RECORRENTE ───────────────────────────── */}
+        <Dialog open={deleteConfirm !== null} onOpenChange={open => { if (!open) setDeleteConfirm(null); }}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-red-600">
+                <Trash2 className="w-4 h-4" /> Excluir tarefa recorrente
+              </DialogTitle>
+            </DialogHeader>
+            <div className="py-2">
+              <p className="text-sm text-gray-700 mb-1">
+                <strong>"{deleteConfirm?.titulo}"</strong> é uma tarefa recorrente.
+              </p>
+              <p className="text-sm text-gray-500">O que deseja excluir?</p>
+            </div>
+            <DialogFooter className="flex-col gap-2 sm:flex-col">
+              {deleteConfirm?.dataOcorrencia && (
+                <Button
+                  variant="outline"
+                  className="w-full justify-start border-orange-200 hover:bg-orange-50 hover:text-orange-700"
+                  onClick={() => {
+                    excluirOcorrenciaMut.mutate({ id: deleteConfirm.id, appUserId, data: deleteConfirm.dataOcorrencia! });
+                    setDeleteConfirm(null);
+                  }}
+                >
+                  Só esta ocorrência (hoje)
+                </Button>
+              )}
+              <Button
+                variant="destructive"
+                className="w-full justify-start"
+                onClick={() => {
+                  excluirMut.mutate({ id: deleteConfirm!.id, appUserId });
+                  setDeleteConfirm(null);
+                }}
+              >
+                {deleteConfirm?.dataOcorrencia ? "Esta e todas as futuras" : "Excluir tarefa recorrente"}
+              </Button>
+              <Button variant="ghost" className="w-full" onClick={() => setDeleteConfirm(null)}>
+                Cancelar
               </Button>
             </DialogFooter>
           </DialogContent>

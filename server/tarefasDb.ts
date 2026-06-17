@@ -183,7 +183,11 @@ export async function listarTarefasPorData(appUserId: number, data: string) {
     _dataOcorrencia: null,
   }));
 
-  return [...resultadoPrincipal, ...resultadoAtrasadas];
+  const resultadoPrincipalFiltrado = resultadoPrincipal.filter(
+    t => !(t.recorrente && t.status === "CANCELADA")
+  );
+
+  return [...resultadoPrincipalFiltrado, ...resultadoAtrasadas];
 }
 
 // ─── LISTAR TAREFAS SEM DATA (BACKLOG) ───────────────────────────────────────
@@ -270,7 +274,7 @@ export async function listarTarefasSemana(appUserId: number, dataInicio: string,
       tempoExecucaoSeg: t.recorrente && ocorrencia ? ocorrencia.tempoExecucaoSeg : (t.tempoExecucaoSeg ?? 0),
       _dataOcorrencia: t.recorrente ? dataStr : null,
     };
-  });
+  }).filter(t => !(t.recorrente && t.status === "CANCELADA"));
 }
 
 // ─── CRIAR TAREFA ─────────────────────────────────────────────────────────────
@@ -427,6 +431,19 @@ export async function excluirTarefa(id: number, appUserId: number) {
   const db = await getDb();
   if (!db) throw new Error("DB indisponível");
   await db.delete(tarefas).where(and(eq(tarefas.id, id), eq(tarefas.appUserId, appUserId)));
+}
+
+// ─── EXCLUIR OCORRÊNCIA (cancelar só no dia) ─────────────────────────────────
+// Usado em tarefas recorrentes para ocultar só a ocorrência de uma data específica.
+export async function excluirOcorrenciaTarefa(id: number, appUserId: number, data: string) {
+  const db = await getDb();
+  if (!db) throw new Error("DB indisponível");
+  await rawQuery(
+    `INSERT INTO tarefa_ocorrencias (tarefaId, appUserId, data, status, tempoExecucaoSeg)
+     VALUES (?, ?, ?, 'CANCELADA', 0)
+     ON DUPLICATE KEY UPDATE status = 'CANCELADA'`,
+    [id, appUserId, data]
+  );
 }
 
 // ─── SCORE DE PRODUTIVIDADE ───────────────────────────────────────────────────
