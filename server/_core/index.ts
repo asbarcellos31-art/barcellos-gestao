@@ -17,6 +17,7 @@ import { garantirAdminPadrao } from "../configuracoesDb";
 import { verificarEDisparar } from "../emailAutomacao";
 import { getDb } from "../db";
 import { sql } from "drizzle-orm";
+import { ensureTimerTable } from "../timerDb";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -41,6 +42,10 @@ async function startServer() {
   // Garantir admin padrão no banco (se DATABASE_URL configurado)
   await garantirAdminPadrao().catch(err => {
     console.warn("[Boot] Não foi possível garantir admin padrão:", err?.message || err);
+  });
+
+  await ensureTimerTable().catch(err => {
+    console.warn("[Boot] timer_ativo:", err?.message || err);
   });
 
   // Migrações seguras (idempotentes)
