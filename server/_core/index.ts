@@ -246,12 +246,17 @@ async function startServer() {
       const mysql = await import("mysql2/promise");
       const conn = await (mysql as any).default.createConnection(process.env.DATABASE_URL!);
       const [campanhas]: any = await conn.execute(
-        `SELECT c.id, c.nome, c.status, c.totalDestinatarios, c.totalEnviados, c.totalErros, c.createdAt,
+        `SELECT c.id, c.nome, c.status, c.totalEnviados, c.createdAt,
                 (SELECT COUNT(*) FROM email_envios e WHERE e.campanhaId = c.id AND e.aberturas > 0) as abriram
-         FROM email_campanhas c ORDER BY c.createdAt DESC LIMIT 20`
+         FROM email_campanhas c WHERE c.nome LIKE '%médico%' OR c.nome LIKE '%medico%' ORDER BY c.createdAt DESC LIMIT 10`
+      );
+      // Pega o template da primeira campanha médico
+      const [templates]: any = await conn.execute(
+        `SELECT t.id, t.nome, t.assunto, t.corpo FROM email_templates t
+         WHERE t.id = (SELECT templateId FROM email_campanhas WHERE nome LIKE '%médico%' LIMIT 1) LIMIT 1`
       );
       await conn.end();
-      res.json({ campanhas });
+      res.json({ campanhas, template: templates[0] || null });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
