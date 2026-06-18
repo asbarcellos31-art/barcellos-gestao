@@ -303,6 +303,22 @@ async function startServer() {
     }
   });
 
+  // Endpoint temporário: clientes sem origem
+  app.get("/api/clientes-sem-origem", async (req: any, res: any) => {
+    try {
+      const mysql = await import("mysql2/promise");
+      const conn = await (mysql as any).default.createConnection(process.env.DATABASE_URL!);
+      const [rows]: any = await conn.execute(
+        `SELECT c.nome, c.cpf, c.telefone, c.email, c.cidade, c.estado, c.vendedor
+         FROM clientes c WHERE c.origemId IS NULL ORDER BY c.nome`
+      );
+      await conn.end();
+      res.json({ total: rows.length, clientes: rows });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Página pública de boas-vindas com player de vídeo
   app.get("/boas-vindas", (_req, res) => {
     const VIDEO_URL = "https://github.com/asbarcellos31-art/barcellos-gestao/releases/download/v-assets-1/boas-vindas-barcellos.mp4";
