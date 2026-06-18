@@ -240,6 +240,25 @@ async function startServer() {
     }
   });
 
+  // Endpoint temporário: limpa origemId de clientes por CPF
+  app.post("/api/limpar-origem-clientes", async (req: any, res: any) => {
+    try {
+      const { cpfs } = req.body as { cpfs: string[] };
+      const mysql = await import("mysql2/promise");
+      const conn = await (mysql as any).default.createConnection(process.env.DATABASE_URL!);
+      const cpfsLimpos = cpfs.map((c: string) => c.replace(/\D/g,''));
+      const placeholders = cpfsLimpos.map(() => '?').join(',');
+      const [r]: any = await conn.execute(
+        `UPDATE clientes SET origemId = NULL WHERE REGEXP_REPLACE(cpf, '[^0-9]', '') IN (${placeholders})`,
+        cpfsLimpos
+      );
+      await conn.end();
+      res.json({ ok: true, atualizados: r.affectedRows });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Endpoint temporário: consulta origem dos clientes por CPF
   app.post("/api/consultar-origem-clientes", async (req: any, res: any) => {
     try {
