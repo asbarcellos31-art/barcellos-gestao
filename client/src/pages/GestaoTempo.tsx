@@ -104,7 +104,7 @@ function DraggableItem({ tarefa, onEdit, onDelete, onDuplicate, onConcluir, onRe
   const cfg = TRIADE_CONFIG[tarefa.triade];
   const isConcluida = tarefa.status === "CONCLUIDA";
   const isAtrasada = tarefa.status === "ATRASADA";
-  const emExecucao = timerAtivo?.id === tarefa.id && !timerAtivo.pausado;
+  const emExecucao = (timerAtivo?.id === tarefa.id && !timerAtivo.pausado) || (tarefa.status === "EM_EXECUCAO" && timerAtivo?.id !== tarefa.id);
   const pausado = timerAtivo?.id === tarefa.id && timerAtivo.pausado;
 
   return (
