@@ -199,6 +199,47 @@ async function startServer() {
     }
   });
 
+  // Endpoint temporário: atualiza origemId de clientes por CPF
+  app.post("/api/atualizar-origem-clientes", async (req: any, res: any) => {
+    try {
+      const { cpfs, origemNome } = req.body as { cpfs: string[]; origemNome: string };
+      const mysql = await import("mysql2/promise");
+      const conn = await (mysql as any).default.createConnection(process.env.DATABASE_URL!);
+
+      // Busca ou cria a origem
+      const [origens]: any = await conn.execute(
+        `SELECT id FROM origens_cliente WHERE nome = ? LIMIT 1`, [origemNome]
+      );
+      let origemId: number;
+      if (origens.length > 0) {
+        origemId = origens[0].id;
+      } else {
+        const [ins]: any = await conn.execute(
+          `INSERT INTO origens_cliente (nome, cor, ativo) VALUES (?, '#1E3A6E', 1)`, [origemNome]
+        );
+        origemId = ins.insertId;
+      }
+
+      // Atualiza em lotes de 100
+      let total = 0;
+      for (let i = 0; i < cpfs.length; i += 100) {
+        const lote = cpfs.slice(i, i + 100);
+        const placeholders = lote.map(() => '?').join(',');
+        const cpfsLimpos = lote.map((c: string) => c.replace(/\D/g,''));
+        const [r]: any = await conn.execute(
+          `UPDATE clientes SET origemId = ? WHERE REGEXP_REPLACE(cpf, '[^0-9]', '') IN (${placeholders})`,
+          [origemId, ...cpfsLimpos]
+        );
+        total += r.affectedRows;
+      }
+
+      await conn.end();
+      res.json({ ok: true, origemId, origemNome, atualizados: total });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Página pública de boas-vindas com player de vídeo
   app.get("/boas-vindas", (_req, res) => {
     const VIDEO_URL = "https://github.com/asbarcellos31-art/barcellos-gestao/releases/download/v-assets-1/boas-vindas-barcellos.mp4";
