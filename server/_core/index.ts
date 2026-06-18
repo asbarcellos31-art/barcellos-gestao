@@ -240,6 +240,28 @@ async function startServer() {
     }
   });
 
+  // Endpoint temporário: consulta origem dos clientes por CPF
+  app.post("/api/consultar-origem-clientes", async (req: any, res: any) => {
+    try {
+      const { cpfs } = req.body as { cpfs: string[] };
+      const mysql = await import("mysql2/promise");
+      const conn = await (mysql as any).default.createConnection(process.env.DATABASE_URL!);
+      const placeholders = cpfs.map(() => '?').join(',');
+      const cpfsLimpos = cpfs.map((c: string) => c.replace(/\D/g,''));
+      const [rows]: any = await conn.execute(
+        `SELECT c.nome, c.cpf, c.origemId, o.nome as origemNome
+         FROM clientes c
+         LEFT JOIN origens_cliente o ON o.id = c.origemId
+         WHERE REGEXP_REPLACE(c.cpf, '[^0-9]', '') IN (${placeholders})`,
+        cpfsLimpos
+      );
+      await conn.end();
+      res.json({ clientes: rows });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Endpoint temporário: dados de campanha email marketing
   app.get("/api/temp-email-campanha", async (req: any, res: any) => {
     try {
