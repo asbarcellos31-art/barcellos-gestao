@@ -493,6 +493,7 @@ export default function GestaoTempo() {
     if (tarefaNoBanco && (tarefaNoBanco.status === "CONCLUIDA" || tarefaNoBanco.status === "CANCELADA")) {
       // A tarefa já foi finalizada em outro lugar — matar o timer fantasma
       localStorage.removeItem('timer-ativo');
+      limparTimerMut.mutate({ appUserId });
       timerDataRef.current = null;
       if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
       setTimerAtivo(null);
@@ -548,6 +549,32 @@ export default function GestaoTempo() {
     { appUserId, dataInicio: periodoCalc.inicio, dataFim: periodoCalc.fim },
     { enabled: appUserId > 0 && abaAtiva === "relatorio" }
   );
+
+  // Timer sync com banco
+  const salvarTimerMut = trpc.gestaoTempo.salvarTimer.useMutation();
+  const limparTimerMut = trpc.gestaoTempo.limparTimer.useMutation();
+  const { data: timerDb } = trpc.gestaoTempo.obterTimer.useQuery(
+    { appUserId }, { enabled: appUserId > 0, refetchInterval: 10000 }
+  );
+
+  // Sincroniza timer do banco para este dispositivo (quando outro dispositivo iniciou)
+  useEffect(() => {
+    if (!timerDb) return;
+    // Já tem timer local para a mesma tarefa — não sobrescrever
+    if (timerAtivo && timerAtivo.id === timerDb.tarefaId) return;
+    // Outro dispositivo tem timer ativo — espelhar aqui
+    const segundosAcumulados = timerDb.segundosAcumulados;
+    if (timerDb.startedAt) {
+      const decorrido = Math.floor((Date.now() - new Date(timerDb.startedAt).getTime()) / 1000);
+      timerDataRef.current = { id: timerDb.tarefaId, startedAt: new Date(timerDb.startedAt).getTime(), segundosAcumulados, pausado: false, duracaoMin: timerDb.duracaoMin ?? null };
+      setTimerAtivo({ id: timerDb.tarefaId, segundos: segundosAcumulados + decorrido, pausado: false, duracaoMin: timerDb.duracaoMin });
+      iniciarInterval(timerDb.duracaoMin ?? null);
+    } else {
+      timerDataRef.current = { id: timerDb.tarefaId, startedAt: null, segundosAcumulados, pausado: true, duracaoMin: timerDb.duracaoMin ?? null };
+      setTimerAtivo({ id: timerDb.tarefaId, segundos: segundosAcumulados, pausado: true, duracaoMin: timerDb.duracaoMin });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timerDb]);
 
   // Mutations
   const criarMut = trpc.gestaoTempo.criar.useMutation({
@@ -733,6 +760,7 @@ export default function GestaoTempo() {
         const startedAt = Date.now();
         timerDataRef.current = { id, startedAt, segundosAcumulados, pausado: false, duracaoMin: timerAtivo.duracaoMin };
         localStorage.setItem('timer-ativo', JSON.stringify(timerDataRef.current));
+        salvarTimerMut.mutate({ appUserId, tarefaId: id, startedAt: new Date(startedAt).toISOString(), segundosAcumulados, duracaoMin: timerAtivo.duracaoMin ?? null });
         iniciarInterval(timerAtivo.duracaoMin);
         setTimerAtivo({ ...timerAtivo, pausado: false });
         atualizarMut.mutate({ id, appUserId, status: 'EM_EXECUCAO' });
@@ -742,6 +770,7 @@ export default function GestaoTempo() {
         if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
         timerDataRef.current = { id, startedAt: null, segundosAcumulados, pausado: true, duracaoMin: timerAtivo.duracaoMin };
         localStorage.setItem('timer-ativo', JSON.stringify(timerDataRef.current));
+        salvarTimerMut.mutate({ appUserId, tarefaId: id, startedAt: null, segundosAcumulados, duracaoMin: timerAtivo.duracaoMin ?? null });
         setTimerAtivo({ ...timerAtivo, segundos: segundosAcumulados, pausado: true });
         atualizarMut.mutate({ id, appUserId, status: 'PENDENTE' });
       }
@@ -757,6 +786,7 @@ export default function GestaoTempo() {
       const startedAt = Date.now();
       timerDataRef.current = { id, startedAt, segundosAcumulados: 0, pausado: false, duracaoMin };
       localStorage.setItem('timer-ativo', JSON.stringify(timerDataRef.current));
+      salvarTimerMut.mutate({ appUserId, tarefaId: id, startedAt: new Date(startedAt).toISOString(), segundosAcumulados: 0, duracaoMin });
       iniciarInterval(duracaoMin);
       setTimerAtivo({ id, segundos: 0, pausado: false, duracaoMin });
       if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
@@ -771,26 +801,23 @@ export default function GestaoTempo() {
     if (timerDataRef.current?.id === id) {
       const d = timerDataRef.current;
       if (!d.pausado && d.startedAt) {
-        // Timer rodando: calcular tempo real agora
         seg = d.segundosAcumulados + Math.floor((Date.now() - d.startedAt) / 1000);
       } else {
-        // Timer pausado: usar segundos acumulados salvos na pausa
         seg = d.segundosAcumulados;
       }
-      // Limpar tudo
       localStorage.removeItem('timer-ativo');
+      limparTimerMut.mutate({ appUserId });
       timerDataRef.current = null;
       if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
       setTimerAtivo(null);
     } else if (timerAtivo?.id === id) {
-      // timerDataRef perdido mas timerAtivo existe — usar valor do display
       seg = timerAtivo.segundos;
       localStorage.removeItem('timer-ativo');
+      limparTimerMut.mutate({ appUserId });
       timerDataRef.current = null;
       if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
       setTimerAtivo(null);
     } else {
-      // Timer não está ativo — verificar localStorage (timer pausado de sessão anterior)
       try {
         const saved = localStorage.getItem('timer-ativo');
         if (saved) {
@@ -802,6 +829,7 @@ export default function GestaoTempo() {
               seg = parsed.segundosAcumulados;
             }
             localStorage.removeItem('timer-ativo');
+            limparTimerMut.mutate({ appUserId });
             timerDataRef.current = null;
             if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
             setTimerAtivo(null);

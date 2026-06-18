@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { sql } from "drizzle-orm";
+import { getDb } from "./db";
 import { listarVendedoresCadastro, listarVendedoresAtivos, criarVendedor, atualizarVendedor, excluirVendedor } from "./vendedoresDb";
 import {
   listarTarefasPorData,
@@ -1053,6 +1055,52 @@ export const appRouter = router({
         novaData: z.string().nullable().optional(),
       }))
       .mutation(({ input }) => duplicarTarefa(input.id, input.appUserId, input.novaData)),
+
+    salvarTimer: publicProcedure
+      .input(z.object({
+        appUserId: z.number(),
+        tarefaId: z.number(),
+        startedAt: z.string().nullable(),
+        segundosAcumulados: z.number(),
+        duracaoMin: z.number().nullable(),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return;
+        await db.execute(
+          sql`INSERT INTO timer_ativo (appUserId, tarefaId, startedAt, segundosAcumulados, duracaoMin)
+              VALUES (${input.appUserId}, ${input.tarefaId}, ${input.startedAt}, ${input.segundosAcumulados}, ${input.duracaoMin})
+              ON DUPLICATE KEY UPDATE
+                tarefaId = ${input.tarefaId},
+                startedAt = ${input.startedAt},
+                segundosAcumulados = ${input.segundosAcumulados},
+                duracaoMin = ${input.duracaoMin}`
+        );
+      }),
+
+    limparTimer: publicProcedure
+      .input(z.object({ appUserId: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return;
+        await db.execute(sql`DELETE FROM timer_ativo WHERE appUserId = ${input.appUserId}`);
+      }),
+
+    obterTimer: publicProcedure
+      .input(z.object({ appUserId: z.number() }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return null;
+        const rows = await db.execute(sql`SELECT * FROM timer_ativo WHERE appUserId = ${input.appUserId}`);
+        const row = (rows as any)?.[0]?.[0];
+        if (!row) return null;
+        return {
+          tarefaId: row.tarefaId as number,
+          startedAt: row.startedAt ? new Date(row.startedAt).toISOString() : null,
+          segundosAcumulados: row.segundosAcumulados as number,
+          duracaoMin: row.duracaoMin as number | null,
+        };
+      }),
 
     score: publicProcedure
       .input(z.object({ appUserId: z.number(), dataInicio: z.string(), dataFim: z.string() }))
