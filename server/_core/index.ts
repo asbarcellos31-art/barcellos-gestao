@@ -152,24 +152,37 @@ async function startServer() {
       );
       await conn.end();
 
-      // Índice dos servidores pelo miolo do CPF (6 dígitos do meio)
-      const idxCpf = new Map<string, string>();
+      // Índice dos servidores pelo miolo do CPF → lista de servidores com aquele miolo
+      const idxCpf = new Map<string, string[]>();
       for (const s of servidores) {
         if (s.cpfMeio && s.cpfMeio.length === 6) {
-          idxCpf.set(s.cpfMeio, s.nome);
+          if (!idxCpf.has(s.cpfMeio)) idxCpf.set(s.cpfMeio, []);
+          idxCpf.get(s.cpfMeio)!.push(s.nome);
         }
+      }
+
+      function palavras(nome: string) {
+        return new Set(nome.toUpperCase().replace(/\s+/g,' ').trim().split(' ').filter(p => p.length > 2));
+      }
+      function nomesCompatíveis(a: string, b: string): boolean {
+        const pa = palavras(a), pb = palavras(b);
+        let comuns = 0;
+        for (const p of pa) if (pb.has(p)) comuns++;
+        return comuns >= 2;
       }
 
       const encontrados: any[] = [];
       for (const cliente of rows) {
         const cpfCliente = (cliente.cpf || '').replace(/\D/g, '');
-        if (cpfCliente.length < 9) continue; // sem CPF válido, pula
-        const meioCpf = cpfCliente.slice(3, 9); // dígitos 4-9 do CPF
+        if (cpfCliente.length < 9) continue;
+        const meioCpf = cpfCliente.slice(3, 9);
 
-        if (idxCpf.has(meioCpf)) {
+        const candidatos = idxCpf.get(meioCpf) || [];
+        const nomeServidor = candidatos.find(n => nomesCompatíveis(n, cliente.nome || ''));
+        if (nomeServidor) {
           encontrados.push({
             nomeCliente: cliente.nome,
-            nomeServidor: idxCpf.get(meioCpf),
+            nomeServidor,
             cpf: cliente.cpf,
             telefone: cliente.telefone,
             email: cliente.email,
