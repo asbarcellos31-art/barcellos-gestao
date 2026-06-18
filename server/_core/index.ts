@@ -246,15 +246,12 @@ async function startServer() {
       const mysql = await import("mysql2/promise");
       const conn = await (mysql as any).default.createConnection(process.env.DATABASE_URL!);
       const [campanhas]: any = await conn.execute(
-        `SELECT id, nome, assunto, status, createdAt,
-                (SELECT COUNT(*) FROM email_marketing_destinatarios WHERE campanhaId = c.id) as total,
-                (SELECT COUNT(*) FROM email_marketing_destinatarios WHERE campanhaId = c.id AND abriu = 1) as abriram,
-                (SELECT COUNT(*) FROM email_marketing_destinatarios WHERE campanhaId = c.id AND clicou = 1) as clicaram
-         FROM email_marketing_campanhas c ORDER BY createdAt DESC LIMIT 20`
+        `SELECT c.id, c.nome, c.status, c.totalDestinatarios, c.totalEnviados, c.totalErros, c.createdAt,
+                (SELECT COUNT(*) FROM email_envios e WHERE e.campanhaId = c.id AND e.aberturas > 0) as abriram
+         FROM email_campanhas c ORDER BY c.createdAt DESC LIMIT 20`
       );
-      const [tabelas]: any = await conn.execute(`SHOW TABLES LIKE 'email_marketing%'`);
       await conn.end();
-      res.json({ campanhas, tabelas });
+      res.json({ campanhas });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
