@@ -473,16 +473,16 @@ export default function GestaoTempo() {
 
   // Queries
   const { data: tarefasDia = [] } = trpc.gestaoTempo.listarDia.useQuery(
-    { appUserId, data: dataSelecionada }, { enabled: appUserId > 0 }
+    { appUserId, data: dataSelecionada }, { enabled: appUserId > 0, refetchInterval: 30000 }
   );
   const { data: tarefasSemana = [] } = trpc.gestaoTempo.listarSemana.useQuery(
-    { appUserId, dataInicio: formatDate(semana.inicio), dataFim: formatDate(semana.fim) }, { enabled: appUserId > 0 }
+    { appUserId, dataInicio: formatDate(semana.inicio), dataFim: formatDate(semana.fim) }, { enabled: appUserId > 0, refetchInterval: 30000 }
   );
   const { data: backlog = [] } = trpc.gestaoTempo.listarBacklog.useQuery(
-    { appUserId }, { enabled: appUserId > 0 }
+    { appUserId }, { enabled: appUserId > 0, refetchInterval: 30000 }
   );
   const { data: score } = trpc.gestaoTempo.score.useQuery(
-    { appUserId, dataInicio: formatDate(trintaDiasAtras), dataFim: formatDate(hoje) }, { enabled: appUserId > 0 }
+    { appUserId, dataInicio: formatDate(trintaDiasAtras), dataFim: formatDate(hoje) }, { enabled: appUserId > 0, refetchInterval: 30000 }
   );
   // ─── ANTI-TIMER-FANTASMA ────────────────────────────────────────────────
   // Confere no banco se a tarefa do timer ativo ainda está pendente.
