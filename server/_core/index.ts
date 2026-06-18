@@ -240,6 +240,26 @@ async function startServer() {
     }
   });
 
+  // Endpoint temporário: dados de campanha email marketing
+  app.get("/api/temp-email-campanha", async (req: any, res: any) => {
+    try {
+      const mysql = await import("mysql2/promise");
+      const conn = await (mysql as any).default.createConnection(process.env.DATABASE_URL!);
+      const [campanhas]: any = await conn.execute(
+        `SELECT id, nome, assunto, status, createdAt,
+                (SELECT COUNT(*) FROM email_marketing_destinatarios WHERE campanhaId = c.id) as total,
+                (SELECT COUNT(*) FROM email_marketing_destinatarios WHERE campanhaId = c.id AND abriu = 1) as abriram,
+                (SELECT COUNT(*) FROM email_marketing_destinatarios WHERE campanhaId = c.id AND clicou = 1) as clicaram
+         FROM email_marketing_campanhas c ORDER BY createdAt DESC LIMIT 20`
+      );
+      const [tabelas]: any = await conn.execute(`SHOW TABLES LIKE 'email_marketing%'`);
+      await conn.end();
+      res.json({ campanhas, tabelas });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Página pública de boas-vindas com player de vídeo
   app.get("/boas-vindas", (_req, res) => {
     const VIDEO_URL = "https://github.com/asbarcellos31-art/barcellos-gestao/releases/download/v-assets-1/boas-vindas-barcellos.mp4";
