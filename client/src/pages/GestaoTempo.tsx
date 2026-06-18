@@ -445,10 +445,21 @@ export default function GestaoTempo() {
   useEffect(() => {
     if (timerDataRef.current && !timerDataRef.current.pausado) {
       iniciarInterval(timerDataRef.current.duracaoMin);
+      // Sincroniza com o banco caso o timer tenha sido iniciado antes do deploy do sync
+      if (appUserId > 0) {
+        const d = timerDataRef.current;
+        salvarTimerMut.mutate({
+          appUserId,
+          tarefaId: d.id,
+          startedAt: d.startedAt ? new Date(d.startedAt).toISOString() : null,
+          segundosAcumulados: d.segundosAcumulados,
+          duracaoMin: d.duracaoMin,
+        });
+      }
     }
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [appUserId]);
  const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [tarefaDetalhe, setTarefaDetalhe] = useState<number | null>(null);
   // ─── BUSCA GLOBAL ─────────────────────────────────────────────────────────
