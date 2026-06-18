@@ -147,10 +147,8 @@ async function startServer() {
       const mysql = await import("mysql2/promise");
       const conn = await (mysql as any).default.createConnection(process.env.DATABASE_URL!);
       const [rows]: any = await conn.execute(
-        `SELECT c.nome, c.cpf, c.telefone, c.email, c.cidade, c.estado,
-                v.nome as vendedor
-         FROM clientes c
-         LEFT JOIN vendedores v ON c.vendedorId = v.id`
+        `SELECT c.nome, c.cpf, c.telefone, c.email, c.cidade, c.estado, c.vendedor
+         FROM clientes c`
       );
       await conn.end();
 
@@ -178,7 +176,7 @@ async function startServer() {
             email: cliente.email,
             cidade: cliente.cidade,
             estado: cliente.estado,
-            vendedor: cliente.vendedor,
+            vendedor: cliente.vendedor || null,
           });
         }
       }
