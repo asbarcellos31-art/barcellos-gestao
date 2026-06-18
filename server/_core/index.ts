@@ -152,25 +152,24 @@ async function startServer() {
       );
       await conn.end();
 
+      // Índice dos servidores pelo miolo do CPF (6 dígitos do meio)
+      const idxCpf = new Map<string, string>();
+      for (const s of servidores) {
+        if (s.cpfMeio && s.cpfMeio.length === 6) {
+          idxCpf.set(s.cpfMeio, s.nome);
+        }
+      }
+
       const encontrados: any[] = [];
       for (const cliente of rows) {
-        const nomeCliente = (cliente.nome || '').trim().toUpperCase();
         const cpfCliente = (cliente.cpf || '').replace(/\D/g, '');
-        const meioCpfCliente = cpfCliente.slice(3, 9); // dígitos 4-9 do CPF
+        if (cpfCliente.length < 9) continue; // sem CPF válido, pula
+        const meioCpf = cpfCliente.slice(3, 9); // dígitos 4-9 do CPF
 
-        const servidor = servidores.find(s => {
-          const nomeServidor = s.nome.trim().toUpperCase();
-          const cpfBate = s.cpfMeio && meioCpfCliente && s.cpfMeio === meioCpfCliente;
-          const nomeBate = nomeCliente === nomeServidor;
-          const nomeParcial = nomeCliente.split(' ')[0] === nomeServidor.split(' ')[0] &&
-                              nomeCliente.split(' ').slice(-1)[0] === nomeServidor.split(' ').slice(-1)[0];
-          return cpfBate || nomeBate || (nomeParcial && nomeCliente.length > 5);
-        });
-
-        if (servidor) {
+        if (idxCpf.has(meioCpf)) {
           encontrados.push({
             nomeCliente: cliente.nome,
-            nomeServidor: servidor.nome,
+            nomeServidor: idxCpf.get(meioCpf),
             cpf: cliente.cpf,
             telefone: cliente.telefone,
             email: cliente.email,
