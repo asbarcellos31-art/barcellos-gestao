@@ -140,6 +140,55 @@ async function startServer() {
   app.use("/api", inadimplentesEnriquecerRouter);
   app.use("/api", magBoletosExpressRouter);
 
+  // Endpoint temporário: cruza lista de servidores com base de clientes
+  app.post("/api/cruzar-servidores", async (req: any, res: any) => {
+    try {
+      const { servidores } = req.body as { servidores: { nome: string; cpfMeio: string }[] };
+      const mysql = await import("mysql2/promise");
+      const conn = await (mysql as any).default.createConnection(process.env.DATABASE_URL!);
+      const [rows]: any = await conn.execute(
+        `SELECT c.nome, c.cpf, c.telefone, c.email, c.cidade, c.uf,
+                v.nome as vendedor
+         FROM clientes c
+         LEFT JOIN vendedores v ON c.vendedorId = v.id`
+      );
+      await conn.end();
+
+      const encontrados: any[] = [];
+      for (const cliente of rows) {
+        const nomeCliente = (cliente.nome || '').trim().toUpperCase();
+        const cpfCliente = (cliente.cpf || '').replace(/\D/g, '');
+        const meioCpfCliente = cpfCliente.slice(3, 9); // dígitos 4-9 do CPF
+
+        const servidor = servidores.find(s => {
+          const nomeServidor = s.nome.trim().toUpperCase();
+          const cpfBate = s.cpfMeio && meioCpfCliente && s.cpfMeio === meioCpfCliente;
+          const nomeBate = nomeCliente === nomeServidor;
+          const nomeParcial = nomeCliente.split(' ')[0] === nomeServidor.split(' ')[0] &&
+                              nomeCliente.split(' ').slice(-1)[0] === nomeServidor.split(' ').slice(-1)[0];
+          return cpfBate || nomeBate || (nomeParcial && nomeCliente.length > 5);
+        });
+
+        if (servidor) {
+          encontrados.push({
+            nomeCliente: cliente.nome,
+            nomeServidor: servidor.nome,
+            cpf: cliente.cpf,
+            telefone: cliente.telefone,
+            email: cliente.email,
+            cidade: cliente.cidade,
+            uf: cliente.uf,
+            vendedor: cliente.vendedor,
+          });
+        }
+      }
+
+      res.json({ total: encontrados.length, clientes: encontrados });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Página pública de boas-vindas com player de vídeo
   app.get("/boas-vindas", (_req, res) => {
     const VIDEO_URL = "https://github.com/asbarcellos31-art/barcellos-gestao/releases/download/v-assets-1/boas-vindas-barcellos.mp4";
