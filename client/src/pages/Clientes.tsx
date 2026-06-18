@@ -141,7 +141,7 @@ export default function Clientes() {
 
   // Filtros avançados
   const [filtrosAvancadosAbertos, setFiltrosAvancadosAbertos] = useState(false);
-  const [origemFiltro, setOrigemFiltro] = useState<number | null>(null);
+  const [origemFiltro, setOrigemFiltro] = useState<number | "sem_origem" | null>(null);
   const [idadeMinFiltro, setIdadeMinFiltro] = useState("");
   const [idadeMaxFiltro, setIdadeMaxFiltro] = useState("");
   const [valorMinFiltro, setValorMinFiltro] = useState("");
@@ -314,7 +314,8 @@ export default function Clientes() {
     busca: busca || undefined,
     status: statusFiltro !== "todos" ? statusFiltro : undefined,
     vendedor: vendedorFiltro !== "todos" ? vendedorFiltro : undefined,
-    origemId: origemFiltro ?? undefined,
+    origemId: origemFiltro && origemFiltro !== "sem_origem" ? origemFiltro : undefined,
+    semOrigem: origemFiltro === "sem_origem" ? true : undefined,
     idadeMin: idadeMinFiltro ? Number(idadeMinFiltro) : undefined,
     idadeMax: idadeMaxFiltro ? Number(idadeMaxFiltro) : undefined,
     valorMin: valorMinFiltro ? Number(valorMinFiltro) : undefined,
@@ -528,7 +529,7 @@ export default function Clientes() {
     setPagina(0);
   };
 
-  const filtroAtivo = !!(busca || statusFiltro !== "todos" || vendedorFiltro !== "todos" || produtosFiltro.length > 0 || origemFiltro || idadeMinFiltro || idadeMaxFiltro || valorMinFiltro || valorMaxFiltro || dataNascInicioFiltro || dataNascFimFiltro);
+  const filtroAtivo = !!(busca || statusFiltro !== "todos" || vendedorFiltro !== "todos" || produtosFiltro.length > 0 || origemFiltro !== null || idadeMinFiltro || idadeMaxFiltro || valorMinFiltro || valorMaxFiltro || dataNascInicioFiltro || dataNascFimFiltro);
 
   const toggleProdutoFiltro = (prodId: number) => {
     setProdutosFiltro(prev =>
@@ -588,7 +589,8 @@ export default function Clientes() {
         busca: busca || undefined,
         status: statusFiltro !== "todos" ? statusFiltro : undefined,
         vendedor: vendedorFiltro !== "todos" ? vendedorFiltro : undefined,
-        origemId: origemFiltro ?? undefined,
+        origemId: origemFiltro && origemFiltro !== "sem_origem" ? origemFiltro : undefined,
+        semOrigem: origemFiltro === "sem_origem" ? true : undefined,
         idadeMin: idadeMinFiltro ? Number(idadeMinFiltro) : undefined,
         idadeMax: idadeMaxFiltro ? Number(idadeMaxFiltro) : undefined,
         valorMin: valorMinFiltro ? Number(valorMinFiltro) : undefined,
@@ -1397,14 +1399,15 @@ export default function Clientes() {
               <div className="space-y-1">
                 <label className="text-xs font-medium text-muted-foreground">Origem</label>
                 <Select
-                  value={origemFiltro ? String(origemFiltro) : "todos"}
-                  onValueChange={(v) => { setOrigemFiltro(v === "todos" ? null : Number(v)); setPagina(0); }}
+                  value={origemFiltro === "sem_origem" ? "sem_origem" : origemFiltro ? String(origemFiltro) : "todos"}
+                  onValueChange={(v) => { setOrigemFiltro(v === "todos" ? null : v === "sem_origem" ? "sem_origem" : Number(v)); setPagina(0); }}
                 >
                   <SelectTrigger className="h-8 text-xs">
                     <SelectValue placeholder="Todas as origens" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="todos">Todas as origens</SelectItem>
+                    <SelectItem value="sem_origem">Sem origem</SelectItem>
                     {(origensData as any[]).map((o: any) => (
                       <SelectItem key={o.id} value={String(o.id)}>
                         <span className="flex items-center gap-2">

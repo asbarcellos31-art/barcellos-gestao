@@ -378,6 +378,7 @@ export const appRouter = router({
         status: z.string().optional(),
         vendedor: z.string().optional(),
         origemId: z.number().optional(),
+        semOrigem: z.boolean().optional(),
         idadeMin: z.number().optional(),
         idadeMax: z.number().optional(),
         valorMin: z.number().optional(),

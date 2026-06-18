@@ -1,6 +1,6 @@
 import { getDb } from "./db";
 import { clientes, vendas, sinistros, beneficiariosCRM, crmLeads, crmOrigensLeads, clienteProdutos, produtos as produtosTable } from "../drizzle/schema";
-import { and, asc, desc, eq, like, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, like, or, sql } from "drizzle-orm";
 import mysql from "mysql2/promise";
 
 // Pool para queries SQL diretas (necessário em casos onde drizzle não retorna no formato esperado)
@@ -29,7 +29,7 @@ async function queryPool<T = Record<string, unknown>>(sqlStr: string, params: un
 // ============================================================
 export async function listarClientes(opts?: {
   busca?: string; status?: string; vendedor?: string;
-  origemId?: number; idadeMin?: number; idadeMax?: number;
+  origemId?: number; semOrigem?: boolean; idadeMin?: number; idadeMax?: number;
   valorMin?: number; valorMax?: number; produto?: string;
   dataNascimentoInicio?: string; dataNascimentoFim?: string;
   limit?: number; offset?: number;
@@ -52,7 +52,9 @@ export async function listarClientes(opts?: {
       )
     )`);
   }
-  if (opts?.origemId) {
+  if (opts?.semOrigem) {
+    conditions.push(isNull(clientes.origemId));
+  } else if (opts?.origemId) {
     conditions.push(eq(clientes.origemId, opts.origemId));
   }
   if (opts?.valorMin !== undefined) {
@@ -918,6 +920,23 @@ export async function excluirLeadsPorMesAno(mes: number, ano: number) {
   if (!db) throw new Error("DB não disponível");
   const result = await db.delete(crmLeads).where(and(eq(crmLeads.mes, mes), eq(crmLeads.ano, ano)));
   return { success: true, deletados: (result as any).affectedRows ?? 0 };
+}
+
+export async function verificarDuplicatasLeads(cpfs: (string | null)[], nomes: string[]) {
+  const db = await getDb();
+  if (!db) return [];
+  const cpfsValidos = cpfs.filter(Boolean) as string[];
+  const conds: any[] = [];
+  if (cpfsValidos.length > 0) {
+    conds.push(or(...cpfsValidos.map(c => eq(crmLeads.cpf, c))));
+  }
+  if (nomes.length > 0) {
+    conds.push(or(...nomes.map(n => sql`UPPER(${crmLeads.nome}) = UPPER(${n})`)));
+  }
+  if (!conds.length) return [];
+  return db.select({ id: crmLeads.id, cpf: crmLeads.cpf, nome: crmLeads.nome })
+    .from(crmLeads)
+    .where(or(...conds));
 }
 
 export async function excluirLeadsEmLote(ids: number[]) {
