@@ -300,6 +300,7 @@ export default function Vendas() {
           bairro: cliente.bairro || f.bairro,
           cidade: cliente.cidade || f.cidade,
           cep: cliente.cep || f.cep,
+          origemId: cliente.origemId ?? f.origemId,
         }));
         toast.success(`Cliente encontrado: ${cliente.nome}`);
       } else {
