@@ -287,7 +287,7 @@ async function startServer() {
       const mysql = await import("mysql2/promise");
       const conn = await (mysql as any).default.createConnection(process.env.DATABASE_URL!);
       const [campanhas]: any = await conn.execute(
-        `SELECT c.id, c.nome, c.status, c.totalEnviados, c.createdAt,
+        `SELECT c.id, c.nome, c.status, c.totalEnviados, c.createdAt, c.listaId,
                 (SELECT COUNT(*) FROM email_envios e WHERE e.campanhaId = c.id AND e.aberturas > 0) as abriram
          FROM email_campanhas c WHERE c.nome LIKE '%médico%' OR c.nome LIKE '%medico%' ORDER BY c.createdAt DESC LIMIT 10`
       );
@@ -296,8 +296,48 @@ async function startServer() {
         `SELECT t.id, t.nome, t.assunto, t.corpo FROM email_templates t
          WHERE t.id = (SELECT templateId FROM email_campanhas WHERE nome LIKE '%médico%' LIMIT 1) LIMIT 1`
       );
+      // Pega contatos da lista das re-campanhas (listaId da primeira re-campanha)
+      const recampanhas = (campanhas as any[]).filter((c: any) => c.nome?.includes('Re-campanha'));
+      let contatos: any[] = [];
+      let listaInfo: any = null;
+      if (recampanhas.length > 0 && recampanhas[0].listaId) {
+        const listaId = recampanhas[0].listaId;
+        const [listaRows]: any = await conn.execute(`SELECT id, nome FROM email_listas WHERE id = ?`, [listaId]);
+        listaInfo = listaRows[0] || null;
+        const [contatosRows]: any = await conn.execute(
+          `SELECT id, nome, email FROM email_contatos WHERE listaId = ? ORDER BY nome LIMIT 200`, [listaId]
+        );
+        contatos = contatosRows;
+      }
       await conn.end();
-      res.json({ campanhas, template: templates[0] || null });
+      res.json({ campanhas, template: templates[0] || null, lista: listaInfo, contatos, totalContatos: contatos.length });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Endpoint temporário: adicionar email à lista das re-campanhas médico
+  app.post("/api/temp-add-email-medico", async (req: any, res: any) => {
+    try {
+      const { nome, email } = req.body;
+      if (!email) return res.status(400).json({ error: "email obrigatorio" });
+      const mysql = await import("mysql2/promise");
+      const conn = await (mysql as any).default.createConnection(process.env.DATABASE_URL!);
+      // Pega listaId da primeira re-campanha médico
+      const [rows]: any = await conn.execute(
+        `SELECT listaId FROM email_campanhas WHERE (nome LIKE '%Re-campanha%' OR nome LIKE '%re-campanha%') AND (nome LIKE '%médico%' OR nome LIKE '%medico%') ORDER BY createdAt DESC LIMIT 1`
+      );
+      if (!rows.length || !rows[0].listaId) { await conn.end(); return res.status(404).json({ error: "Lista nao encontrada" }); }
+      const listaId = rows[0].listaId;
+      // Verifica se já existe
+      const [existe]: any = await conn.execute(`SELECT id FROM email_contatos WHERE listaId = ? AND email = ?`, [listaId, email]);
+      if (existe.length > 0) { await conn.end(); return res.json({ ok: true, msg: "Email ja existe na lista", id: existe[0].id }); }
+      const [ins]: any = await conn.execute(
+        `INSERT INTO email_contatos (listaId, nome, email, createdAt) VALUES (?, ?, ?, NOW())`,
+        [listaId, nome || email, email]
+      );
+      await conn.end();
+      res.json({ ok: true, id: ins.insertId, nome: nome || email, email });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
