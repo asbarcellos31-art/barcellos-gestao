@@ -305,7 +305,7 @@ async function startServer() {
         const [listaRows]: any = await conn.execute(`SELECT id, nome FROM email_listas WHERE id = ?`, [listaId]);
         listaInfo = listaRows[0] || null;
         const [contatosRows]: any = await conn.execute(
-          `SELECT id, nome, email FROM email_contatos WHERE listaId = ? ORDER BY nome LIMIT 200`, [listaId]
+          `SELECT id, nome, email FROM email_contatos WHERE listaId = ? ORDER BY nome`, [listaId]
         );
         contatos = contatosRows;
       }
