@@ -300,8 +300,19 @@ async function startServer() {
       const listaId = 240004;
       const [listaRows]: any = await conn.execute(`SELECT id, nome FROM email_listas WHERE id = ?`, [listaId]);
       const listaInfo = listaRows[0] || null;
+      // Busca contatos com total de aberturas somado de todas as campanhas médico
       const [contatosRows]: any = await conn.execute(
-        `SELECT id, nome, email FROM email_contatos WHERE listaId = ? ORDER BY nome`, [listaId]
+        `SELECT ec.id, ec.nome, ec.email,
+                COALESCE(SUM(ee.aberturas), 0) as totalAberturas
+         FROM email_contatos ec
+         LEFT JOIN email_envios ee ON ee.contatoEmail = ec.email
+           AND ee.campanhaId IN (
+             SELECT id FROM email_campanhas
+             WHERE nome LIKE '%médico%' OR nome LIKE '%medico%'
+           )
+         WHERE ec.listaId = ?
+         GROUP BY ec.id, ec.nome, ec.email
+         ORDER BY totalAberturas DESC, ec.nome ASC`, [listaId]
       );
       const contatos = contatosRows;
       await conn.end();
