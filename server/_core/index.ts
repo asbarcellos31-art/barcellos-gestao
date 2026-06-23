@@ -322,6 +322,24 @@ async function startServer() {
     }
   });
 
+  // Endpoint temporário: diagnóstico tarefas
+  app.get("/api/temp-tarefas-diag", async (req: any, res: any) => {
+    try {
+      const mysql = await import("mysql2/promise");
+      const conn = await (mysql as any).default.createConnection(process.env.DATABASE_URL!);
+      const [users]: any = await conn.execute(`SELECT id, nome, email FROM app_users ORDER BY id`);
+      const hoje = new Date().toISOString().split('T')[0];
+      const [hoje_tasks]: any = await conn.execute(
+        `SELECT t.id, t.appUserId, t.titulo, t.status, t.dataAgendada, t.recorrente FROM tarefas t WHERE DATE(t.dataAgendada) = ? ORDER BY t.appUserId, t.id`, [hoje]
+      );
+      const [total_tasks]: any = await conn.execute(`SELECT appUserId, COUNT(*) as total FROM tarefas GROUP BY appUserId`);
+      await conn.end();
+      res.json({ hoje, users, hoje_tasks, total_tasks });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Endpoint temporário: adicionar email à lista das re-campanhas médico
   app.post("/api/temp-add-email-medico", async (req: any, res: any) => {
     try {
