@@ -296,19 +296,14 @@ async function startServer() {
         `SELECT t.id, t.nome, t.assunto, t.corpo FROM email_templates t
          WHERE t.id = (SELECT templateId FROM email_campanhas WHERE nome LIKE '%médico%' LIMIT 1) LIMIT 1`
       );
-      // Pega contatos da lista das re-campanhas (listaId da primeira re-campanha)
-      const recampanhas = (campanhas as any[]).filter((c: any) => c.nome?.includes('Re-campanha'));
-      let contatos: any[] = [];
-      let listaInfo: any = null;
-      if (recampanhas.length > 0 && recampanhas[0].listaId) {
-        const listaId = recampanhas[0].listaId;
-        const [listaRows]: any = await conn.execute(`SELECT id, nome FROM email_listas WHERE id = ?`, [listaId]);
-        listaInfo = listaRows[0] || null;
-        const [contatosRows]: any = await conn.execute(
-          `SELECT id, nome, email FROM email_contatos WHERE listaId = ? ORDER BY nome`, [listaId]
-        );
-        contatos = contatosRows;
-      }
+      // Lista 240004 = "Re-campanha médico — Visualizaram"
+      const listaId = 240004;
+      const [listaRows]: any = await conn.execute(`SELECT id, nome FROM email_listas WHERE id = ?`, [listaId]);
+      const listaInfo = listaRows[0] || null;
+      const [contatosRows]: any = await conn.execute(
+        `SELECT id, nome, email FROM email_contatos WHERE listaId = ? ORDER BY nome`, [listaId]
+      );
+      const contatos = contatosRows;
       await conn.end();
       res.json({ campanhas, template: templates[0] || null, lista: listaInfo, contatos, totalContatos: contatos.length });
     } catch (e: any) {
