@@ -24,12 +24,17 @@ const CALLOUT_CORES: Record<CalloutColor, { bg: string; border: string; titulo: 
 
 function renderBloco(b: Bloco): string {
   switch (b.tipo) {
-    case "texto":
+    case "texto": {
+      // Remove block-level tags from Word/Outlook paste, preserving inline tags (<strong>, <em>, <a>, etc.)
+      const cleanWordHtml = (s: string) =>
+        s.replace(/<\/?(p|div|h[1-6]|ul|ol|li|blockquote|table|thead|tbody|tr|td|th|span)(\s[^>]*)?\/?>/gi, "").trim();
       return b.conteudo
         .split("\n")
-        .filter(l => l.trim())
+        .map(cleanWordHtml)
+        .filter(l => l)
         .map(l => `<p style="margin:0 0 12px 0;color:#333;font-size:15px;line-height:1.7;">${l}</p>`)
         .join("\n");
+    }
 
     case "callout": {
       const c = CALLOUT_CORES[b.cor] ?? CALLOUT_CORES.amarelo;
