@@ -993,23 +993,18 @@ export async function listarTodosBeneficiariosCRM(opts?: { busca?: string; statu
 // ============================================================
 import mysql from "mysql2/promise";
 
-let _prodPool: mysql.Pool | null = null;
-function getProdPool(): mysql.Pool {
-  if (!_prodPool && process.env.DATABASE_URL) {
-    _prodPool = mysql.createPool({
-      uri: process.env.DATABASE_URL,
-      connectionLimit: 5,
-      waitForConnections: true,
-      enableKeepAlive: true,
-      keepAliveInitialDelay: 10000,
-    });
+let _prodConn: mysql.Connection | null = null;
+async function getProdConn(): Promise<mysql.Connection> {
+  if (_prodConn) {
+    try { await _prodConn.ping(); return _prodConn; } catch { _prodConn = null; }
   }
-  if (!_prodPool) throw new Error("DATABASE_URL não configurado");
-  return _prodPool;
+  if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL não configurado");
+  _prodConn = await mysql.createConnection(process.env.DATABASE_URL);
+  return _prodConn;
 }
 async function queryProdPool<T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> {
-  const pool = getProdPool();
-  const [rows] = await pool.execute(sql, params);
+  const conn = await getProdConn();
+  const [rows] = await conn.execute(sql, params);
   return rows as T[];
 }
 
