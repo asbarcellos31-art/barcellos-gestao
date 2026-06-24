@@ -19,24 +19,19 @@ import mysql from "mysql2/promise";
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
-// Pool para operações de produtos/vínculos
-let _pool: mysql.Pool | null = null;
-function getPool(): mysql.Pool {
-  if (!_pool && process.env.DATABASE_URL) {
-    _pool = mysql.createPool({
-      uri: process.env.DATABASE_URL,
-      connectionLimit: 5,
-      waitForConnections: true,
-      enableKeepAlive: true,
-      keepAliveInitialDelay: 10000,
-    });
+// Conexão única compartilhada para uploadRouter
+let _uploadConn: mysql.Connection | null = null;
+async function getUploadConn(): Promise<mysql.Connection> {
+  if (_uploadConn) {
+    try { await _uploadConn.ping(); return _uploadConn; } catch { _uploadConn = null; }
   }
-  if (!_pool) throw new Error("DATABASE_URL não configurado");
-  return _pool;
+  if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL não configurado");
+  _uploadConn = await mysql.createConnection(process.env.DATABASE_URL);
+  return _uploadConn;
 }
 async function queryPool<T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> {
-  const pool = getPool();
-  const [rows] = await pool.execute(sql, params);
+  const conn = await getUploadConn();
+  const [rows] = await conn.execute(sql, params);
   return rows as T[];
 }
 
@@ -658,7 +653,7 @@ router.post("/upload/inadimplentes", upload.single("arquivo"), async (req, res) 
     }
     let enriquecidos = 0;
     try {
-      const conn2 = await mysql.createConnection(process.env.DATABASE_URL!);
+      const conn2 = await getUploadConn();
       const [rowsEnr]: any = await conn2.execute(`
         SELECT i.id,
                COALESCE(NULLIF(TRIM(c.email), ''), NULL) as emailCliente,
@@ -676,7 +671,6 @@ router.post("/upload/inadimplentes", upload.single("arquivo"), async (req, res) 
         );
         enriquecidos++;
       }
-      await conn2.end().catch(() => {});
     } catch (e) {
       console.warn('[Upload Inadimplentes] Enriquecimento automático falhou (não crítico):', e);
     }
