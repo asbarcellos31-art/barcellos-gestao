@@ -836,9 +836,9 @@ export default function WhatsappMarketing() {
       </Tabs>
       {/* ── Dialog Nova Campanha ── */}
       <Dialog open={dialogNovaCampanha} onOpenChange={setDialogNovaCampanha}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
           <DialogHeader><DialogTitle>Nova Campanha WhatsApp</DialogTitle></DialogHeader>
-          <div className="space-y-4 py-2">
+          <div className="space-y-4 py-2 overflow-y-auto flex-1 pr-1">
             <div>
               <label className="text-sm font-medium">Nome da campanha</label>
               <Input className="mt-1" placeholder="Ex: Campanha Médicos — Março" value={novaCampanha.nome} onChange={e => setNovaCampanha(p => ({ ...p, nome: e.target.value }))} />
