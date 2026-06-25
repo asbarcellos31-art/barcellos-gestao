@@ -1,10 +1,4 @@
-import mysql from "mysql2/promise";
-const pool = mysql.createPool({
-  uri: process.env.DATABASE_URL!,
-  connectionLimit: 10,
-  waitForConnections: true,
-  queueLimit: 0,
-});
+import { getPool } from "./sharedPool";
 
 export type TipoLancamento = "Entrada" | "Saída";
 export type CategoriaContas = "SALARIO" | "COMISSAO" | "DISTRIBUICAO" | "VEICULO" | "ESTRUTURA" | "BANCO" | "IMPOSTOS" | "ALIMENTACAO" | "MATERIAL_ESCRITORIO" | "DIVERSOS";
@@ -59,7 +53,7 @@ export async function criarUploadExtrato(params: {
     tipo: TipoLancamento;
   }>;
 }): Promise<{ uploadId: number; total: number }> {
-  const conn = await pool.getConnection();
+  const conn = await getPool().getConnection();
   try {
     await conn.beginTransaction();
 
@@ -108,7 +102,7 @@ export async function criarUploadExtrato(params: {
 
 // Listar lançamentos de um upload
 export async function listarLancamentosExtrato(uploadId: number): Promise<LancamentoExtrato[]> {
-  const [rows] = await pool.execute(
+  const [rows] = await getPool().execute(
     `SELECT id, uploadId, data, lancamento, detalhes, nrDocumento,
             CAST(valor AS DECIMAL(12,2)) as valor, tipo, categoria, vinculo,
             observacao, confirmado, lancamentoContasId
@@ -124,7 +118,7 @@ export async function listarLancamentosExtrato(uploadId: number): Promise<Lancam
 
 // Listar uploads
 export async function listarUploadsExtrato(): Promise<UploadExtratoBancario[]> {
-  const [rows] = await pool.execute(
+  const [rows] = await getPool().execute(
     `SELECT id, mes, ano, nomeArquivo, totalLancamentos,
             CAST(totalEntradas AS DECIMAL(12,2)) as totalEntradas,
             CAST(totalSaidas AS DECIMAL(12,2)) as totalSaidas,
@@ -152,7 +146,7 @@ export async function atualizarLancamentoExtrato(id: number, params: {
   if (params.observacao !== undefined) { sets.push("observacao = ?"); vals.push(params.observacao); }
   if (sets.length === 0) return;
   vals.push(id);
-  await pool.execute(`UPDATE extrato_bancario SET ${sets.join(", ")} WHERE id = ?`, vals);
+  await getPool().execute(`UPDATE extrato_bancario SET ${sets.join(", ")} WHERE id = ?`, vals);
 }
 
 // Atualizar categoria/vínculo em lote (por tipo de lançamento)
@@ -166,7 +160,7 @@ export async function atualizarLoteExtrato(uploadId: number, lancamentoTipo: str
   if (params.vinculo !== undefined) { sets.push("vinculo = ?"); vals.push(params.vinculo); }
   if (sets.length === 0) return 0;
   vals.push(uploadId, lancamentoTipo);
-  const [result] = await pool.execute(
+  const [result] = await getPool().execute(
     `UPDATE extrato_bancario SET ${sets.join(", ")} WHERE uploadId = ? AND lancamento = ?`,
     vals
   ) as any[];
@@ -183,7 +177,7 @@ export interface ResumoPorCategoria {
 }
 
 export async function resumoPorCategoria(uploadId: number): Promise<ResumoPorCategoria[]> {
-  const [rows] = await pool.execute(
+  const [rows] = await getPool().execute(
     `SELECT categoria, vinculo, tipo,
             SUM(ABS(valor)) as total, COUNT(*) as quantidade
      FROM extrato_bancario
@@ -204,7 +198,7 @@ export async function confirmarImportacaoExtrato(uploadId: number, mes: number, 
   criados: number;
   erros: string[];
 }> {
-  const conn = await pool.getConnection();
+  const conn = await getPool().getConnection();
   try {
     await conn.beginTransaction();
 
@@ -267,13 +261,13 @@ export async function confirmarImportacaoExtrato(uploadId: number, mes: number, 
 
 // Deletar upload
 export async function deletarUploadExtrato(uploadId: number): Promise<void> {
-  await pool.execute("DELETE FROM extrato_bancario WHERE uploadId = ?", [uploadId]);
-  await pool.execute("DELETE FROM uploads_extrato_bancario WHERE id = ?", [uploadId]);
+  await getPool().execute("DELETE FROM extrato_bancario WHERE uploadId = ?", [uploadId]);
+  await getPool().execute("DELETE FROM uploads_extrato_bancario WHERE id = ?", [uploadId]);
 }
 
 // Excluir lançamentos sem categoria de um upload
 export async function excluirLancamentosSemCategoria(uploadId: number): Promise<{ excluidos: number }> {
-  const [result] = await pool.execute(
+  const [result] = await getPool().execute(
     "DELETE FROM extrato_bancario WHERE uploadId = ? AND categoria IS NULL AND confirmado = FALSE",
     [uploadId]
   ) as any[];
@@ -282,5 +276,5 @@ export async function excluirLancamentosSemCategoria(uploadId: number): Promise<
 
 // Excluir um lançamento individual
 export async function excluirLancamentoExtrato(id: number): Promise<void> {
-  await pool.execute("DELETE FROM extrato_bancario WHERE id = ? AND confirmado = FALSE", [id]);
+  await getPool().execute("DELETE FROM extrato_bancario WHERE id = ? AND confirmado = FALSE", [id]);
 }

@@ -1,24 +1,18 @@
 import { and, eq, gte, lte, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import mysql from "mysql2/promise";
 import { InsertUser, users, contas, InsertConta, Conta } from "../drizzle/schema";
 import { ENV } from './_core/env';
+import { getPool } from "./sharedPool";
 
-let _conn: mysql.Connection | null = null;
 let _db: ReturnType<typeof drizzle> | null = null;
 
 export async function getDb() {
-  if (_conn) {
-    try { await _conn.ping(); } catch { _conn = null; _db = null; }
-  }
-  if (!_conn && process.env.DATABASE_URL) {
+  if (!_db) {
     try {
-      _conn = await mysql.createConnection(process.env.DATABASE_URL);
-      _db = drizzle(_conn);
+      _db = drizzle(getPool());
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
-      _conn = null;
-      _db = null;
+      return null;
     }
   }
   return _db;

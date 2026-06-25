@@ -1,16 +1,9 @@
 import { getDb } from "./db";
 import { tarefas, tarefaOcorrencias } from "../drizzle/schema";
 import { eq, and, gte, lte, lt, ne, desc, asc, isNull, or, notInArray, inArray, sql } from "drizzle-orm";
-import mysql from "mysql2/promise";
-
-// Pool mysql2 para queries raw
-const rawPool = mysql.createPool({
-  uri: process.env.DATABASE_URL!,
-  connectionLimit: 3,
-  enableKeepAlive: true,
-});
+import { getPool } from "./sharedPool";
 async function rawQuery<T = any>(sql: string, params?: any[]): Promise<T[]> {
-  const [rows] = await rawPool.execute(sql, params);
+  const [rows] = await getPool().execute(sql, params);
   return rows as T[];
 }
 

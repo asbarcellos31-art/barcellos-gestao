@@ -9,7 +9,6 @@
 import { z } from "zod";
 import { router, publicProcedure } from "./_core/trpc";
 import { getDb } from "./db";
-import mysql from "mysql2/promise";
 import {
   whatsappListas,
   whatsappContatos,
@@ -32,13 +31,9 @@ import {
 } from "./zapi";
 
 // Pool mysql2/promise para queries raw com parâmetros
-const rawPool = mysql.createPool({
-  uri: process.env.DATABASE_URL!,
-  connectionLimit: 5,
-  enableKeepAlive: true,
-});
+import { getPool } from "./sharedPool";
 async function rawQuery<T = any>(sql: string, params?: any[]): Promise<T[]> {
-  const [rows] = await rawPool.execute(sql, params);
+  const [rows] = await getPool().execute(sql, params);
   return rows as T[];
 }
 

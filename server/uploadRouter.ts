@@ -14,24 +14,13 @@ import { InsertExtratoComissao, InsertInadimplente } from "../drizzle/schema";
 import { getDb } from "./db";
 import { clientes } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
-import mysql from "mysql2/promise";
+import { getPool } from "./sharedPool";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
-// Conexão única compartilhada para uploadRouter
-let _uploadConn: mysql.Connection | null = null;
-async function getUploadConn(): Promise<mysql.Connection> {
-  if (_uploadConn) {
-    try { await _uploadConn.ping(); return _uploadConn; } catch { _uploadConn = null; }
-  }
-  if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL não configurado");
-  _uploadConn = await mysql.createConnection(process.env.DATABASE_URL);
-  return _uploadConn;
-}
 async function queryPool<T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> {
-  const conn = await getUploadConn();
-  const [rows] = await conn.execute(sql, params);
+  const [rows] = await getPool().execute(sql, params);
   return rows as T[];
 }
 
@@ -653,8 +642,7 @@ router.post("/upload/inadimplentes", upload.single("arquivo"), async (req, res) 
     }
     let enriquecidos = 0;
     try {
-      const conn2 = await getUploadConn();
-      const [rowsEnr]: any = await conn2.execute(`
+      const [rowsEnr]: any = await getPool().execute(`
         SELECT i.id,
                COALESCE(NULLIF(TRIM(c.email), ''), NULL) as emailCliente,
                COALESCE(NULLIF(TRIM(c.celular), ''), NULLIF(TRIM(c.telefone), ''), NULL) as telCliente
@@ -665,7 +653,7 @@ router.post("/upload/inadimplentes", upload.single("arquivo"), async (req, res) 
       `, [uploadId]);
       for (const row of rowsEnr) {
         const telNorm = row.telCliente ? normalizarTelefone(row.telCliente) : null;
-        await conn2.execute(
+        await getPool().execute(
           `UPDATE inadimplentes SET emailContato = COALESCE(?, emailContato), telefoneContato = COALESCE(?, telefoneContato) WHERE id = ?`,
           [row.emailCliente ?? null, telNorm ?? null, row.id]
         );
@@ -874,8 +862,7 @@ router.post("/upload-midia-aniversario", uploadMidia.single("file"), async (req:
     const contentType = req.file.mimetype || "video/mp4";
     const { url } = await storagePut(key, req.file.buffer, contentType);
     // Salvar URL no banco
-    const pool = getPool();
-    await pool.execute(
+    await getPool().execute(
       `INSERT INTO system_config (chave, valor, descricao) VALUES ('wa_automacao_aniversario_video', ?, 'URL da mídia de aniversário para WhatsApp') ON DUPLICATE KEY UPDATE valor = ?`,
       [url, url]
     );

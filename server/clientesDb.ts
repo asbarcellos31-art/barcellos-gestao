@@ -1,26 +1,10 @@
 import { getDb } from "./db";
 import { clientes, vendas, sinistros, beneficiariosCRM, crmLeads, crmOrigensLeads, clienteProdutos, produtos as produtosTable } from "../drizzle/schema";
 import { and, asc, desc, eq, isNull, like, or, sql } from "drizzle-orm";
-import mysql from "mysql2/promise";
+import { getPool } from "./sharedPool";
 
-// Pool para queries SQL diretas (necessário em casos onde drizzle não retorna no formato esperado)
-let _pool: mysql.Pool | null = null;
-function getPool(): mysql.Pool {
-  if (!_pool && process.env.DATABASE_URL) {
-    _pool = mysql.createPool({
-      uri: process.env.DATABASE_URL,
-      connectionLimit: 5,
-      waitForConnections: true,
-      enableKeepAlive: true,
-      keepAliveInitialDelay: 10000,
-    });
-  }
-  if (!_pool) throw new Error("DATABASE_URL não configurado");
-  return _pool;
-}
 async function queryPool<T = Record<string, unknown>>(sqlStr: string, params: unknown[] = []): Promise<T[]> {
-  const pool = getPool();
-  const [rows] = await pool.execute(sqlStr, params);
+  const [rows] = await getPool().execute(sqlStr, params);
   return rows as T[];
 }
 

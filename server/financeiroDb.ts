@@ -1,13 +1,12 @@
 import { eq, and, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { dreLancamentos, historicoAnual, metasAnuais } from "../drizzle/schema";
+import { getPool } from "./sharedPool";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
-    _db = drizzle(process.env.DATABASE_URL);
-  }
-  return _db!;
+  if (!_db) _db = drizzle(getPool());
+  return _db;
 }
 
 // ─── DRE ─────────────────────────────────────────────────────────────────────

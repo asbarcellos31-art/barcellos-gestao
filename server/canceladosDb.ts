@@ -1,13 +1,7 @@
-import mysql from "mysql2/promise";
-
-const pool = mysql.createPool({
-  uri: process.env.DATABASE_URL!,
-  connectionLimit: 5,
-  enableKeepAlive: true,
-});
+import { getPool } from "./sharedPool";
 
 async function query<T = any>(sql: string, params?: any[]): Promise<T[]> {
-  const [rows] = await pool.execute(sql, params);
+  const [rows] = await getPool().execute(sql, params);
   return rows as T[];
 }
 
@@ -16,7 +10,7 @@ async function query<T = any>(sql: string, params?: any[]): Promise<T[]> {
 export async function criarUploadCancelados(data: {
   mes: number; ano: number; nomeArquivo?: string; totalRegistros: number;
 }) {
-  const [result] = await pool.execute(
+  const [result] = await getPool().execute(
     `INSERT INTO uploads_cancelados (mes, ano, nomeArquivo, totalRegistros) VALUES (?, ?, ?, ?)`,
     [data.mes, data.ano, data.nomeArquivo ?? null, data.totalRegistros]
   ) as any;
@@ -31,8 +25,8 @@ export async function listarUploadsCancelados() {
 }
 
 export async function deletarUploadCancelados(uploadId: number) {
-  await pool.execute(`DELETE FROM cancelados WHERE uploadId = ?`, [uploadId]);
-  await pool.execute(`DELETE FROM uploads_cancelados WHERE id = ?`, [uploadId]);
+  await getPool().execute(`DELETE FROM cancelados WHERE uploadId = ?`, [uploadId]);
+  await getPool().execute(`DELETE FROM uploads_cancelados WHERE id = ?`, [uploadId]);
 }
 
 // ─── Cancelados CRUD ─────────────────────────────────────────────────────────
@@ -44,9 +38,9 @@ export async function inserirCancelados(registros: {
 }[]) {
   if (registros.length === 0) return;
   const values = registros.map(r =>
-    `(${r.uploadId}, ${r.mes}, ${r.ano}, ${pool.escape(r.nome)}, ${pool.escape(r.cpf ?? null)}, ${pool.escape(r.produto ?? null)}, ${pool.escape(r.status)}, ${pool.escape(r.observacao ?? null)})`
+    `(${r.uploadId}, ${r.mes}, ${r.ano}, ${getPool().escape(r.nome)}, ${getPool().escape(r.cpf ?? null)}, ${getPool().escape(r.produto ?? null)}, ${getPool().escape(r.status)}, ${getPool().escape(r.observacao ?? null)})`
   ).join(",");
-  await pool.execute(
+  await getPool().execute(
     `INSERT INTO cancelados (uploadId, mes, ano, nome, cpf, produto, status, observacao) VALUES ${values}`
   );
 }
@@ -80,7 +74,7 @@ export async function criarCancelado(data: {
   mes: number; ano: number; nome: string; cpf?: string;
   produto?: string; status: string; observacao?: string;
 }) {
-  const [result] = await pool.execute(
+  const [result] = await getPool().execute(
     `INSERT INTO cancelados (mes, ano, nome, cpf, produto, status, observacao) VALUES (?, ?, ?, ?, ?, ?, ?)`,
     [data.mes, data.ano, data.nome, data.cpf ?? null, data.produto ?? null, data.status, data.observacao ?? null]
   ) as any;
@@ -102,11 +96,11 @@ export async function atualizarCancelado(id: number, data: Partial<{
   if (data.ano !== undefined) { sets.push("ano = ?"); vals.push(data.ano); }
   if (sets.length === 0) return;
   vals.push(id);
-  await pool.execute(`UPDATE cancelados SET ${sets.join(", ")} WHERE id = ?`, vals);
+  await getPool().execute(`UPDATE cancelados SET ${sets.join(", ")} WHERE id = ?`, vals);
 }
 
 export async function excluirCancelado(id: number) {
-  await pool.execute(`DELETE FROM cancelados WHERE id = ?`, [id]);
+  await getPool().execute(`DELETE FROM cancelados WHERE id = ?`, [id]);
 }
 
 // ─── Métricas ─────────────────────────────────────────────────────────────────

@@ -1,12 +1,6 @@
-import mysql from "mysql2/promise";
+import { getPool } from "./sharedPool";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
-
-const pool = mysql.createPool({
-  uri: process.env.DATABASE_URL!,
-  connectionLimit: 5,
-  enableKeepAlive: true,
-});
 
 export const MODULOS_SISTEMA = [
   { id: "gestao-tempo", label: "Gestão de Tempo" },
@@ -31,14 +25,14 @@ export type ModuloId = typeof MODULOS_SISTEMA[number]["id"];
 // ─── Usuários ─────────────────────────────────────────────────────────────────
 
 export async function listarUsuarios() {
-  const [rows] = await pool.execute(
+  const [rows] = await getPool().execute(
     `SELECT id, nome, email, role, ativo, createdAt, updatedAt FROM app_users ORDER BY nome ASC`
   ) as any;
   return rows;
 }
 
 export async function buscarUsuarioPorEmail(email: string) {
-  const [rows] = await pool.execute(
+  const [rows] = await getPool().execute(
     `SELECT * FROM app_users WHERE email = ? LIMIT 1`,
     [email.toLowerCase().trim()]
   ) as any;
@@ -46,7 +40,7 @@ export async function buscarUsuarioPorEmail(email: string) {
 }
 
 export async function buscarUsuarioPorId(id: number) {
-  const [rows] = await pool.execute(
+  const [rows] = await getPool().execute(
     `SELECT id, nome, email, role, ativo, createdAt, updatedAt FROM app_users WHERE id = ? LIMIT 1`,
     [id]
   ) as any;
@@ -60,14 +54,14 @@ export async function criarUsuario(dados: {
   role: "admin" | "user";
 }) {
   const senhaHash = await bcrypt.hash(dados.senha, 12);
-  const [result] = await pool.execute(
+  const [result] = await getPool().execute(
     `INSERT INTO app_users (nome, email, senhaHash, role, ativo) VALUES (?, ?, ?, ?, TRUE)`,
     [dados.nome.trim(), dados.email.toLowerCase().trim(), senhaHash, dados.role]
   ) as any;
   const userId = result.insertId;
   // Criar permissões padrão (todas negadas)
   for (const modulo of MODULOS_SISTEMA) {
-    await pool.execute(
+    await getPool().execute(
       `INSERT INTO app_permissoes (userId, modulo, podeVer, podeCriar, podeEditar, podeDeletar)
        VALUES (?, ?, FALSE, FALSE, FALSE, FALSE)
        ON DUPLICATE KEY UPDATE userId=userId`,
@@ -96,13 +90,13 @@ export async function atualizarUsuario(id: number, dados: {
   if (dados.ativo !== undefined) { sets.push("ativo = ?"); vals.push(dados.ativo ? 1 : 0); }
   if (sets.length === 0) return;
   vals.push(id);
-  await pool.execute(`UPDATE app_users SET ${sets.join(", ")} WHERE id = ?`, vals);
+  await getPool().execute(`UPDATE app_users SET ${sets.join(", ")} WHERE id = ?`, vals);
 }
 
 export async function deletarUsuario(id: number) {
-  await pool.execute(`DELETE FROM app_sessions WHERE userId = ?`, [id]);
-  await pool.execute(`DELETE FROM app_permissoes WHERE userId = ?`, [id]);
-  await pool.execute(`DELETE FROM app_users WHERE id = ?`, [id]);
+  await getPool().execute(`DELETE FROM app_sessions WHERE userId = ?`, [id]);
+  await getPool().execute(`DELETE FROM app_permissoes WHERE userId = ?`, [id]);
+  await getPool().execute(`DELETE FROM app_users WHERE id = ?`, [id]);
 }
 
 // ─── Autenticação ─────────────────────────────────────────────────────────────
@@ -115,7 +109,7 @@ export async function loginUsuario(email: string, senha: string) {
   // Criar sessão (expira em 30 dias)
   const token = crypto.randomBytes(48).toString("hex");
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-  await pool.execute(
+  await getPool().execute(
     `INSERT INTO app_sessions (token, userId, expiresAt) VALUES (?, ?, ?)`,
     [token, user.id, expiresAt]
   );
@@ -124,7 +118,7 @@ export async function loginUsuario(email: string, senha: string) {
 
 export async function validarSessao(token: string) {
   if (!token) return null;
-  const [rows] = await pool.execute(
+  const [rows] = await getPool().execute(
     `SELECT s.userId, s.expiresAt, u.nome, u.email, u.role, u.ativo
      FROM app_sessions s JOIN app_users u ON s.userId = u.id
      WHERE s.token = ? LIMIT 1`,
@@ -134,20 +128,20 @@ export async function validarSessao(token: string) {
   if (!sess) return null;
   if (!sess.ativo) return null;
   if (new Date(sess.expiresAt) < new Date()) {
-    await pool.execute(`DELETE FROM app_sessions WHERE token = ?`, [token]);
+    await getPool().execute(`DELETE FROM app_sessions WHERE token = ?`, [token]);
     return null;
   }
   return { id: sess.userId, nome: sess.nome, email: sess.email, role: sess.role };
 }
 
 export async function logoutSessao(token: string) {
-  await pool.execute(`DELETE FROM app_sessions WHERE token = ?`, [token]);
+  await getPool().execute(`DELETE FROM app_sessions WHERE token = ?`, [token]);
 }
 
 // ─── Permissões ───────────────────────────────────────────────────────────────
 
 export async function listarPermissoesUsuario(userId: number) {
-  const [rows] = await pool.execute(
+  const [rows] = await getPool().execute(
     `SELECT modulo, podeVer, podeCriar, podeEditar, podeDeletar FROM app_permissoes WHERE userId = ?`,
     [userId]
   ) as any;
@@ -173,7 +167,7 @@ export async function salvarPermissoes(userId: number, permissoes: Array<{
   podeDeletar: boolean;
 }>) {
   for (const p of permissoes) {
-    await pool.execute(
+    await getPool().execute(
       `INSERT INTO app_permissoes (userId, modulo, podeVer, podeCriar, podeEditar, podeDeletar)
        VALUES (?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE podeVer=VALUES(podeVer), podeCriar=VALUES(podeCriar),
@@ -187,7 +181,7 @@ export async function verificarPermissao(userId: number, modulo: string, acao: "
   // Admin sempre tem acesso total
   const user = await buscarUsuarioPorId(userId);
   if (user?.role === "admin") return true;
-  const [rows] = await pool.execute(
+  const [rows] = await getPool().execute(
     `SELECT ${acao} FROM app_permissoes WHERE userId = ? AND modulo = ? LIMIT 1`,
     [userId, modulo]
   ) as any;
@@ -196,7 +190,7 @@ export async function verificarPermissao(userId: number, modulo: string, acao: "
 
 // ─── Seed: criar admin padrão se não existir ──────────────────────────────────
 export async function garantirAdminPadrao() {
-  const [rows] = await pool.execute(
+  const [rows] = await getPool().execute(
     `SELECT id FROM app_users WHERE email = 'asbarcellos31@gmail.com' OR role = 'admin' LIMIT 1`
   ) as any;
   if (rows.length === 0) {

@@ -1,31 +1,14 @@
 import { eq, and, or, like, desc, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import mysql from "mysql2/promise";
 import { getDb } from "./db";
 import {
   extratoUploads, extratoComissao, inadimplenteUploads, inadimplentes,
   InsertExtratoComissao, InsertInadimplente,
 } from "../drizzle/schema";
 
-// Pool de conexões mysql2 para queries com JOIN complexo
-// Usa pool em vez de conexão única para evitar "connection is in closed state"
-let _pool: mysql.Pool | null = null;
-function getPool(): mysql.Pool {
-  if (!_pool && process.env.DATABASE_URL) {
-    _pool = mysql.createPool({
-      uri: process.env.DATABASE_URL,
-      connectionLimit: 5,
-      waitForConnections: true,
-      enableKeepAlive: true,
-      keepAliveInitialDelay: 10000,
-    });
-  }
-  if (!_pool) throw new Error("DATABASE_URL não configurado");
-  return _pool;
-}
+import { getPool } from "./sharedPool";
 async function queryPool<T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> {
-  const pool = getPool();
-  const [rows] = await pool.execute(sql, params);
+  const [rows] = await getPool().execute(sql, params);
   return rows as T[];
 }
 
@@ -79,8 +62,7 @@ export async function salvarVendedoresCliente(
   clienteId: number,
   vendedores: { nomeVendedor: string; percentual: number }[]
 ) {
-  const pool = getPool();
-  const conn = await pool.getConnection();
+  const conn = await getPool().getConnection();
   try {
     await conn.beginTransaction();
     await conn.execute(`DELETE FROM cliente_vendedores WHERE clienteId = ?`, [clienteId]);

@@ -1,7 +1,6 @@
 import { Router } from "express";
 import multer from "multer";
 import * as XLSX from "xlsx";
-import mysql from "mysql2/promise";
 import {
   listarTemplates, criarTemplate, atualizarTemplate, excluirTemplate, buscarTemplate, duplicarTemplate,
   listarListas, criarLista, excluirLista, inserirContatos, listarContatos,
@@ -15,14 +14,9 @@ import { eq } from "drizzle-orm";
 import { resolverCorpoTemplate } from "./emailBlocosHtml";
 import { storagePut } from "./storage";
 
-// Pool mysql2/promise para queries raw com parâmetros
-const rawPool = mysql.createPool({
-  uri: process.env.DATABASE_URL!,
-  connectionLimit: 5,
-  enableKeepAlive: true,
-});
+import { getPool } from "./sharedPool";
 async function rawQuery<T = any>(sql: string, params?: any[]): Promise<T[]> {
-  const [rows] = await rawPool.execute(sql, params);
+  const [rows] = await getPool().execute(sql, params);
   return rows as T[];
 }
 

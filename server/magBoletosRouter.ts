@@ -13,7 +13,6 @@
 import express from "express";
 import { z } from "zod";
 import { router, publicProcedure } from "./_core/trpc";
-import mysql from "mysql2/promise";
 
 // ── Estado dos jobs em memória ────────────────────────────────────────────────
 
@@ -38,23 +37,9 @@ setInterval(() => {
   }
 }, 30 * 60 * 1000);
 
-// ── Pool MySQL para gravar boleto_pdf no banco ────────────────────────────────
-
-let _magPool: mysql.Pool | null = null;
-function getMagPool(): mysql.Pool {
-  if (!_magPool && process.env.DATABASE_URL) {
-    _magPool = mysql.createPool({
-      uri: process.env.DATABASE_URL,
-      connectionLimit: 3,
-      waitForConnections: true,
-      enableKeepAlive: true,
-    });
-  }
-  if (!_magPool) throw new Error("DATABASE_URL não configurado");
-  return _magPool;
-}
+import { getPool } from "./sharedPool";
 async function magQuery<T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> {
-  const [rows] = await getMagPool().execute(sql, params);
+  const [rows] = await getPool().execute(sql, params);
   return rows as T[];
 }
 
@@ -88,7 +73,7 @@ magBoletosExpressRouter.post("/mag/boleto", authMag, async (req, res) => {
     const nome = nomeArquivo || `boleto-${cpfLimpo}.pdf`;
 
     // Salva no banco — atualiza todas as parcelas do CPF naquele upload
-    await getMagPool().execute(
+    await getPool().execute(
       `UPDATE inadimplentes
          SET boleto_pdf = ?, boleto_nome = ?, updatedAt = NOW()
        WHERE REGEXP_REPLACE(cpf, '[^0-9]', '') = ?`,
