@@ -127,10 +127,8 @@ export default function LancamentosMes() {
     if (contasFiltradas.length === 0) { toast.error("Nenhum lançamento para exportar"); return; }
     toast.loading("Gerando PDF...", { id: "pdf-contas" });
     try {
-      const [{ default: jsPDF }, _auto] = await Promise.all([
-        import("jspdf"),
-        import("jspdf-autotable"),
-      ]);
+      const { default: jsPDF } = await import("jspdf");
+      await import("jspdf-autotable");
       const doc = new (jsPDF as any)({ orientation: "landscape", unit: "mm", format: "a4" });
 
       const filtrosAtivos: string[] = [];
