@@ -148,39 +148,79 @@ export default function LancamentosMes() {
       c.valorPago ? parseFloat(String(c.valorPago)).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "-",
     ]);
     import('jspdf').then(({ default: jsPDF }) => {
-      import('jspdf-autotable').then(() => {
-        const doc = new (jsPDF as any)({ orientation: "landscape", unit: "mm", format: "a4" });
-        let nextY = addBarcellosHeader(doc as any, "Contas a Pagar", subtitle);
-        const pageW = doc.internal.pageSize.getWidth();
-        const cardW = (pageW - 28) / 3;
-        [
-          { label: "TOTAL", valor: fmtBRL(totalValor), cor: [30, 64, 175] },
-          { label: "TOTAL PAGO", valor: fmtBRL(totalPg), cor: [6, 95, 70] },
-          { label: "A PAGAR / PENDENTE", valor: fmtBRL(totalPend), cor: [146, 64, 14] },
-        ].forEach((card, i) => {
-          const x = 14 + i * (cardW + 4);
-          doc.setFillColor(245, 247, 252);
-          doc.rect(x, nextY, cardW, 12, "F");
-          doc.setFontSize(7); doc.setFont("helvetica", "normal"); doc.setTextColor(100, 100, 120);
-          doc.text(card.label, x + 4, nextY + 5);
-          doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(card.cor[0], card.cor[1], card.cor[2]);
-          doc.text(card.valor, x + 4, nextY + 10);
+      const doc = new (jsPDF as any)({ orientation: "landscape", unit: "mm", format: "a4" });
+      let y = addBarcellosHeader(doc as any, "Contas a Pagar", subtitle);
+      const pageW = doc.internal.pageSize.getWidth();
+      const pageH = doc.internal.pageSize.getHeight();
+
+      // Cards de resumo
+      const cardW = (pageW - 28) / 3;
+      [
+        { label: "TOTAL", valor: fmtBRL(totalValor), cor: [30, 64, 175] },
+        { label: "TOTAL PAGO", valor: fmtBRL(totalPg), cor: [6, 95, 70] },
+        { label: "A PAGAR / PENDENTE", valor: fmtBRL(totalPend), cor: [146, 64, 14] },
+      ].forEach((card, i) => {
+        const x = 14 + i * (cardW + 4);
+        doc.setFillColor(245, 247, 252); doc.rect(x, y, cardW, 12, "F");
+        doc.setFontSize(7); doc.setFont("helvetica", "normal"); doc.setTextColor(100, 100, 120);
+        doc.text(card.label, x + 3, y + 4.5);
+        doc.setFontSize(9); doc.setFont("helvetica", "bold"); doc.setTextColor(card.cor[0], card.cor[1], card.cor[2]);
+        doc.text(card.valor, x + 3, y + 10);
+      });
+      y += 16;
+
+      // Tabela manual
+      const cols = [
+        { header: "Mês",        w: 18,  align: "left"  },
+        { header: "Descrição",  w: 68,  align: "left"  },
+        { header: "Vencimento", w: 22,  align: "left"  },
+        { header: "Valor",      w: 28,  align: "right" },
+        { header: "Status",     w: 20,  align: "left"  },
+        { header: "Categoria",  w: 30,  align: "left"  },
+        { header: "Vínculo",    w: 22,  align: "left"  },
+        { header: "Valor Pago", w: 28,  align: "right" },
+      ];
+      const rowH = 6;
+      const totalW = cols.reduce((s, c) => s + c.w, 0);
+      const marginL = (pageW - totalW) / 2;
+
+      const drawRow = (row: string[], isHeader: boolean, rowY: number) => {
+        let x = marginL;
+        cols.forEach((col, ci) => {
+          if (isHeader) {
+            doc.setFillColor(30, 64, 175); doc.rect(x, rowY, col.w, rowH, "F");
+            doc.setTextColor(255, 255, 255); doc.setFont("helvetica", "bold"); doc.setFontSize(7);
+          } else {
+            doc.setTextColor(50, 50, 50); doc.setFont("helvetica", "normal"); doc.setFontSize(7);
+          }
+          const text = row[ci] ?? "";
+          const tx = col.align === "right" ? x + col.w - 2 : x + 2;
+          doc.text(text, tx, rowY + 4, { align: col.align as any, maxWidth: col.w - 3 });
+          x += col.w;
         });
-        nextY += 17;
-        (doc as any).autoTable({
-          startY: nextY,
-          head: [["Mês", "Descrição", "Vencimento", "Valor", "Status", "Categoria", "Vínculo", "Valor Pago"]],
-          body: dadosTabela,
-          styles: { fontSize: 7, cellPadding: 2 },
-          headStyles: { fillColor: [30, 64, 175], textColor: 255, fontStyle: "bold" },
-          alternateRowStyles: { fillColor: [245, 247, 255] },
-          columnStyles: { 3: { halign: "right" }, 7: { halign: "right" } },
-        });
-        addBarcellosFooter(doc as any);
-        doc.save(`contas_pagar_${MESES[mes - 1]}_${ano}${filtrosAtivos.length ? "_filtrado" : ""}.pdf`);
-        toast.success("PDF gerado!", { id: "pdf-contas" });
-      }).catch((e: any) => { console.error(e); toast.error("Erro autotable: " + e.message, { id: "pdf-contas" }); });
-    }).catch((e: any) => { console.error(e); toast.error("Erro jsPDF: " + e.message, { id: "pdf-contas" }); });
+        doc.setDrawColor(220, 220, 230); doc.setLineWidth(0.1);
+        doc.line(marginL, rowY + rowH, marginL + totalW, rowY + rowH);
+      };
+
+      drawRow(cols.map(c => c.header), true, y);
+      y += rowH;
+
+      dadosTabela.forEach((row, ri) => {
+        if (y + rowH > pageH - 12) {
+          doc.addPage();
+          y = 15;
+          drawRow(cols.map(c => c.header), true, y);
+          y += rowH;
+        }
+        if (ri % 2 === 1) { doc.setFillColor(245, 247, 255); doc.rect(marginL, y, totalW, rowH, "F"); }
+        drawRow(row, false, y);
+        y += rowH;
+      });
+
+      addBarcellosFooter(doc as any);
+      doc.save(`contas_pagar_${MESES[mes - 1]}_${ano}${filtrosAtivos.length ? "_filtrado" : ""}.pdf`);
+      toast.success("PDF gerado!", { id: "pdf-contas" });
+    }).catch((e: any) => { console.error(e); toast.error("Erro ao gerar PDF: " + e.message, { id: "pdf-contas" }); });
   };
 
   return (
