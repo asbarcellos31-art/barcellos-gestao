@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,11 +60,19 @@ export default function ContaForm({ open, onClose, onSuccess, contaId, defaultMe
   const [mesesRecorrencia, setMesesRecorrencia] = useState(12);
   const [parcelado, setParcelado] = useState(false);
   const [numParcelas, setNumParcelas] = useState(2);
+  const formCarregado = useRef(false);
 
-  // Gerenciar carregamento de dados quando modal abre/fecha
+  const toDateStr = (val: unknown): string => {
+    if (!val) return "";
+    if (val instanceof Date) {
+      // Usa UTC para evitar deslocamento de fuso
+      return `${val.getUTCFullYear()}-${String(val.getUTCMonth() + 1).padStart(2, "0")}-${String(val.getUTCDate()).padStart(2, "0")}`;
+    }
+    return String(val).substring(0, 10);
+  };
+
   useEffect(() => {
     if (!open) {
-      // Limpar formulário quando modal fecha
       setForm({
         descricao: "",
         dataVencimento: "",
@@ -80,17 +88,15 @@ export default function ContaForm({ open, onClose, onSuccess, contaId, defaultMe
       });
       setRecorrente(false);
       setParcelado(false);
-    } else if (open && contaExistente) {
-      // Carregar dados da conta existente
-      const venc = String(contaExistente.dataVencimento).substring(0, 10);
-      const pag = contaExistente.dataPagamento
-        ? String(contaExistente.dataPagamento).substring(0, 10)
-        : "";
+      formCarregado.current = false;
+    } else if (open && contaExistente && !formCarregado.current) {
+      // Popula apenas uma vez por abertura — evita sobrescrita por refetch em background
+      formCarregado.current = true;
       setForm({
         descricao: contaExistente.descricao,
-        dataVencimento: venc,
+        dataVencimento: toDateStr(contaExistente.dataVencimento),
         valor: String(contaExistente.valor),
-        dataPagamento: pag,
+        dataPagamento: toDateStr(contaExistente.dataPagamento),
         status: contaExistente.status,
         categoria: contaExistente.categoria,
         vinculo: contaExistente.vinculo,
@@ -100,7 +106,6 @@ export default function ContaForm({ open, onClose, onSuccess, contaId, defaultMe
         tipo: ((contaExistente as any).tipo ?? "DESPESA") as "RECEITA" | "DESPESA",
       });
     } else if (open && !contaId) {
-      // Inicializar para nova conta
       setForm(f => ({
         ...f,
         mes: defaultMes ?? new Date().getMonth() + 1,
@@ -117,6 +122,7 @@ export default function ContaForm({ open, onClose, onSuccess, contaId, defaultMe
     utils.contas.custosPorCategoria.invalidate();
     utils.contas.alertas.invalidate();
     utils.contas.vencidas.invalidate();
+    utils.contas.buscarPorId.invalidate();
   };
 
   const criar = trpc.contas.criar.useMutation({
