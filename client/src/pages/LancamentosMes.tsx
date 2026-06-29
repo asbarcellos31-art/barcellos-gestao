@@ -158,7 +158,7 @@ export default function LancamentosMes() {
       cards.forEach((card, i) => {
         const x = 14 + i * (cardW + 4);
         doc.setFillColor(245, 247, 252);
-        doc.roundedRect(x, nextY, cardW, 12, 2, 2, "F");
+        doc.rect(x, nextY, cardW, 12, "F");
         doc.setFontSize(7);
         doc.setFont("helvetica", "normal");
         doc.setTextColor(100, 100, 120);
@@ -193,7 +193,8 @@ export default function LancamentosMes() {
       doc.save(`contas_pagar_${MESES[mes - 1]}_${ano}${filtrosAtivos.length ? "_filtrado" : ""}.pdf`);
       toast.success("PDF gerado!", { id: "pdf-contas" });
     } catch (e) {
-      toast.error("Erro ao gerar PDF", { id: "pdf-contas" });
+      console.error("Erro ao gerar PDF:", e);
+      toast.error("Erro ao gerar PDF: " + (e instanceof Error ? e.message : String(e)), { id: "pdf-contas" });
     }
   };
 
