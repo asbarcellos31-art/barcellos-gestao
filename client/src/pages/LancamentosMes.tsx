@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import ExportButton from "@/components/ExportButton";
+import { addBarcellosHeader, addBarcellosFooter } from "@/lib/pdfHelpers";
 import { toast } from "sonner";
 import { MESES, CATEGORIAS, STATUS_COLORS, VINCULOS } from "../../../shared/constants";
 import { cn } from "@/lib/utils";
@@ -122,6 +123,80 @@ export default function LancamentosMes() {
 
   const filtroAtivo = filtroTipo !== "TODOS" || filtroCategoria !== "TODAS" || filtroVinculo !== "TODOS";
 
+  const exportarPDF = async () => {
+    if (contasFiltradas.length === 0) { toast.error("Nenhum lançamento para exportar"); return; }
+    toast.loading("Gerando PDF...", { id: "pdf-contas" });
+    try {
+      const [{ default: jsPDF }, _auto] = await Promise.all([
+        import("jspdf"),
+        import("jspdf-autotable"),
+      ]);
+      const doc = new (jsPDF as any)({ orientation: "landscape", unit: "mm", format: "a4" });
+
+      const filtrosAtivos: string[] = [];
+      if (filtroTipo !== "TODOS") filtrosAtivos.push(filtroTipo === "RECEITA" ? "Receitas" : "Despesas");
+      if (filtroStatus !== "TODOS") filtrosAtivos.push({ PAGO: "Pagos", PENDENTE: "Pendentes", ATRASADO: "Atrasados" }[filtroStatus] ?? filtroStatus);
+      if (filtroVinculo !== "TODOS") filtrosAtivos.push(filtroVinculo);
+      if (filtroCategoria !== "TODAS") filtrosAtivos.push(CATEGORIAS[filtroCategoria] ?? filtroCategoria);
+      const subtituloFiltros = filtrosAtivos.length ? ` · ${filtrosAtivos.join(", ")}` : "";
+      const subtitle = `${MESES[mes - 1]} ${ano}${subtituloFiltros} · ${contasFiltradas.length} lançamento(s)`;
+
+      let nextY = addBarcellosHeader(doc as any, "Contas a Pagar", subtitle);
+
+      // Cards de resumo
+      const totalValor = contasFiltradas.reduce((a, c) => a + parseFloat(String(c.valor)), 0);
+      const totalPg = contasFiltradas.filter(c => c.status === "PAGO").reduce((a, c) => a + parseFloat(String(c.valorPago ?? c.valor)), 0);
+      const totalPend = contasFiltradas.filter(c => c.status !== "PAGO").reduce((a, c) => a + parseFloat(String(c.valor)), 0);
+      const fmtBRL = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+      const pageW = doc.internal.pageSize.getWidth();
+      const cardW = (pageW - 28) / 3;
+      const cards = [
+        { label: "Total", valor: fmtBRL(totalValor), cor: [30, 64, 175] as [number,number,number] },
+        { label: "Total Pago", valor: fmtBRL(totalPg), cor: [6, 95, 70] as [number,number,number] },
+        { label: "A Pagar / Pendente", valor: fmtBRL(totalPend), cor: [146, 64, 14] as [number,number,number] },
+      ];
+      cards.forEach((card, i) => {
+        const x = 14 + i * (cardW + 4);
+        doc.setFillColor(245, 247, 252);
+        doc.roundedRect(x, nextY, cardW, 12, 2, 2, "F");
+        doc.setFontSize(7);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(100, 100, 120);
+        doc.text(card.label.toUpperCase(), x + 4, nextY + 5);
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(...card.cor);
+        doc.text(card.valor, x + 4, nextY + 10);
+      });
+      nextY += 17;
+
+      (doc as any).autoTable({
+        startY: nextY,
+        head: [["Mês", "Descrição", "Vencimento", "Valor", "Status", "Categoria", "Vínculo", "Valor Pago"]],
+        body: contasFiltradas.map(c => [
+          MESES[c.mes - 1],
+          c.descricao,
+          formatDate(c.dataVencimento),
+          parseFloat(String(c.valor)).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+          c.status,
+          CATEGORIAS[c.categoria] ?? c.categoria,
+          c.vinculo,
+          c.valorPago ? parseFloat(String(c.valorPago)).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "-",
+        ]),
+        styles: { fontSize: 7, cellPadding: 2 },
+        headStyles: { fillColor: [30, 64, 175], textColor: 255, fontStyle: "bold" },
+        alternateRowStyles: { fillColor: [245, 247, 255] },
+        columnStyles: { 3: { halign: "right" }, 7: { halign: "right" } },
+      });
+
+      addBarcellosFooter(doc as any);
+      doc.save(`contas_pagar_${MESES[mes - 1]}_${ano}${filtrosAtivos.length ? "_filtrado" : ""}.pdf`);
+      toast.success("PDF gerado!", { id: "pdf-contas" });
+    } catch (e) {
+      toast.error("Erro ao gerar PDF", { id: "pdf-contas" });
+    }
+  };
+
   return (
     <AppLayout>
       <div className="p-3 md:p-6">
@@ -132,14 +207,7 @@ export default function LancamentosMes() {
             <p className="text-sm text-gray-500 mt-0.5">{contas.length} lançamento(s)</p>
           </div>
           <div className="flex items-center gap-2">
-            <ExportButton
-              mes={mes}
-              ano={ano}
-              filtroTipo={filtroTipo}
-              filtroStatus={filtroStatus}
-              filtroVinculo={filtroVinculo}
-              filtroCategoria={filtroCategoria}
-            />
+            <ExportButton mes={mes} ano={ano} filtroTipo={filtroTipo} filtroStatus={filtroStatus} filtroVinculo={filtroVinculo} filtroCategoria={filtroCategoria} onPDF={exportarPDF} />
             <Button onClick={handleNew} className="gap-2">
               <Plus className="w-4 h-4" /> Nova Conta
             </Button>

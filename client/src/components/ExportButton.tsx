@@ -16,6 +16,7 @@ interface ExportButtonProps {
   filtroStatus?: string;
   filtroVinculo?: string;
   filtroCategoria?: string;
+  onPDF?: () => void;
 }
 
 export default function ExportButton({
@@ -25,6 +26,7 @@ export default function ExportButton({
   filtroStatus,
   filtroVinculo,
   filtroCategoria,
+  onPDF,
 }: ExportButtonProps) {
   const [loading, setLoading] = useState(false);
 
@@ -75,9 +77,9 @@ export default function ExportButton({
           <FileSpreadsheet className="w-4 h-4 text-green-600" />
           Exportar Excel (.xlsx)
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => handleExport("pdf")} className="gap-2 cursor-pointer">
+        <DropdownMenuItem onClick={() => onPDF ? onPDF() : handleExport("pdf")} className="gap-2 cursor-pointer">
           <FileText className="w-4 h-4 text-red-600" />
-          Visualizar / Imprimir PDF
+          Exportar PDF
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
