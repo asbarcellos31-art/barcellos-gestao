@@ -86,7 +86,12 @@ export default function TodosLancamentos() {
             <p className="text-sm text-gray-500 mt-0.5">{contasFiltradas.length} de {contas.length} lançamentos · {formatCurrency(totalFiltrado)}</p>
           </div>
           <div className="flex items-center gap-2">
-            <ExportButton ano={new Date().getFullYear()} />
+            <ExportButton
+              ano={ano}
+              mes={filtroMes !== "todos" ? parseInt(filtroMes) : undefined}
+              filtroStatus={filtroStatus !== "todos" ? filtroStatus.toUpperCase() : undefined}
+              filtroVinculo={filtroVinculo !== "todos" ? filtroVinculo : undefined}
+            />
             <Button onClick={() => { setEditId(undefined); setFormOpen(true); }} className="gap-2">
               <Plus className="w-4 h-4" /> Nova Conta
             </Button>

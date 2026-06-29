@@ -12,15 +12,30 @@ import { toast } from "sonner";
 interface ExportButtonProps {
   mes?: number;
   ano?: number;
+  filtroTipo?: string;
+  filtroStatus?: string;
+  filtroVinculo?: string;
+  filtroCategoria?: string;
 }
 
-export default function ExportButton({ mes, ano = new Date().getFullYear() }: ExportButtonProps) {
+export default function ExportButton({
+  mes,
+  ano = new Date().getFullYear(),
+  filtroTipo,
+  filtroStatus,
+  filtroVinculo,
+  filtroCategoria,
+}: ExportButtonProps) {
   const [loading, setLoading] = useState(false);
 
   const buildUrl = (format: "excel" | "pdf") => {
     const params = new URLSearchParams();
     params.set("ano", String(ano));
     if (mes) params.set("mes", String(mes));
+    if (filtroTipo && filtroTipo !== "TODOS") params.set("tipo", filtroTipo);
+    if (filtroStatus && filtroStatus !== "TODOS") params.set("status", filtroStatus);
+    if (filtroVinculo && filtroVinculo !== "TODOS") params.set("vinculo", filtroVinculo);
+    if (filtroCategoria && filtroCategoria !== "TODAS") params.set("categoria", filtroCategoria);
     return `/api/export/${format}?${params.toString()}`;
   };
 

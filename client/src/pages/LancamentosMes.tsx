@@ -132,7 +132,14 @@ export default function LancamentosMes() {
             <p className="text-sm text-gray-500 mt-0.5">{contas.length} lançamento(s)</p>
           </div>
           <div className="flex items-center gap-2">
-            <ExportButton mes={mes} ano={ano} />
+            <ExportButton
+              mes={mes}
+              ano={ano}
+              filtroTipo={filtroTipo}
+              filtroStatus={filtroStatus}
+              filtroVinculo={filtroVinculo}
+              filtroCategoria={filtroCategoria}
+            />
             <Button onClick={handleNew} className="gap-2">
               <Plus className="w-4 h-4" /> Nova Conta
             </Button>
