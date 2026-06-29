@@ -133,9 +133,10 @@ export default function LancamentosMes() {
     if (filtroCategoria !== "TODAS") filtrosAtivos.push(CATEGORIAS[filtroCategoria] ?? filtroCategoria);
     const subtituloFiltros = filtrosAtivos.length ? ` · ${filtrosAtivos.join(", ")}` : "";
     const subtitle = `${MESES[mes - 1]} ${ano}${subtituloFiltros} · ${contasFiltradas.length} lançamento(s)`;
-    const totalValor = contasFiltradas.reduce((a, c) => a + parseFloat(String(c.valor)), 0);
-    const totalPg = contasFiltradas.filter(c => c.status === "PAGO").reduce((a, c) => a + parseFloat(String(c.valorPago ?? c.valor)), 0);
-    const totalPend = contasFiltradas.filter(c => c.status !== "PAGO").reduce((a, c) => a + parseFloat(String(c.valor)), 0);
+    const totalRec  = contasFiltradas.filter(c => (c as any).tipo === "RECEITA").reduce((a, c) => a + parseFloat(String(c.valor)), 0);
+    const totalDesp = contasFiltradas.filter(c => (c as any).tipo !== "RECEITA").reduce((a, c) => a + parseFloat(String(c.valor)), 0);
+    const totalPg   = contasFiltradas.filter(c => (c as any).tipo !== "RECEITA" && c.status === "PAGO").reduce((a, c) => a + parseFloat(String(c.valorPago ?? c.valor)), 0);
+    const totalPend = contasFiltradas.filter(c => (c as any).tipo !== "RECEITA" && c.status !== "PAGO").reduce((a, c) => a + parseFloat(String(c.valor)), 0);
     const fmtBRL = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
     const dadosTabela = contasFiltradas.map(c => [
       MESES[c.mes - 1],
@@ -154,11 +155,12 @@ export default function LancamentosMes() {
       const pageH = doc.internal.pageSize.getHeight();
 
       // Cards de resumo
-      const cardW = (pageW - 28) / 3;
+      const cardW = (pageW - 28) / 4;
       [
-        { label: "TOTAL", valor: fmtBRL(totalValor), cor: [30, 64, 175] },
-        { label: "TOTAL PAGO", valor: fmtBRL(totalPg), cor: [6, 95, 70] },
-        { label: "A PAGAR / PENDENTE", valor: fmtBRL(totalPend), cor: [146, 64, 14] },
+        { label: "RECEITAS", valor: fmtBRL(totalRec), cor: [6, 95, 70] },
+        { label: "DESPESAS", valor: fmtBRL(totalDesp), cor: [153, 27, 27] },
+        { label: "PAGO", valor: fmtBRL(totalPg), cor: [30, 64, 175] },
+        { label: "A PAGAR", valor: fmtBRL(totalPend), cor: [146, 64, 14] },
       ].forEach((card, i) => {
         const x = 14 + i * (cardW + 4);
         doc.setFillColor(245, 247, 252); doc.rect(x, y, cardW, 12, "F");
