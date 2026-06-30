@@ -239,6 +239,7 @@ export const whatsappRouter = router({
         listaId: z.number().optional(),
         dataAgendadaLocal: z.string().optional(),
         intervaloMs: z.number().optional(),
+        limiteDiario: z.number().optional(),
       })
     )
     .mutation(async ({ input }) => {
@@ -249,6 +250,7 @@ export const whatsappRouter = router({
       if (input.mensagem) updates.mensagem = input.mensagem;
       if (input.listaId !== undefined) updates.listaId = input.listaId;
       if (input.intervaloMs !== undefined) updates.intervaloMs = input.intervaloMs;
+      if (input.limiteDiario !== undefined) updates.limiteDiario = input.limiteDiario;
       if (input.dataAgendadaLocal !== undefined) {
         updates.dataAgendada = input.dataAgendadaLocal
           ? parseDatetimeLocalBrasilia(input.dataAgendadaLocal)
