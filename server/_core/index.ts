@@ -57,6 +57,9 @@ async function startServer() {
       sql`ALTER TABLE inadimplentes ADD COLUMN boleto_nome VARCHAR(255)`,
       sql`ALTER TABLE tarefa_ocorrencias MODIFY COLUMN status ENUM('PENDENTE','CONCLUIDA','ATRASADA','CANCELADA') NOT NULL DEFAULT 'PENDENTE'`,
       sql`ALTER TABLE tarefa_ocorrencias ADD UNIQUE INDEX uq_tarefa_ocorrencia (tarefaId, appUserId, data)`,
+      sql`ALTER TABLE whatsapp_campanhas ADD COLUMN limiteDiario INT NOT NULL DEFAULT 0`,
+      sql`ALTER TABLE whatsapp_campanhas ADD COLUMN enviadosHoje INT NOT NULL DEFAULT 0`,
+      sql`ALTER TABLE whatsapp_campanhas ADD COLUMN dataUltimoEnvio TIMESTAMP NULL`,
       sql`CREATE TABLE IF NOT EXISTS timer_ativo (
         appUserId INT NOT NULL PRIMARY KEY,
         tarefaId INT NOT NULL,
