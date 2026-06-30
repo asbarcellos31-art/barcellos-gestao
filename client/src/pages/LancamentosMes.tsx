@@ -219,6 +219,53 @@ export default function LancamentosMes() {
         y += rowH;
       });
 
+      // Resumo por vínculo (pessoa)
+      const porVinculo: Record<string, { total: number; pago: number }> = {};
+      contasFiltradas
+        .filter(c => (c as any).tipo !== "RECEITA")
+        .forEach(c => {
+          const v = c.vinculo || "Sem vínculo";
+          if (!porVinculo[v]) porVinculo[v] = { total: 0, pago: 0 };
+          porVinculo[v].total += parseFloat(String(c.valor));
+          if (c.status === "PAGO") porVinculo[v].pago += parseFloat(String(c.valorPago ?? c.valor));
+        });
+      const vinculos = Object.entries(porVinculo).sort((a, b) => b[1].total - a[1].total);
+
+      if (vinculos.length > 0) {
+        if (y + 10 + vinculos.length * 7 > pageH - 12) { doc.addPage(); y = 15; }
+        else y += 8;
+
+        doc.setFontSize(9); doc.setFont("helvetica", "bold"); doc.setTextColor(30, 64, 175);
+        doc.text("Resumo por Pessoa (Despesas)", marginL, y + 5);
+        y += 10;
+
+        const vW = [50, 45, 45];
+        const vHeaders = ["Pessoa", "Total Despesas", "Total Pago"];
+        let vx = marginL;
+        // cabeçalho
+        vHeaders.forEach((h, i) => {
+          doc.setFillColor(30, 64, 175); doc.rect(vx, y, vW[i], 6, "F");
+          doc.setFontSize(7); doc.setFont("helvetica", "bold"); doc.setTextColor(255, 255, 255);
+          doc.text(h, i === 0 ? vx + 2 : vx + vW[i] - 2, y + 4, { align: i === 0 ? "left" : "right" });
+          vx += vW[i];
+        });
+        y += 6;
+
+        vinculos.forEach(([nome, vals], ri) => {
+          if (ri % 2 === 1) { doc.setFillColor(245, 247, 255); doc.rect(marginL, y, vW[0] + vW[1] + vW[2], 6, "F"); }
+          vx = marginL;
+          const cells = [nome, fmtBRL(vals.total), fmtBRL(vals.pago)];
+          cells.forEach((txt, i) => {
+            doc.setFontSize(7); doc.setFont("helvetica", i === 0 ? "bold" : "normal"); doc.setTextColor(50, 50, 50);
+            doc.text(txt, i === 0 ? vx + 2 : vx + vW[i] - 2, y + 4, { align: i === 0 ? "left" : "right" });
+            vx += vW[i];
+          });
+          doc.setDrawColor(220, 220, 230); doc.setLineWidth(0.1);
+          doc.line(marginL, y + 6, marginL + vW[0] + vW[1] + vW[2], y + 6);
+          y += 6;
+        });
+      }
+
       addBarcellosFooter(doc as any);
       doc.save(`contas_pagar_${MESES[mes - 1]}_${ano}${filtrosAtivos.length ? "_filtrado" : ""}.pdf`);
       toast.success("PDF gerado!", { id: "pdf-contas" });
