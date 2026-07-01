@@ -544,6 +544,27 @@ export async function obterMetricasMes(mes: number, ano: number) {
   };
 }
 
+// ─── Vendas por mês do ano (para Metas page) — mesma query do obterMetricasMes ───
+export async function vendasMensaisPorAno(ano: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const [rows] = await db.execute(
+    sql`SELECT mes, COUNT(*) as propostas,
+      COALESCE(SUM(valorPremio), 0) as totalPremio,
+      COALESCE(SUM(valorComissao), 0) as totalComissao,
+      COALESCE(SUM(CASE WHEN cpfNovo='SIM' THEN 1 ELSE 0 END), 0) as cpfsNovos
+    FROM vendas WHERE ano=${ano}
+    GROUP BY mes ORDER BY mes`
+  ) as any;
+  return (Array.isArray(rows) ? rows : []).map((r: any) => ({
+    mes: Number(r.mes),
+    totalVendas: Number(r.propostas),
+    faturamento: Number(r.totalPremio),
+    comissaoTotal: Number(r.totalComissao),
+    cpfNovos: Number(r.cpfsNovos),
+  }));
+}
+
 // ─── Listar relatórios existentes ─────────────────────────────────────────
 export async function listarRelatorios(ano: number) {
   const db = await getDb();

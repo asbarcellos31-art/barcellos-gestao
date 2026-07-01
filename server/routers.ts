@@ -62,7 +62,7 @@ import { inadimplentesDisparoRouter } from "./inadimplentesDisparoRouter";
 import { enviarAniversarioIndividual } from "./emailAutomacao";
 import { whatsappRouter } from "./whatsappRouter";
 import { magTrpcRouter } from "./magBoletosRouter";
-import { obterRelatorio, salvarRelatorio, obterMetricasMes, listarRelatorios } from "./relatorioExecutivoDb";
+import { obterRelatorio, salvarRelatorio, obterMetricasMes, listarRelatorios, vendasMensaisPorAno } from "./relatorioExecutivoDb";
 import { buscarDadosMensagemDiaria } from "./mensagemDiariaDb";
 import { listarLembretes, criarLembrete, toggleLembrete, excluirLembrete, atualizarLembrete } from "./lembretesDb";
 import { getSessionCookieOptions } from "./_core/cookies";
@@ -449,7 +449,7 @@ export const appRouter = router({
       .query(({ input }) => metricasVendas(input.ano ?? undefined, input.mes ?? undefined)),
     resumoMensal: publicProcedure
       .input(z.object({ ano: z.number() }))
-      .query(({ input }) => resumoMensalVendas(input.ano)),
+      .query(({ input }) => vendasMensaisPorAno(input.ano)),
     criar: publicProcedure
       .input(z.object({
         mes: z.number(), ano: z.number(),
