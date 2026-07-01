@@ -303,14 +303,13 @@ export default function RelatorioExecutivo() {
 
   const pctReceita = m ? (m.metaReceita > 0 ? (m.receitaReal / m.metaReceita) * 100 : 0) : 0;
   const metaVendasEfetiva = m ? (m.metaVendas > 0 ? m.metaVendas : (m.metaPremioVendas || 0)) : 0;
-  const pctVendas = m && metaVendasEfetiva > 0 ? (m.receitaVendas / metaVendasEfetiva) * 100 : 0;
+  // Realizado de vendas = totalPremio (SUM valorPremio), igual ao que Metas→Vendas usa como "Prêmio Real"
+  const pctVendas = m && metaVendasEfetiva > 0 ? (m.totalPremio / metaVendasEfetiva) * 100 : 0;
   const pctPropostas = m ? (m.metaPropostas > 0 ? (m.propostas / m.metaPropostas) * 100 : 0) : 0;
   const pctCpfs = m ? (m.metaCpfs > 0 ? (m.cpfsNovos / m.metaCpfs) * 100 : 0) : 0;
   const pctMargem = m ? (m.receitaReal > 0 ? (m.lucroLiquido / m.receitaReal) * 100 : 0) : 0;
-  // Usa propostas vs metaPropostas como referência de vendas quando metaPropostas está definida
-  const pctVendasEfetivo = m?.metaPropostas > 0 ? pctPropostas : (metaVendasEfetiva > 0 ? pctVendas : 100);
 
-  const statusGeral = pctReceita >= 100 && pctVendasEfetivo >= 100 ? "BOM" : pctReceita >= 80 ? "ATENÇÃO" : "CRÍTICO";
+  const statusGeral = pctReceita >= 100 && pctVendas >= 100 ? "BOM" : pctReceita >= 80 ? "ATENÇÃO" : "CRÍTICO";
   const statusGeralColor = statusGeral === "BOM" ? "#10b981" : statusGeral === "ATENÇÃO" ? "#f59e0b" : "#ef4444";
 
   // Dados para gráfico comparativo de receita
