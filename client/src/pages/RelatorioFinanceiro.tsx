@@ -155,6 +155,7 @@ export default function RelatorioFinanceiro() {
     if (!contasMes) return [];
     const map: Record<string, { pago: number; pendente: number }> = {};
     for (const c of contasMes) {
+      if ((c as any).tipo === "RECEITA") continue;
       if (!map[c.categoria]) map[c.categoria] = { pago: 0, pendente: 0 };
       const v = parseFloat(c.valorPago ?? c.valor ?? "0");
       if (c.status === "PAGO") map[c.categoria].pago += v;
@@ -163,8 +164,8 @@ export default function RelatorioFinanceiro() {
     return Object.entries(map).map(([cat, vals]) => ({ cat, ...vals })).sort((a, b) => (b.pago + b.pendente) - (a.pago + a.pendente));
   }, [contasMes]);
 
-  const totalPago = contasMes?.filter((c: any) => c.status === "PAGO").reduce((s: number, c: any) => s + parseFloat(c.valorPago ?? c.valor ?? "0"), 0) ?? 0;
-  const totalPendente = contasMes?.filter((c: any) => c.status !== "PAGO").reduce((s: number, c: any) => s + parseFloat(c.valor ?? "0"), 0) ?? 0;
+  const totalPago = contasMes?.filter((c: any) => c.status === "PAGO" && (c as any).tipo !== "RECEITA").reduce((s: number, c: any) => s + parseFloat(c.valorPago ?? c.valor ?? "0"), 0) ?? 0;
+  const totalPendente = contasMes?.filter((c: any) => c.status !== "PAGO" && (c as any).tipo !== "RECEITA").reduce((s: number, c: any) => s + parseFloat(c.valor ?? "0"), 0) ?? 0;
 
   // ── Cores do gráfico de pizza ──────────────────────────────────────────────
   const CORES = ["#3b82f6","#8b5cf6","#22c55e","#f59e0b","#ef4444","#06b6d4","#ec4899","#f97316","#84cc16","#a855f7","#14b8a6","#fb923c","#e11d48"];
@@ -210,8 +211,8 @@ export default function RelatorioFinanceiro() {
             <KpiCard label="Despesas" value={fmt(despesaMes)} color="#ef4444" icon={TrendingDown} />
             <KpiCard label="Lucro Líquido" value={fmt(lucroMes)} sub={fmtPct(margemMes) + " de margem"} color={lucroMes >= 0 ? "#3b82f6" : "#ef4444"} icon={DollarSign} />
             <KpiCard label="Meta Vendas" value={metaReceita > 0 ? fmt(metaReceita) : "—"} sub={metaReceita > 0 ? `${fmt(vendasMes)} realizado — ${fmtPct(pctMeta)}` : "Sem meta"} color={pctMeta >= 100 ? "#22c55e" : pctMeta >= 80 ? "#f59e0b" : "#ef4444"} icon={Target} />
-            <KpiCard label="Despesas Pagas" value={fmt((metricasContas as any)?.totalPago ?? 0)} sub="Contas a Pagar" color="#06b6d4" icon={DollarSign} />
-            <KpiCard label="Pendentes" value={fmt((metricasContas as any)?.saldoFinal ?? 0)} sub="A pagar" color="#f59e0b" icon={AlertTriangle} />
+            <KpiCard label="Despesas Pagas" value={fmt(totalPago)} sub="Contas a Pagar" color="#06b6d4" icon={DollarSign} />
+            <KpiCard label="Pendentes" value={fmt(totalPendente)} sub="A pagar" color="#f59e0b" icon={AlertTriangle} />
           </div>
         </section>
 
@@ -527,12 +528,9 @@ export default function RelatorioFinanceiro() {
         <section className="print:break-inside-avoid">
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Movimentação Real — {MESES[mes-1]}</h2>
           {(() => {
-            const despesasPagas = (metricasContas as any)?.totalPago ?? 0;
-            const receitasRecebidas = (metricasContas as any)?.totalRecebido ?? 0;
             const extratoSaidas = extratoMes?.totalSaidas ?? 0;
-            const extratoEntradas = extratoMes?.totalEntradas ?? 0;
-            const totalSaidas = despesasPagas + extratoSaidas;
-            const totalEntradas = receitasRecebidas + extratoEntradas;
+            const totalSaidas = totalPago + extratoSaidas;
+            const totalEntradas = receitaMes;
             const saldo = totalEntradas - totalSaidas;
             return (
               <div className="space-y-3">
@@ -540,12 +538,12 @@ export default function RelatorioFinanceiro() {
                   <div className="bg-green-50 rounded-xl p-4 text-center">
                     <div className="text-xs text-green-600 font-semibold mb-1">Total Entradas</div>
                     <div className="text-lg font-bold text-green-700">{fmt(totalEntradas)}</div>
-                    <div className="text-xs text-gray-400 mt-1">Contas: {fmt(receitasRecebidas)}{extratoEntradas > 0 ? ` + Extrato: ${fmt(extratoEntradas)}` : ""}</div>
+                    <div className="text-xs text-gray-400 mt-1">DRE — Comissões do mês</div>
                   </div>
                   <div className="bg-red-50 rounded-xl p-4 text-center">
                     <div className="text-xs text-red-600 font-semibold mb-1">Total Saídas</div>
                     <div className="text-lg font-bold text-red-700">{fmt(totalSaidas)}</div>
-                    <div className="text-xs text-gray-400 mt-1">Contas: {fmt(despesasPagas)}{extratoSaidas > 0 ? ` + Extrato: ${fmt(extratoSaidas)}` : ""}</div>
+                    <div className="text-xs text-gray-400 mt-1">Despesas pagas{extratoSaidas > 0 ? ` + Extrato: ${fmt(extratoSaidas)}` : ""}</div>
                   </div>
                   <div className={`rounded-xl p-4 text-center ${saldo >= 0 ? "bg-blue-50" : "bg-orange-50"}`}>
                     <div className={`text-xs font-semibold mb-1 ${saldo >= 0 ? "text-blue-600" : "text-orange-600"}`}>Saldo</div>
