@@ -388,48 +388,25 @@ export async function metricasVendas(ano?: number, mes?: number) {
 }
 
 export async function resumoMensalVendas(ano: number) {
-  // Duas queries: vendas com mes/ano corretos + vendas com mes=0 usando dataVenda
-  const [rows1] = await getPool().execute(
-    `SELECT mes, COUNT(*) AS totalVendas,
+  const db = await getDb();
+  if (!db) return [];
+  // Mesmo padrão de db.execute(sql`...`) que funciona em relatorioExecutivoDb.ts
+  const [rows] = await db.execute(
+    sql`SELECT mes, COUNT(*) AS totalVendas,
       COALESCE(SUM(valorPremio), 0) AS faturamento,
       COALESCE(SUM(valorComissao), 0) AS comissaoTotal,
       SUM(CASE WHEN cpfNovo = 'SIM' THEN 1 ELSE 0 END) AS cpfNovos
-    FROM vendas WHERE ano = ? AND mes BETWEEN 1 AND 12
-    GROUP BY mes ORDER BY mes`,
-    [ano]
-  ) as any[];
-  const [rows2] = await getPool().execute(
-    `SELECT MONTH(dataVenda) AS mes, COUNT(*) AS totalVendas,
-      COALESCE(SUM(valorPremio), 0) AS faturamento,
-      COALESCE(SUM(valorComissao), 0) AS comissaoTotal,
-      SUM(CASE WHEN cpfNovo = 'SIM' THEN 1 ELSE 0 END) AS cpfNovos
-    FROM vendas WHERE (mes IS NULL OR mes = 0 OR mes NOT BETWEEN 1 AND 12)
-      AND YEAR(dataVenda) = ? AND dataVenda IS NOT NULL
-    GROUP BY MONTH(dataVenda) ORDER BY mes`,
-    [ano]
-  ) as any[];
-  // Merge: rows1 tem prioridade; rows2 complementa meses faltantes
-  const merged: Record<number, any> = {};
-  for (const r of rows1 as any[]) merged[Number(r.mes)] = r;
-  for (const r of rows2 as any[]) {
-    const m = Number(r.mes);
-    if (!merged[m]) merged[m] = r;
-    else {
-      merged[m].totalVendas = Number(merged[m].totalVendas) + Number(r.totalVendas);
-      merged[m].faturamento = Number(merged[m].faturamento) + Number(r.faturamento);
-      merged[m].comissaoTotal = Number(merged[m].comissaoTotal) + Number(r.comissaoTotal);
-      merged[m].cpfNovos = Number(merged[m].cpfNovos) + Number(r.cpfNovos);
-    }
-  }
-  return Object.values(merged)
-    .map((r: any) => ({
-      mes: Number(r.mes),
-      totalVendas: Number(r.totalVendas),
-      faturamento: Number(r.faturamento),
-      comissaoTotal: Number(r.comissaoTotal),
-      cpfNovos: Number(r.cpfNovos),
-    }))
-    .sort((a, b) => a.mes - b.mes);
+    FROM vendas
+    WHERE ano = ${ano} AND mes BETWEEN 1 AND 12
+    GROUP BY mes ORDER BY mes`
+  ) as any;
+  return (Array.isArray(rows) ? rows : []).map((r: any) => ({
+    mes: Number(r.mes),
+    totalVendas: Number(r.totalVendas),
+    faturamento: Number(r.faturamento),
+    comissaoTotal: Number(r.comissaoTotal),
+    cpfNovos: Number(r.cpfNovos),
+  }));
 }
 
 // Comissões pendentes por vendedor
