@@ -523,40 +523,49 @@ export default function RelatorioFinanceiro() {
           )}
         </section>
 
-        {/* ── Extrato Bancário ── */}
+        {/* ── Movimentação Real (Contas + Extrato) ── */}
         <section className="print:break-inside-avoid">
-          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Extrato Bancário — {MESES[mes-1]}</h2>
-          {extratoMes ? (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div className="bg-green-50 rounded-xl p-4 text-center">
-                <div className="text-xs text-green-600 font-semibold mb-1">Entradas</div>
-                <div className="text-lg font-bold text-green-700">{fmt(extratoMes.totalEntradas)}</div>
-              </div>
-              <div className="bg-red-50 rounded-xl p-4 text-center">
-                <div className="text-xs text-red-600 font-semibold mb-1">Saídas</div>
-                <div className="text-lg font-bold text-red-700">{fmt(extratoMes.totalSaidas)}</div>
-              </div>
-              <div className="bg-blue-50 rounded-xl p-4 text-center">
-                <div className="text-xs text-blue-600 font-semibold mb-1">Saldo</div>
-                <div className={`text-lg font-bold ${extratoMes.totalEntradas - extratoMes.totalSaidas >= 0 ? "text-blue-700" : "text-red-700"}`}>
-                  {fmt(extratoMes.totalEntradas - extratoMes.totalSaidas)}
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Movimentação Real — {MESES[mes-1]}</h2>
+          {(() => {
+            const despesasPagas = (metricasContas as any)?.totalPago ?? 0;
+            const receitasRecebidas = (metricasContas as any)?.totalRecebido ?? 0;
+            const extratoSaidas = extratoMes?.totalSaidas ?? 0;
+            const extratoEntradas = extratoMes?.totalEntradas ?? 0;
+            const totalSaidas = despesasPagas + extratoSaidas;
+            const totalEntradas = receitasRecebidas + extratoEntradas;
+            const saldo = totalEntradas - totalSaidas;
+            return (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="bg-green-50 rounded-xl p-4 text-center">
+                    <div className="text-xs text-green-600 font-semibold mb-1">Total Entradas</div>
+                    <div className="text-lg font-bold text-green-700">{fmt(totalEntradas)}</div>
+                    <div className="text-xs text-gray-400 mt-1">Contas: {fmt(receitasRecebidas)}{extratoEntradas > 0 ? ` + Extrato: ${fmt(extratoEntradas)}` : ""}</div>
+                  </div>
+                  <div className="bg-red-50 rounded-xl p-4 text-center">
+                    <div className="text-xs text-red-600 font-semibold mb-1">Total Saídas</div>
+                    <div className="text-lg font-bold text-red-700">{fmt(totalSaidas)}</div>
+                    <div className="text-xs text-gray-400 mt-1">Contas: {fmt(despesasPagas)}{extratoSaidas > 0 ? ` + Extrato: ${fmt(extratoSaidas)}` : ""}</div>
+                  </div>
+                  <div className={`rounded-xl p-4 text-center ${saldo >= 0 ? "bg-blue-50" : "bg-orange-50"}`}>
+                    <div className={`text-xs font-semibold mb-1 ${saldo >= 0 ? "text-blue-600" : "text-orange-600"}`}>Saldo</div>
+                    <div className={`text-lg font-bold ${saldo >= 0 ? "text-blue-700" : "text-red-700"}`}>{fmt(saldo)}</div>
+                  </div>
+                  <div className="bg-gray-50 rounded-xl p-4 text-center">
+                    <div className="text-xs text-gray-600 font-semibold mb-1">Extrato Bancário</div>
+                    {extratoMes ? (
+                      <>
+                        <div className="text-sm font-bold text-gray-700">{extratoMes.totalLancamentos} lançamentos</div>
+                        <Badge className={`text-xs mt-1 ${extratoMes.confirmado ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>
+                          {extratoMes.confirmado ? "Confirmado" : "Pendente"}
+                        </Badge>
+                      </>
+                    ) : <div className="text-xs text-gray-400 mt-2">Não importado</div>}
+                  </div>
                 </div>
               </div>
-              <div className="bg-gray-50 rounded-xl p-4 text-center">
-                <div className="text-xs text-gray-600 font-semibold mb-1">Lançamentos</div>
-                <div className="text-lg font-bold text-gray-700">{extratoMes.totalLancamentos}</div>
-                <Badge className={`text-xs mt-1 ${extratoMes.confirmado ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>
-                  {extratoMes.confirmado ? "Confirmado" : "Pendente"}
-                </Badge>
-              </div>
-            </div>
-          ) : (
-            <Card className="border-dashed">
-              <CardContent className="py-8 text-center text-gray-400">
-                Nenhum extrato importado para {MESES[mes-1]} {ano}
-              </CardContent>
-            </Card>
-          )}
+            );
+          })()}
         </section>
 
         {/* ── Comissões por Corretor ── */}
