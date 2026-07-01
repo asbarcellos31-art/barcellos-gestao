@@ -443,24 +443,22 @@ function TabDRE({ ano }: { ano: number }) {
         { mes: autoMes, tipo: "RECEITA" as const, cat: "Comissões Total", sub: null, val: d.comissoesTotal },
         { mes: autoMes, tipo: "DESPESA" as const, cat: "Salários e Remunerações", sub: null, val: d.salariosRemuneracoes },
         { mes: autoMes, tipo: "DESPESA" as const, cat: "Comissões Pagas", sub: null, val: d.comissoesPagas },
-        { mes: autoMes, tipo: "DESPESA" as const, cat: "Contador", sub: null, val: d.contador || 356 },
+        { mes: autoMes, tipo: "DESPESA" as const, cat: "Contador", sub: null, val: d.contador },
         { mes: autoMes, tipo: "DESPESA" as const, cat: "Combustível", sub: null, val: d.combustivel },
         { mes: autoMes, tipo: "DESPESA" as const, cat: "Alimentação", sub: null, val: d.alimentacao },
         { mes: autoMes, tipo: "DESPESA" as const, cat: "Material Escritório", sub: null, val: d.materialEscritorio },
         { mes: autoMes, tipo: "DESPESA" as const, cat: "Cartão de Crédito", sub: null, val: d.cartaoCredito },
-        { mes: autoMes, tipo: "DESPESA" as const, cat: "Marketing", sub: null, val: d.marketing || 2500 },
+        { mes: autoMes, tipo: "DESPESA" as const, cat: "Marketing", sub: null, val: d.marketing },
         { mes: autoMes, tipo: "DESPESA" as const, cat: "Luz", sub: null, val: d.luz },
         { mes: autoMes, tipo: "DESPESA" as const, cat: "Condomínio", sub: null, val: d.condominio },
         { mes: autoMes, tipo: "DESPESA" as const, cat: "Internet", sub: null, val: d.internet },
         { mes: autoMes, tipo: "DESPESA" as const, cat: "Impostos", sub: null, val: d.impostos },
       ];
       for (const s of saves) {
-        if (s.val > 0) {
-          await new Promise<void>((res, rej) => salvarDre.mutate(
-            { mes: s.mes, ano, tipo: s.tipo, categoria: s.cat, subcategoria: s.sub, valor: s.val.toString() },
-            { onSuccess: () => res(), onError: () => rej() }
-          ));
-        }
+        await new Promise<void>((res, rej) => salvarDre.mutate(
+          { mes: s.mes, ano, tipo: s.tipo, categoria: s.cat, subcategoria: s.sub, valor: s.val.toString() },
+          { onSuccess: () => res(), onError: () => rej() }
+        ));
       }
       utils.financeiro.drePorAno.invalidate({ ano });
       toast.success(`DRE de ${MESES[autoMes - 1]} preenchido automaticamente!`);
