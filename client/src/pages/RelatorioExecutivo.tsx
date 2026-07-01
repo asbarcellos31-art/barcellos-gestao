@@ -463,10 +463,10 @@ export default function RelatorioExecutivo() {
                   pct={pctReceita}
                 />
                 <KpiCard
-                  label="Vendas (Comissão)"
-                  value={fmt(m.receitaVendas)}
+                  label="Vendas (Prêmio)"
+                  value={fmt(m.totalPremio)}
                   sub={metaVendasEfetiva > 0 ? `Meta: ${fmt(metaVendasEfetiva)} — ${pctVendas.toFixed(0)}% da meta` : `${m.propostas} vendas realizadas`}
-                  pct={pctVendasEfetivo}
+                  pct={pctVendas}
                 />
                 <KpiCard
                   label="Propostas Aceitas"
