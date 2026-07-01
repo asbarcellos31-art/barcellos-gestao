@@ -388,16 +388,29 @@ export async function metricasVendas(ano?: number, mes?: number) {
 }
 
 export async function resumoMensalVendas(ano: number) {
-  const db = await getDb();
-  if (!db) return [];
-
-  return db.select({
-    mes: vendas.mes,
-    totalVendas: sql<number>`COUNT(*)`,
-    faturamento: sql<number>`SUM(COALESCE(valorPremio, 0))`,
-    comissaoTotal: sql<number>`SUM(COALESCE(valorComissao, 0))`,
-    cpfNovos: sql<number>`SUM(CASE WHEN cpfNovo = 'SIM' THEN 1 ELSE 0 END)`,
-  }).from(vendas).where(eq(vendas.ano, ano)).groupBy(vendas.mes).orderBy(asc(vendas.mes));
+  // Usa pool raw (como relatorioExecutivoDb) para evitar discrepâncias do ORM.
+  // Fallback: se mes=0 ou NULL, extrai mês de dataVenda. Mesmo para ano.
+  const [rows] = await getPool().execute(
+    `SELECT
+      COALESCE(NULLIF(mes, 0), MONTH(dataVenda)) AS mes,
+      COUNT(*) AS totalVendas,
+      COALESCE(SUM(COALESCE(valorPremio, 0)), 0) AS faturamento,
+      COALESCE(SUM(COALESCE(valorComissao, 0)), 0) AS comissaoTotal,
+      COALESCE(SUM(CASE WHEN cpfNovo = 'SIM' THEN 1 ELSE 0 END), 0) AS cpfNovos
+    FROM vendas
+    WHERE (ano = ? OR (COALESCE(ano, 0) = 0 AND YEAR(dataVenda) = ?))
+      AND COALESCE(NULLIF(mes, 0), MONTH(dataVenda)) IS NOT NULL
+    GROUP BY COALESCE(NULLIF(mes, 0), MONTH(dataVenda))
+    ORDER BY mes ASC`,
+    [ano, ano]
+  ) as any[];
+  return (rows as any[]).map((r: any) => ({
+    mes: Number(r.mes),
+    totalVendas: Number(r.totalVendas),
+    faturamento: Number(r.faturamento),
+    comissaoTotal: Number(r.comissaoTotal),
+    cpfNovos: Number(r.cpfNovos),
+  }));
 }
 
 // Comissões pendentes por vendedor
