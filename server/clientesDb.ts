@@ -388,29 +388,48 @@ export async function metricasVendas(ano?: number, mes?: number) {
 }
 
 export async function resumoMensalVendas(ano: number) {
-  // Usa pool raw (como relatorioExecutivoDb) para evitar discrepâncias do ORM.
-  // Fallback: se mes=0 ou NULL, extrai mês de dataVenda. Mesmo para ano.
-  const [rows] = await getPool().execute(
-    `SELECT
-      COALESCE(NULLIF(mes, 0), MONTH(dataVenda)) AS mes,
-      COUNT(*) AS totalVendas,
-      COALESCE(SUM(COALESCE(valorPremio, 0)), 0) AS faturamento,
-      COALESCE(SUM(COALESCE(valorComissao, 0)), 0) AS comissaoTotal,
-      COALESCE(SUM(CASE WHEN cpfNovo = 'SIM' THEN 1 ELSE 0 END), 0) AS cpfNovos
-    FROM vendas
-    WHERE (ano = ? OR (COALESCE(ano, 0) = 0 AND YEAR(dataVenda) = ?))
-      AND COALESCE(NULLIF(mes, 0), MONTH(dataVenda)) IS NOT NULL
-    GROUP BY COALESCE(NULLIF(mes, 0), MONTH(dataVenda))
-    ORDER BY mes ASC`,
-    [ano, ano]
+  // Duas queries: vendas com mes/ano corretos + vendas com mes=0 usando dataVenda
+  const [rows1] = await getPool().execute(
+    `SELECT mes, COUNT(*) AS totalVendas,
+      COALESCE(SUM(valorPremio), 0) AS faturamento,
+      COALESCE(SUM(valorComissao), 0) AS comissaoTotal,
+      SUM(CASE WHEN cpfNovo = 'SIM' THEN 1 ELSE 0 END) AS cpfNovos
+    FROM vendas WHERE ano = ? AND mes BETWEEN 1 AND 12
+    GROUP BY mes ORDER BY mes`,
+    [ano]
   ) as any[];
-  return (rows as any[]).map((r: any) => ({
-    mes: Number(r.mes),
-    totalVendas: Number(r.totalVendas),
-    faturamento: Number(r.faturamento),
-    comissaoTotal: Number(r.comissaoTotal),
-    cpfNovos: Number(r.cpfNovos),
-  }));
+  const [rows2] = await getPool().execute(
+    `SELECT MONTH(dataVenda) AS mes, COUNT(*) AS totalVendas,
+      COALESCE(SUM(valorPremio), 0) AS faturamento,
+      COALESCE(SUM(valorComissao), 0) AS comissaoTotal,
+      SUM(CASE WHEN cpfNovo = 'SIM' THEN 1 ELSE 0 END) AS cpfNovos
+    FROM vendas WHERE (mes IS NULL OR mes = 0 OR mes NOT BETWEEN 1 AND 12)
+      AND YEAR(dataVenda) = ? AND dataVenda IS NOT NULL
+    GROUP BY MONTH(dataVenda) ORDER BY mes`,
+    [ano]
+  ) as any[];
+  // Merge: rows1 tem prioridade; rows2 complementa meses faltantes
+  const merged: Record<number, any> = {};
+  for (const r of rows1 as any[]) merged[Number(r.mes)] = r;
+  for (const r of rows2 as any[]) {
+    const m = Number(r.mes);
+    if (!merged[m]) merged[m] = r;
+    else {
+      merged[m].totalVendas = Number(merged[m].totalVendas) + Number(r.totalVendas);
+      merged[m].faturamento = Number(merged[m].faturamento) + Number(r.faturamento);
+      merged[m].comissaoTotal = Number(merged[m].comissaoTotal) + Number(r.comissaoTotal);
+      merged[m].cpfNovos = Number(merged[m].cpfNovos) + Number(r.cpfNovos);
+    }
+  }
+  return Object.values(merged)
+    .map((r: any) => ({
+      mes: Number(r.mes),
+      totalVendas: Number(r.totalVendas),
+      faturamento: Number(r.faturamento),
+      comissaoTotal: Number(r.comissaoTotal),
+      cpfNovos: Number(r.cpfNovos),
+    }))
+    .sort((a, b) => a.mes - b.mes);
 }
 
 // Comissões pendentes por vendedor
