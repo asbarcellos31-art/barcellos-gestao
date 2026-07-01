@@ -110,6 +110,10 @@ export default function RelatorioFinanceiro() {
 
   // ── Extrato do mês ─────────────────────────────────────────────────────────
   const extratoMes = uploadsExtrato?.find((u: any) => u.mes === mes && u.ano === ano);
+  const { data: lancamentosExtrato = [] } = trpc.extratoBancario.listarLancamentos.useQuery(
+    { uploadId: extratoMes?.id ?? 0 },
+    { enabled: !!extratoMes?.id }
+  );
 
   // ── Gráfico: receita x despesa mensal (ano) ───────────────────────────────
   const graficoDre = useMemo(() => {
@@ -528,8 +532,10 @@ export default function RelatorioFinanceiro() {
         <section className="print:break-inside-avoid">
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Movimentação Real — {MESES[mes-1]}</h2>
           {(() => {
-            const extratoSaidas = extratoMes?.totalSaidas ?? 0;
-            const totalSaidas = totalPago + extratoSaidas;
+            const extratoSaidasReal = (lancamentosExtrato as any[])
+              .filter((l: any) => l.tipo === "Saída")
+              .reduce((s: number, l: any) => s + parseFloat(l.valor ?? "0"), 0);
+            const totalSaidas = totalPago + extratoSaidasReal;
             const totalEntradas = receitaMes;
             const saldo = totalEntradas - totalSaidas;
             return (
@@ -543,7 +549,7 @@ export default function RelatorioFinanceiro() {
                   <div className="bg-red-50 rounded-xl p-4 text-center">
                     <div className="text-xs text-red-600 font-semibold mb-1">Total Saídas</div>
                     <div className="text-lg font-bold text-red-700">{fmt(totalSaidas)}</div>
-                    <div className="text-xs text-gray-400 mt-1">Despesas pagas{extratoSaidas > 0 ? ` + Extrato: ${fmt(extratoSaidas)}` : ""}</div>
+                    <div className="text-xs text-gray-400 mt-1">Despesas pagas{extratoSaidasReal > 0 ? ` + Extrato: ${fmt(extratoSaidasReal)}` : ""}</div>
                   </div>
                   <div className={`rounded-xl p-4 text-center ${saldo >= 0 ? "bg-blue-50" : "bg-orange-50"}`}>
                     <div className={`text-xs font-semibold mb-1 ${saldo >= 0 ? "text-blue-600" : "text-orange-600"}`}>Saldo</div>
