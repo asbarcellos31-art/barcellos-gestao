@@ -628,7 +628,7 @@ export default function RelatorioFinanceiro() {
                     <th className="p-3 text-right font-medium">Vendas Real</th>
                     <th className="p-3 text-right font-medium">% Vendas</th>
                     <th className="p-3 text-right font-medium">Meta Carteira</th>
-                    <th className="p-3 text-right font-medium">Carteira Real</th>
+                    <th className="p-3 text-right font-medium">Comissão Total (DRE)</th>
                   </tr>
                 </thead>
                 <tbody>
