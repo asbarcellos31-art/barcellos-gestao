@@ -82,6 +82,7 @@ export default function RelatorioFinanceiro() {
   const { data: metricasComissoes } = trpc.comissoes.metricas.useQuery({ mes, ano });
   const { data: resumoCorretores } = trpc.comissoes.resumoPorCorretor.useQuery({ mes, ano });
   const { data: uploadsExtrato } = trpc.extratoBancario.listarUploads.useQuery();
+  const { data: resumoVendas = [] } = trpc.vendas.resumoMensal.useQuery({ ano });
 
   // ── Cálculos do mês ────────────────────────────────────────────────────────
   const lancMes = dreMes ?? [];
@@ -94,7 +95,8 @@ export default function RelatorioFinanceiro() {
 
   const metaMes = metas?.find((m: any) => m.mes === mes);
   const metaReceita = metaMes ? parseFloat(metaMes.metaReceita) : 0;
-  const pctMeta = metaReceita > 0 ? (receitaMes / metaReceita) * 100 : 0;
+  const vendasMes = Number((resumoVendas as any[]).find((v: any) => Number(v.mes) === mes)?.faturamento || 0);
+  const pctMeta = metaReceita > 0 ? (vendasMes / metaReceita) * 100 : 0;
 
   // ── Cálculos anuais ────────────────────────────────────────────────────────
   const lancAno = dreAno ?? [];
@@ -207,7 +209,7 @@ export default function RelatorioFinanceiro() {
             <KpiCard label="Receita Bruta" value={fmt(receitaMes)} color="#22c55e" icon={TrendingUp} />
             <KpiCard label="Despesas" value={fmt(despesaMes)} color="#ef4444" icon={TrendingDown} />
             <KpiCard label="Lucro Líquido" value={fmt(lucroMes)} sub={fmtPct(margemMes) + " de margem"} color={lucroMes >= 0 ? "#3b82f6" : "#ef4444"} icon={DollarSign} />
-            <KpiCard label="Meta Receita" value={metaReceita > 0 ? fmt(metaReceita) : "—"} sub={metaReceita > 0 ? fmtPct(pctMeta) + " atingido" : "Sem meta"} color={pctMeta >= 100 ? "#22c55e" : pctMeta >= 80 ? "#f59e0b" : "#ef4444"} icon={Target} />
+            <KpiCard label="Meta Vendas" value={metaReceita > 0 ? fmt(metaReceita) : "—"} sub={metaReceita > 0 ? `${fmt(vendasMes)} realizado — ${fmtPct(pctMeta)}` : "Sem meta"} color={pctMeta >= 100 ? "#22c55e" : pctMeta >= 80 ? "#f59e0b" : "#ef4444"} icon={Target} />
             <KpiCard label="Total Pago" value={fmt(totalPago)} sub="Contas a Pagar" color="#06b6d4" icon={DollarSign} />
             <KpiCard label="Pendentes" value={fmt(totalPendente)} sub="A pagar" color="#f59e0b" icon={AlertTriangle} />
           </div>
@@ -622,11 +624,11 @@ export default function RelatorioFinanceiro() {
                 <thead>
                   <tr className="border-b bg-gray-50">
                     <th className="p-3 text-left font-medium">Mês</th>
-                    <th className="p-3 text-right font-medium">Meta Receita</th>
+                    <th className="p-3 text-right font-medium">Meta Vendas</th>
+                    <th className="p-3 text-right font-medium">Vendas Real</th>
+                    <th className="p-3 text-right font-medium">% Vendas</th>
                     <th className="p-3 text-right font-medium">Meta Carteira</th>
-                    <th className="p-3 text-right font-medium">Meta Angariação</th>
-                    <th className="p-3 text-right font-medium">Realizado</th>
-                    <th className="p-3 text-right font-medium">% Meta</th>
+                    <th className="p-3 text-right font-medium">Carteira Real</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -634,22 +636,24 @@ export default function RelatorioFinanceiro() {
                     const idx = i + 1;
                     const meta = metas?.find((mm: any) => mm.mes === idx);
                     if (!meta) return null;
-                    const mr = parseFloat(meta.metaReceita || "0");
+                    const metaVendas = parseFloat(meta.metaReceita || "0");
+                    const vendasReal = Number((resumoVendas as any[]).find((v: any) => Number(v.mes) === idx)?.faturamento || 0);
+                    const pctVendas = metaVendas > 0 ? (vendasReal / metaVendas) * 100 : 0;
                     const lancs = lancAno.filter((l: any) => l.mes === idx);
-                    const real = getVal(lancs, "RECEITA", "Comissões Total", null);
-                    const pct = mr > 0 ? (real / mr) * 100 : 0;
+                    const carteiraReal = getVal(lancs, "RECEITA", "Comissões Total", null);
+                    const metaCarteira = parseFloat(meta.metaCarteira || "0");
                     return (
                       <tr key={i} className={`border-b ${idx === mes ? "bg-blue-50/50" : "hover:bg-gray-50"}`}>
                         <td className="p-3 font-medium">{m}</td>
-                        <td className="p-3 text-right text-yellow-700">{mr > 0 ? fmt(mr) : "—"}</td>
-                        <td className="p-3 text-right text-purple-700">{meta.metaCarteira ? fmt(parseFloat(meta.metaCarteira)) : "—"}</td>
-                        <td className="p-3 text-right text-amber-700">{meta.metaAngariacao ? fmt(parseFloat(meta.metaAngariacao)) : "—"}</td>
-                        <td className="p-3 text-right font-mono">{real > 0 ? fmt(real) : "—"}</td>
+                        <td className="p-3 text-right text-yellow-700">{metaVendas > 0 ? fmt(metaVendas) : "—"}</td>
+                        <td className="p-3 text-right font-mono">{vendasReal > 0 ? fmt(vendasReal) : "—"}</td>
                         <td className="p-3 text-right">
-                          {mr > 0 && real > 0 ? (
-                            <span className={`font-bold ${pct >= 100 ? "text-green-700" : pct >= 80 ? "text-yellow-700" : "text-red-700"}`}>{fmtPct(pct)}</span>
+                          {metaVendas > 0 && vendasReal > 0 ? (
+                            <span className={`font-bold ${pctVendas >= 100 ? "text-green-700" : pctVendas >= 80 ? "text-yellow-700" : "text-red-700"}`}>{fmtPct(pctVendas)}</span>
                           ) : "—"}
                         </td>
+                        <td className="p-3 text-right text-purple-700">{metaCarteira > 0 ? fmt(metaCarteira) : "—"}</td>
+                        <td className="p-3 text-right font-mono">{carteiraReal > 0 ? fmt(carteiraReal) : "—"}</td>
                       </tr>
                     );
                   })}
