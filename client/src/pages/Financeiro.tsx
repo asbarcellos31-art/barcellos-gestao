@@ -390,7 +390,7 @@ function TabDRE({ ano }: { ano: number }) {
   const utils = trpc.useUtils();
   const [editando, setEditando] = useState<string | null>(null);
   const [valoresEdit, setValoresEdit] = useState<Record<string, string>>({});
-  const [autoMes, setAutoMes] = useState<number>(new Date().getMonth() + 1);
+  const [autoMes, setAutoMes] = useState<number>(new Date().getMonth() || 12);
   const [autoLoading, setAutoLoading] = useState(false);
   const autoPreench = trpc.financeiro.autoPreenchimento.useQuery(
     { mes: autoMes, ano },
