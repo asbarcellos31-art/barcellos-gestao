@@ -951,7 +951,7 @@ function TabMetas({ ano }: { ano: number }) {
   const vendasPorMes = useMemo(() => {
     if (!resumoVendas) return {};
     const por: Record<number, number> = {};
-    resumoVendas.forEach((v) => { por[v.mes] = Number(v.comissaoTotal) || 0; });
+    resumoVendas.forEach((v) => { por[v.mes] = Number(v.faturamento) || 0; });
     return por;
   }, [resumoVendas]);
 
