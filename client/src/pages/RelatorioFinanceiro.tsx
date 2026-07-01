@@ -210,8 +210,8 @@ export default function RelatorioFinanceiro() {
             <KpiCard label="Despesas" value={fmt(despesaMes)} color="#ef4444" icon={TrendingDown} />
             <KpiCard label="Lucro Líquido" value={fmt(lucroMes)} sub={fmtPct(margemMes) + " de margem"} color={lucroMes >= 0 ? "#3b82f6" : "#ef4444"} icon={DollarSign} />
             <KpiCard label="Meta Vendas" value={metaReceita > 0 ? fmt(metaReceita) : "—"} sub={metaReceita > 0 ? `${fmt(vendasMes)} realizado — ${fmtPct(pctMeta)}` : "Sem meta"} color={pctMeta >= 100 ? "#22c55e" : pctMeta >= 80 ? "#f59e0b" : "#ef4444"} icon={Target} />
-            <KpiCard label="Total Pago" value={fmt(totalPago)} sub="Contas a Pagar" color="#06b6d4" icon={DollarSign} />
-            <KpiCard label="Pendentes" value={fmt(totalPendente)} sub="A pagar" color="#f59e0b" icon={AlertTriangle} />
+            <KpiCard label="Despesas Pagas" value={fmt((metricasContas as any)?.totalPago ?? 0)} sub="Contas a Pagar" color="#06b6d4" icon={DollarSign} />
+            <KpiCard label="Pendentes" value={fmt((metricasContas as any)?.saldoFinal ?? 0)} sub="A pagar" color="#f59e0b" icon={AlertTriangle} />
           </div>
         </section>
 
