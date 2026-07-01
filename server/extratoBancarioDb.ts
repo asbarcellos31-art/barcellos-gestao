@@ -278,3 +278,40 @@ export async function excluirLancamentosSemCategoria(uploadId: number): Promise<
 export async function excluirLancamentoExtrato(id: number): Promise<void> {
   await getPool().execute("DELETE FROM extrato_bancario WHERE id = ? AND confirmado = FALSE", [id]);
 }
+
+// Corrigir mês/ano de um upload (e dos lançamentos vinculados no Contas a Pagar)
+export async function corrigirMesUploadExtrato(uploadId: number, mes: number, ano: number): Promise<{ contasAtualizadas: number }> {
+  const conn = await getPool().getConnection();
+  try {
+    await conn.beginTransaction();
+
+    await conn.execute(
+      "UPDATE uploads_extrato_bancario SET mes = ?, ano = ? WHERE id = ?",
+      [mes, ano, uploadId]
+    );
+
+    const [rows] = await conn.execute(
+      "SELECT DISTINCT lancamentoContasId FROM extrato_bancario WHERE uploadId = ? AND lancamentoContasId IS NOT NULL",
+      [uploadId]
+    ) as any[];
+
+    let contasAtualizadas = 0;
+    if (rows.length > 0) {
+      const ids = (rows as any[]).map((r: any) => r.lancamentoContasId);
+      const placeholders = ids.map(() => "?").join(",");
+      const [res] = await conn.execute(
+        `UPDATE contas SET mes = ?, ano = ? WHERE id IN (${placeholders})`,
+        [mes, ano, ...ids]
+      ) as any[];
+      contasAtualizadas = res.affectedRows;
+    }
+
+    await conn.commit();
+    return { contasAtualizadas };
+  } catch (e) {
+    await conn.rollback();
+    throw e;
+  } finally {
+    conn.release();
+  }
+}

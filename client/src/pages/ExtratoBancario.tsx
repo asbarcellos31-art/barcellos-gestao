@@ -9,8 +9,11 @@ import { toast } from "sonner";
 import {
   Upload, CheckCircle, AlertCircle, TrendingUp, TrendingDown,
   BarChart3, FileSpreadsheet, Trash2, ChevronDown, ChevronUp,
-  Filter, RefreshCw, ArrowRight
+  Filter, RefreshCw, ArrowRight, Pencil
 } from "lucide-react";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
 
 const MESES = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -47,6 +50,7 @@ export default function ExtratoBancario() {
   const [filtroSemCategoria, setFiltroSemCategoria] = useState(false);
   const [expandirResumo, setExpandirResumo] = useState(true);
   const [abaSelecionada, setAbaSelecionada] = useState<"lancamentos" | "resumo" | "historico">("lancamentos");
+  const [editandoMes, setEditandoMes] = useState<{ uploadId: number; mes: number; ano: number } | null>(null);
 
   const utils = trpc.useUtils();
 
@@ -102,6 +106,13 @@ export default function ExtratoBancario() {
         utils.extratoBancario.resumo.invalidate();
       }
       toast.success("Upload removido.");
+    },
+  });
+  const corrigirMesMut = trpc.extratoBancario.corrigirMes.useMutation({
+    onSuccess: (data) => {
+      utils.extratoBancario.listarUploads.invalidate();
+      setEditandoMes(null);
+      toast.success(`Mês corrigido!${data.contasAtualizadas > 0 ? ` ${data.contasAtualizadas} lançamento(s) no Contas a Pagar também foram atualizados.` : ""}`);
     },
   });
 
@@ -664,6 +675,15 @@ export default function ExtratoBancario() {
                         >
                           Abrir
                         </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs text-amber-600 hover:text-amber-700"
+                          title="Corrigir mês/ano"
+                          onClick={() => setEditandoMes({ uploadId: u.id, mes: u.mes, ano: u.ano })}
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </Button>
                         {!u.confirmado && (
                           <Button
                             variant="ghost"
@@ -683,6 +703,61 @@ export default function ExtratoBancario() {
           </CardContent>
         </Card>
       )}
+
+      {/* Dialog: Corrigir Mês */}
+      <Dialog open={!!editandoMes} onOpenChange={open => { if (!open) setEditandoMes(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Corrigir Mês/Ano do Extrato</DialogTitle>
+          </DialogHeader>
+          {editandoMes && (
+            <div className="space-y-4 py-2">
+              <p className="text-sm text-muted-foreground">
+                Selecione o mês e ano corretos. Se o extrato já foi confirmado, os lançamentos no Contas a Pagar também serão atualizados.
+              </p>
+              <div className="flex gap-2">
+                <Select
+                  value={String(editandoMes.mes)}
+                  onValueChange={v => setEditandoMes(prev => prev ? { ...prev, mes: Number(v) } : null)}
+                >
+                  <SelectTrigger className="flex-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MESES.map((m, i) => (
+                      <SelectItem key={i + 1} value={String(i + 1)}>{m}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={String(editandoMes.ano)}
+                  onValueChange={v => setEditandoMes(prev => prev ? { ...prev, ano: Number(v) } : null)}
+                >
+                  <SelectTrigger className="w-28">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ANOS.map(a => <SelectItem key={a} value={String(a)}>{a}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditandoMes(null)}>Cancelar</Button>
+            <Button
+              disabled={corrigirMesMut.isPending}
+              onClick={() => {
+                if (!editandoMes) return;
+                corrigirMesMut.mutate({ uploadId: editandoMes.uploadId, mes: editandoMes.mes, ano: editandoMes.ano });
+              }}
+            >
+              {corrigirMesMut.isPending ? <RefreshCw className="h-4 w-4 animate-spin mr-2" /> : null}
+              Salvar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

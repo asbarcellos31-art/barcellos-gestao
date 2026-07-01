@@ -41,6 +41,7 @@ import {
   VINCULOS,
   excluirLancamentosSemCategoria,
   excluirLancamentoExtrato,
+  corrigirMesUploadExtrato
 } from "./extratoBancarioDb";
 import { listarOrigens, criarOrigem, atualizarOrigem, excluirOrigem } from "./origensDb";
 import {
@@ -942,6 +943,9 @@ export const appRouter = router({
     excluirLancamento: publicProcedure
       .input(z.object({ id: z.number() }))
       .mutation(({ input }) => excluirLancamentoExtrato(input.id)),
+    corrigirMes: publicProcedure
+      .input(z.object({ uploadId: z.number(), mes: z.number(), ano: z.number() }))
+      .mutation(({ input }) => corrigirMesUploadExtrato(input.uploadId, input.mes, input.ano)),
     listarCategorias: publicProcedure
       .query(() => CATEGORIAS),
     listarVinculos: publicProcedure
