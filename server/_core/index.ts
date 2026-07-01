@@ -425,6 +425,7 @@ async function startServer() {
     createExpressMiddleware({
       router: appRouter,
       createContext,
+      allowMethodOverride: true,
     })
   );
 
