@@ -629,6 +629,7 @@ export default function RelatorioFinanceiro() {
                     <th className="p-3 text-right font-medium">% Vendas</th>
                     <th className="p-3 text-right font-medium">Meta Carteira</th>
                     <th className="p-3 text-right font-medium">Comissão Total (DRE)</th>
+                    <th className="p-3 text-right font-medium">% Carteira</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -642,6 +643,7 @@ export default function RelatorioFinanceiro() {
                     const lancs = lancAno.filter((l: any) => l.mes === idx);
                     const carteiraReal = getVal(lancs, "RECEITA", "Comissões Total", null);
                     const metaCarteira = parseFloat(meta.metaCarteira || "0");
+                    const pctCarteira = metaCarteira > 0 ? (carteiraReal / metaCarteira) * 100 : 0;
                     return (
                       <tr key={i} className={`border-b ${idx === mes ? "bg-blue-50/50" : "hover:bg-gray-50"}`}>
                         <td className="p-3 font-medium">{m}</td>
@@ -654,6 +656,11 @@ export default function RelatorioFinanceiro() {
                         </td>
                         <td className="p-3 text-right text-purple-700">{metaCarteira > 0 ? fmt(metaCarteira) : "—"}</td>
                         <td className="p-3 text-right font-mono">{carteiraReal > 0 ? fmt(carteiraReal) : "—"}</td>
+                        <td className="p-3 text-right">
+                          {metaCarteira > 0 && carteiraReal > 0 ? (
+                            <span className={`font-bold ${pctCarteira >= 100 ? "text-green-700" : pctCarteira >= 80 ? "text-yellow-700" : "text-red-700"}`}>{fmtPct(pctCarteira)}</span>
+                          ) : "—"}
+                        </td>
                       </tr>
                     );
                   })}
