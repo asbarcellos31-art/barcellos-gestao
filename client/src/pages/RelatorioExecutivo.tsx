@@ -307,8 +307,10 @@ export default function RelatorioExecutivo() {
   const pctPropostas = m ? (m.metaPropostas > 0 ? (m.propostas / m.metaPropostas) * 100 : 0) : 0;
   const pctCpfs = m ? (m.metaCpfs > 0 ? (m.cpfsNovos / m.metaCpfs) * 100 : 0) : 0;
   const pctMargem = m ? (m.receitaReal > 0 ? (m.lucroLiquido / m.receitaReal) * 100 : 0) : 0;
+  // Usa propostas vs metaPropostas como referência de vendas quando metaPropostas está definida
+  const pctVendasEfetivo = m?.metaPropostas > 0 ? pctPropostas : (metaVendasEfetiva > 0 ? pctVendas : 100);
 
-  const statusGeral = pctReceita >= 100 && pctVendas >= 100 ? "BOM" : pctReceita >= 80 ? "ATENÇÃO" : "CRÍTICO";
+  const statusGeral = pctReceita >= 100 && pctVendasEfetivo >= 100 ? "BOM" : pctReceita >= 80 ? "ATENÇÃO" : "CRÍTICO";
   const statusGeralColor = statusGeral === "BOM" ? "#10b981" : statusGeral === "ATENÇÃO" ? "#f59e0b" : "#ef4444";
 
   // Dados para gráfico comparativo de receita
@@ -464,14 +466,13 @@ export default function RelatorioExecutivo() {
                 <KpiCard
                   label="Vendas (Comissão)"
                   value={fmt(m.receitaVendas)}
-                  sub={metaVendasEfetiva > 0 ? `Meta: ${fmt(metaVendasEfetiva)}` : `${m.propostas} propostas`}
-                  sub2={metaVendasEfetiva > 0 ? `${pctVendas.toFixed(0)}% da meta` : undefined}
-                  pct={metaVendasEfetiva > 0 ? pctVendas : (pctPropostas || 50)}
+                  sub={metaVendasEfetiva > 0 ? `Meta: ${fmt(metaVendasEfetiva)} — ${pctVendas.toFixed(0)}% da meta` : `${m.propostas} vendas realizadas`}
+                  pct={pctVendasEfetivo}
                 />
                 <KpiCard
                   label="Propostas Aceitas"
                   value={fmtN(m.propostas)}
-                  sub={`Meta: ${m.metaPropostas}`}
+                  sub={m.metaPropostas > 0 ? `Meta: ${m.metaPropostas} — ${pctPropostas.toFixed(0)}% atingido` : `${m.propostas} propostas`}
                   sub2={m.propostasAnoAnterior > 0 ? `vs ${mesAbrev}/${ano - 1}: ${m.propostasAnoAnterior} (${m.variacaoPropostas >= 0 ? "+" : ""}${m.variacaoPropostas.toFixed(1)}%)` : undefined}
                   pct={pctPropostas}
                 />
@@ -830,6 +831,7 @@ export default function RelatorioExecutivo() {
                   <div className="mt-3 text-xs text-gray-500">
                     Receita: {fmt(m.receitaReal)} vs Meta Comissão {fmt(m.metaReceita)}.
                     {m.metaReceita > m.receitaReal && ` Gap de ${fmt(m.metaReceita - m.receitaReal)}.`}
+                    {m.metaPropostas > 0 && ` Vendas: ${m.propostas} propostas vs Meta ${m.metaPropostas} (${pctPropostas.toFixed(0)}%).`}
                     {m.metaVendas > 0 && ` Vendas (comissão): ${fmt(m.receitaVendas)} vs Meta ${fmt(m.metaVendas)} (${pctVendas.toFixed(0)}%).`}
                   </div>
                 </div>
