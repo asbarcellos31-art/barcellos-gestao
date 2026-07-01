@@ -239,11 +239,11 @@ export default function AppLayout({ children }: AppLayoutProps) {
                 onClick={() => setFinanceiroExpanded(!financeiroExpanded)}
                 className={cn(
                   "flex items-center gap-3 px-3 py-2.5 w-full rounded-lg transition-all text-sm font-medium",
-                  isActive("/comissoes") || isActive("/comissoes-pendentes") || isActive("/financeiro") || isUnderPath("/dashboard-financeiro") || isUnderPath("/mes/") || isActive("/extrato-bancario") || isActive("/relatorio-executivo")
+                  isActive("/comissoes") || isActive("/comissoes-pendentes") || isActive("/financeiro") || isUnderPath("/dashboard-financeiro") || isUnderPath("/mes/") || isActive("/extrato-bancario") || isActive("/relatorio-executivo") || isActive("/relatorio-financeiro")
                     ? "text-white"
                     : "text-blue-200 hover:bg-white/10 hover:text-white"
                 )}
-                style={isActive("/comissoes") || isActive("/comissoes-pendentes") || isActive("/financeiro") || isUnderPath("/dashboard-financeiro") || isUnderPath("/mes/") || isActive("/extrato-bancario") || isActive("/relatorio-executivo") ? { background: "linear-gradient(90deg, #4a7bc8, #3d6bb5)" } : {}}
+                style={isActive("/comissoes") || isActive("/comissoes-pendentes") || isActive("/financeiro") || isUnderPath("/dashboard-financeiro") || isUnderPath("/mes/") || isActive("/extrato-bancario") || isActive("/relatorio-executivo") || isActive("/relatorio-financeiro") ? { background: "linear-gradient(90deg, #4a7bc8, #3d6bb5)" } : {}}
               >
                 <LineChart className="w-4 h-4 flex-shrink-0" />
                 <span className="flex-1 text-left">Financeiro</span>
@@ -272,6 +272,17 @@ export default function AppLayout({ children }: AppLayoutProps) {
                     style={isActive("/relatorio-executivo") ? { background: "linear-gradient(90deg, #4a7bc8, #3d6bb5)" } : {}}>
                       <Presentation className="w-3.5 h-3.5 flex-shrink-0" />
                       <span>Relatório Executivo</span>
+                    </div>
+                  </Link>
+                  {/* Relatório Financeiro */}
+                  <Link href="/relatorio-financeiro" onClick={handleNavClick}>
+                    <div className={cn(
+                      "flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-all text-xs",
+                      isActive("/relatorio-financeiro") ? "text-white font-semibold" : "text-blue-300 hover:bg-white/10 hover:text-white"
+                    )}
+                    style={isActive("/relatorio-financeiro") ? { background: "linear-gradient(90deg, #4a7bc8, #3d6bb5)" } : {}}>
+                      <BarChart2 className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span>Relatório Financeiro</span>
                     </div>
                   </Link>
                   {/* Extrato Bancário */}

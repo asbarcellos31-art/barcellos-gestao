@@ -24,6 +24,7 @@ import DashboardFinanceiro from "./pages/DashboardFinanceiro";
 import Login from "./pages/Login";
 import ExtratoBancario from "./pages/ExtratoBancario";
 import RelatorioExecutivo from "./pages/RelatorioExecutivo";
+import RelatorioFinanceiro from "./pages/RelatorioFinanceiro";
 import MensagemDiaria from "./pages/MensagemDiaria";
 import Metas from "./pages/Metas";
 import GestaoTempo from "./pages/GestaoTempo";
@@ -83,6 +84,7 @@ function Router() {
         <PermissaoGuard modulo="configuracoes"><Configuracoes /></PermissaoGuard>
       </Route>
       <Route path={"/relatorio-executivo"} component={RelatorioExecutivo} />
+      <Route path={"/relatorio-financeiro"} component={RelatorioFinanceiro} />
       <Route path={"/mensagem-diaria"} component={MensagemDiaria} />
       <Route path={"/metas"} component={Metas} />
       <Route path={"/gestao-tempo"} component={GestaoTempo} />
