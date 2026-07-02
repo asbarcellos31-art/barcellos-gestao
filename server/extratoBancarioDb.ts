@@ -277,9 +277,9 @@ export async function excluirLancamentosSemCategoria(uploadId: number): Promise<
 // Excluir um lançamento individual
 export async function excluirLancamentoExtrato(id: number): Promise<void> {
   const pool = getPool();
-  // Busca uploadId e tipo antes de deletar para recalcular totais
-  const [rows] = await pool.execute("SELECT uploadId, tipo FROM extrato_bancario WHERE id = ?", [id]) as any[];
-  await pool.execute("DELETE FROM extrato_bancario WHERE id = ? AND confirmado = FALSE", [id]);
+  // Busca uploadId, tipo e lancamentoContasId antes de deletar para recalcular totais
+  const [rows] = await pool.execute("SELECT uploadId, tipo, lancamentoContasId FROM extrato_bancario WHERE id = ?", [id]) as any[];
+  await pool.execute("DELETE FROM extrato_bancario WHERE id = ?", [id]);
   if (rows.length > 0) {
     const { uploadId } = rows[0];
     await pool.execute(
