@@ -1,15 +1,17 @@
 import { useState, useMemo, useRef } from "react";
+import { useLocation } from "wouter";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, Cell, PieChart, Pie
 } from "recharts";
-import { Printer, TrendingUp, TrendingDown, DollarSign, Target, AlertTriangle, BarChart2 } from "lucide-react";
+import { Printer, TrendingUp, TrendingDown, DollarSign, Target, AlertTriangle, BarChart2, ExternalLink } from "lucide-react";
 
 const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 const MESES_ABR = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
@@ -48,13 +50,17 @@ function getVal(lancamentos: any[], tipo: string, cat: string, sub?: string | nu
   return row ? parseFloat(row.valor) : 0;
 }
 
-function KpiCard({ label, value, sub, color, icon: Icon }: { label: string; value: string; sub?: string; color: string; icon?: any }) {
+function KpiCard({ label, value, sub, color, icon: Icon, onClick }: { label: string; value: string; sub?: string; color: string; icon?: any; onClick?: () => void }) {
   return (
-    <div className="bg-white rounded-xl shadow-sm overflow-hidden print:shadow-none print:border" style={{ borderLeft: `4px solid ${color}` }}>
+    <div
+      className={`bg-white rounded-xl shadow-sm overflow-hidden print:shadow-none print:border ${onClick ? "cursor-pointer hover:shadow-md hover:scale-[1.02] transition-all" : ""}`}
+      style={{ borderLeft: `4px solid ${color}` }}
+      onClick={onClick}
+    >
       <div className="p-4">
         <div className="flex items-center justify-between mb-1">
           <span className="text-xs text-gray-500 font-semibold uppercase tracking-wide">{label}</span>
-          {Icon && <Icon className="h-4 w-4" style={{ color }} />}
+          {onClick ? <ExternalLink className="h-3.5 w-3.5 text-gray-300" /> : Icon && <Icon className="h-4 w-4" style={{ color }} />}
         </div>
         <div className="text-xl font-bold text-gray-800">{value}</div>
         {sub && <div className="text-xs text-gray-500 mt-0.5">{sub}</div>}
@@ -63,11 +69,15 @@ function KpiCard({ label, value, sub, color, icon: Icon }: { label: string; valu
   );
 }
 
+type ModalTipo = "receita" | "despesa-barcellos" | "lucro" | "despesas-pagas" | "pendentes" | "lucro-acumulado" | "receita-acumulada" | null;
+
 export default function RelatorioFinanceiro() {
   const hoje = new Date();
   const [mes, setMes] = useState(hoje.getMonth() + 1);
   const [ano, setAno] = useState(hoje.getFullYear());
   const printRef = useRef<HTMLDivElement>(null);
+  const [modal, setModal] = useState<ModalTipo>(null);
+  const [, navigate] = useLocation();
 
   // ── Queries ────────────────────────────────────────────────────────────────
   const { data: dreMes } = trpc.financeiro.drePorMes.useQuery({ mes, ano });
@@ -90,8 +100,7 @@ export default function RelatorioFinanceiro() {
   const estornosMes = getVal(lancMes, "RECEITA", "(-) Estornos", null);
   const receitaLiquidaMes = receitaMes - estornosMes;
   const despesaMes = CATEGORIAS_DESPESA.reduce((s, c) => s + getVal(lancMes, "DESPESA", c.cat, c.sub), 0);
-  const lucroMes = receitaLiquidaMes - despesaMes;
-  const margemMes = receitaLiquidaMes > 0 ? (lucroMes / receitaLiquidaMes) * 100 : 0;
+  // lucroMes e margemMes calculados após despesaBarcellos (definida mais abaixo com contasMes)
 
   const metaMes = metas?.find((m: any) => m.mes === mes);
   const metaReceita = metaMes ? parseFloat(metaMes.metaReceita) : 0;
@@ -180,6 +189,8 @@ export default function RelatorioFinanceiro() {
   const totalPendente = contasMes?.filter((c: any) => c.status !== "PAGO" && (c as any).tipo !== "RECEITA" && !isAutoExtrato(c.descricao)).reduce((s: number, c: any) => s + parseFloat(c.valor ?? "0"), 0) ?? 0;
   const totalDistribuicao = contasMes?.filter((c: any) => isDistribuicao(c.categoria) && !isAutoExtrato(c.descricao)).reduce((s: number, c: any) => s + parseFloat(c.valorPago ?? c.valor ?? "0"), 0) ?? 0;
   const despesaBarcellos = totalPago - totalDistribuicao;
+  const lucroMes = receitaMes - despesaBarcellos;
+  const margemMes = receitaMes > 0 ? (lucroMes / receitaMes) * 100 : 0;
 
   // ── Distribuição por pessoa — vem do extrato bancário ─────────────────────
   const distribuicaoPorPessoa = useMemo(() => {
@@ -233,12 +244,12 @@ export default function RelatorioFinanceiro() {
         <section>
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Resumo do Mês — {MESES[mes-1]}</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-            <KpiCard label="Receita Bruta" value={fmt(receitaMes)} color="#22c55e" icon={TrendingUp} />
-            <KpiCard label="Despesa Barcellos" value={fmt(despesaBarcellos)} color="#ef4444" icon={TrendingDown} />
-            <KpiCard label="Lucro Líquido" value={fmt(lucroMes)} sub={fmtPct(margemMes) + " de margem"} color={lucroMes >= 0 ? "#3b82f6" : "#ef4444"} icon={DollarSign} />
-            <KpiCard label="Meta Vendas" value={metaReceita > 0 ? fmt(metaReceita) : "—"} sub={metaReceita > 0 ? `${fmt(vendasMes)} realizado — ${fmtPct(pctMeta)}` : "Sem meta"} color={pctMeta >= 100 ? "#22c55e" : pctMeta >= 80 ? "#f59e0b" : "#ef4444"} icon={Target} />
-            <KpiCard label="Despesas Pagas" value={fmt(totalPago)} sub="Contas a Pagar" color="#06b6d4" icon={DollarSign} />
-            <KpiCard label="Pendentes" value={fmt(totalPendente)} sub="A pagar" color="#f59e0b" icon={AlertTriangle} />
+            <KpiCard label="Receita Bruta" value={fmt(receitaMes)} color="#22c55e" icon={TrendingUp} onClick={() => setModal("receita")} />
+            <KpiCard label="Despesa Barcellos" value={fmt(despesaBarcellos)} color="#ef4444" icon={TrendingDown} onClick={() => setModal("despesa-barcellos")} />
+            <KpiCard label="Lucro Líquido" value={fmt(lucroMes)} sub={fmtPct(margemMes) + " de margem"} color={lucroMes >= 0 ? "#3b82f6" : "#ef4444"} icon={DollarSign} onClick={() => setModal("lucro")} />
+            <KpiCard label="Meta Vendas" value={metaReceita > 0 ? fmt(metaReceita) : "—"} sub={metaReceita > 0 ? `${fmt(vendasMes)} realizado — ${fmtPct(pctMeta)}` : "Sem meta"} color={pctMeta >= 100 ? "#22c55e" : pctMeta >= 80 ? "#f59e0b" : "#ef4444"} icon={Target} onClick={() => navigate("/metas")} />
+            <KpiCard label="Despesas Pagas" value={fmt(totalPago)} sub="Contas a Pagar" color="#06b6d4" icon={DollarSign} onClick={() => setModal("despesas-pagas")} />
+            <KpiCard label="Pendentes" value={fmt(totalPendente)} sub="A pagar" color="#f59e0b" icon={AlertTriangle} onClick={() => setModal("pendentes")} />
           </div>
         </section>
 
@@ -246,10 +257,11 @@ export default function RelatorioFinanceiro() {
         <section>
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Acumulado {ano}</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <KpiCard label="Receita Acumulada" value={fmt(receitaAno)} color="#22c55e" icon={TrendingUp} />
-            <KpiCard label="Despesas Acumuladas" value={fmt(despesaAno)} color="#ef4444" icon={TrendingDown} />
-            <KpiCard label="Lucro Acumulado" value={fmt(lucroAno)} sub={receitaAno > 0 ? fmtPct((lucroAno / receitaAno) * 100) + " de margem" : ""} color={lucroAno >= 0 ? "#3b82f6" : "#ef4444"} icon={DollarSign} />
-            <KpiCard label="Inadimplência" value={metricasInadimpl ? String(metricasInadimpl.total ?? 0) + " clientes" : "—"} sub={metricasInadimpl ? fmt(parseFloat(metricasInadimpl.valorTotal ?? "0")) : ""} color="#f59e0b" icon={AlertTriangle} />
+            <KpiCard label="Receita Acumulada" value={fmt(receitaAno)} color="#22c55e" icon={TrendingUp} onClick={() => setModal("receita-acumulada")} />
+            <KpiCard label="Despesas Acumuladas" value={fmt(despesaAno)} color="#ef4444" icon={TrendingDown} onClick={() => navigate("/financeiro")} />
+            <KpiCard label="Lucro Acumulado" value={fmt(lucroAno)} sub={receitaAno > 0 ? fmtPct((lucroAno / receitaAno) * 100) + " de margem" : ""} color={lucroAno >= 0 ? "#3b82f6" : "#ef4444"} icon={DollarSign} onClick={() => setModal("lucro-acumulado")} />
+
+            <KpiCard label="Inadimplência" value={metricasInadimpl ? String(metricasInadimpl.total ?? 0) + " clientes" : "—"} sub={metricasInadimpl ? fmt(parseFloat(metricasInadimpl.valorTotal ?? "0")) : ""} color="#f59e0b" icon={AlertTriangle} onClick={() => navigate("/inadimplentes")} />
           </div>
         </section>
 
@@ -714,6 +726,127 @@ export default function RelatorioFinanceiro() {
           .print\\:break-inside-avoid { break-inside: avoid; }
         }
       `}</style>
+
+      {/* ── Modais de detalhe ── */}
+      <Dialog open={modal === "despesa-barcellos"} onOpenChange={() => setModal(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>Despesa Barcellos — {MESES[mes-1]}</DialogTitle></DialogHeader>
+          <table className="w-full text-sm">
+            <thead><tr className="border-b bg-gray-50"><th className="p-2 text-left">Categoria</th><th className="p-2 text-right text-green-700">Pago</th><th className="p-2 text-right text-yellow-700">Pendente</th><th className="p-2 text-right">Total</th></tr></thead>
+            <tbody>
+              {contasPorCat.filter(c => !["ELISIA","ANDERSON","NAYARA","BARCELLOS"].includes(c.cat)).map((c, i) => (
+                <tr key={i} className="border-b"><td className="p-2">{c.cat}</td><td className="p-2 text-right font-mono text-green-700">{c.pago > 0 ? fmt(c.pago) : "—"}</td><td className="p-2 text-right font-mono text-yellow-700">{c.pendente > 0 ? fmt(c.pendente) : "—"}</td><td className="p-2 text-right font-mono font-bold">{fmt(c.pago + c.pendente)}</td></tr>
+              ))}
+              <tr className="bg-red-50 font-bold"><td className="p-2 text-red-800">Total</td><td className="p-2 text-right font-mono text-green-700">{fmt(despesaBarcellos)}</td><td className="p-2 text-right font-mono text-yellow-700">{fmt(totalPendente)}</td><td className="p-2 text-right font-mono text-red-800">{fmt(despesaBarcellos + totalPendente)}</td></tr>
+            </tbody>
+          </table>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={modal === "lucro"} onOpenChange={() => setModal(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Lucro Líquido — {MESES[mes-1]}</DialogTitle></DialogHeader>
+          <table className="w-full text-sm">
+            <tbody>
+              <tr className="border-b"><td className="p-2 text-gray-600">Receita Bruta</td><td className="p-2 text-right font-mono font-bold text-green-700">{fmt(receitaMes)}</td></tr>
+              <tr className="border-b"><td className="p-2 text-gray-600">Despesa Barcellos</td><td className="p-2 text-right font-mono font-bold text-red-700">− {fmt(despesaBarcellos)}</td></tr>
+              <tr className="border-b"><td className="p-2 text-gray-600">Distribuição Sócios</td><td className="p-2 text-right font-mono text-purple-700">− {fmt(totalDistribuicao)}</td></tr>
+              <tr className="bg-blue-50 font-bold"><td className="p-2 text-blue-800">Lucro Líquido</td><td className={`p-2 text-right font-mono text-xl ${lucroMes >= 0 ? "text-blue-700" : "text-red-700"}`}>{fmt(lucroMes)}</td></tr>
+              <tr><td className="p-2 text-xs text-gray-400" colSpan={2}>Margem: {fmtPct(margemMes)}</td></tr>
+            </tbody>
+          </table>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={modal === "despesas-pagas"} onOpenChange={() => setModal(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>Contas a Pagar — {MESES[mes-1]}</DialogTitle></DialogHeader>
+          <table className="w-full text-sm">
+            <thead><tr className="border-b bg-gray-50"><th className="p-2 text-left">Categoria</th><th className="p-2 text-right text-green-700">Pago</th><th className="p-2 text-right text-yellow-700">Pendente</th><th className="p-2 text-right">Total</th></tr></thead>
+            <tbody>
+              {contasPorCat.map((c, i) => (
+                <tr key={i} className="border-b"><td className="p-2">{c.cat}</td><td className="p-2 text-right font-mono text-green-700">{c.pago > 0 ? fmt(c.pago) : "—"}</td><td className="p-2 text-right font-mono text-yellow-700">{c.pendente > 0 ? fmt(c.pendente) : "—"}</td><td className="p-2 text-right font-mono font-bold">{fmt(c.pago + c.pendente)}</td></tr>
+              ))}
+              <tr className="bg-cyan-50 font-bold"><td className="p-2 text-cyan-800">Total</td><td className="p-2 text-right font-mono text-green-700">{fmt(totalPago)}</td><td className="p-2 text-right font-mono text-yellow-700">{fmt(totalPendente)}</td><td className="p-2 text-right font-mono text-cyan-800">{fmt(totalPago + totalPendente)}</td></tr>
+            </tbody>
+          </table>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={modal === "pendentes"} onOpenChange={() => setModal(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>Pendentes a Pagar — {MESES[mes-1]}</DialogTitle></DialogHeader>
+          {totalPendente === 0 ? (
+            <p className="text-center text-gray-400 py-6">Nenhuma conta pendente</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead><tr className="border-b bg-gray-50"><th className="p-2 text-left">Categoria</th><th className="p-2 text-right text-yellow-700">Pendente</th></tr></thead>
+              <tbody>
+                {contasPorCat.filter(c => c.pendente > 0).map((c, i) => (
+                  <tr key={i} className="border-b"><td className="p-2">{c.cat}</td><td className="p-2 text-right font-mono text-yellow-700">{fmt(c.pendente)}</td></tr>
+                ))}
+                <tr className="bg-yellow-50 font-bold"><td className="p-2 text-yellow-800">Total Pendente</td><td className="p-2 text-right font-mono text-yellow-800">{fmt(totalPendente)}</td></tr>
+              </tbody>
+            </table>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={modal === "receita"} onOpenChange={() => setModal(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Receita Bruta — {MESES[mes-1]}</DialogTitle></DialogHeader>
+          <table className="w-full text-sm">
+            <tbody>
+              <tr className="border-b"><td className="p-2 text-gray-600">Comissões Carteira</td><td className="p-2 text-right font-mono text-green-700">{fmt(getVal(lancMes, "RECEITA", "Comissões Total", "Carteira"))}</td></tr>
+              <tr className="border-b"><td className="p-2 text-gray-600">Comissões Angariação</td><td className="p-2 text-right font-mono text-green-700">{fmt(getVal(lancMes, "RECEITA", "Comissões Total", "Angariação"))}</td></tr>
+              <tr className="border-b"><td className="p-2 text-gray-600">(-) Estornos</td><td className="p-2 text-right font-mono text-red-600">− {fmt(estornosMes)}</td></tr>
+              <tr className="bg-green-50 font-bold"><td className="p-2 text-green-800">Receita Bruta</td><td className="p-2 text-right font-mono text-green-800 text-lg">{fmt(receitaMes)}</td></tr>
+            </tbody>
+          </table>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={modal === "receita-acumulada"} onOpenChange={() => setModal(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Receita Acumulada — {ano}</DialogTitle></DialogHeader>
+          <table className="w-full text-sm">
+            <thead><tr className="border-b bg-gray-50"><th className="p-2 text-left">Mês</th><th className="p-2 text-right text-green-700">Receita</th><th className="p-2 text-right text-red-700">Despesa</th><th className="p-2 text-right text-blue-700">Lucro</th></tr></thead>
+            <tbody>
+              {MESES_ABR.map((m, i) => {
+                const lancs = lancAno.filter((l: any) => l.mes === i + 1);
+                const rec = getVal(lancs, "RECEITA", "Comissões Total", null);
+                const desp = CATEGORIAS_DESPESA.reduce((s, c) => s + getVal(lancs, "DESPESA", c.cat, c.sub), 0);
+                const luc = rec - desp;
+                if (rec === 0 && desp === 0) return null;
+                return (
+                  <tr key={i} className="border-b">
+                    <td className="p-2">{m}</td>
+                    <td className="p-2 text-right font-mono text-green-700">{rec > 0 ? fmt(rec) : "—"}</td>
+                    <td className="p-2 text-right font-mono text-red-700">{desp > 0 ? fmt(desp) : "—"}</td>
+                    <td className={`p-2 text-right font-mono font-bold ${luc >= 0 ? "text-blue-700" : "text-red-700"}`}>{rec > 0 || desp > 0 ? fmt(luc) : "—"}</td>
+                  </tr>
+                );
+              })}
+              <tr className="bg-green-50 font-bold"><td className="p-2 text-green-800">Total</td><td className="p-2 text-right font-mono text-green-800">{fmt(receitaAno)}</td><td className="p-2 text-right font-mono text-red-700">{fmt(despesaAno)}</td><td className={`p-2 text-right font-mono ${lucroAno >= 0 ? "text-blue-800" : "text-red-800"}`}>{fmt(lucroAno)}</td></tr>
+            </tbody>
+          </table>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={modal === "lucro-acumulado"} onOpenChange={() => setModal(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Lucro Acumulado — {ano}</DialogTitle></DialogHeader>
+          <table className="w-full text-sm">
+            <tbody>
+              <tr className="border-b"><td className="p-2 text-gray-600">Receita Acumulada</td><td className="p-2 text-right font-mono font-bold text-green-700">{fmt(receitaAno)}</td></tr>
+              <tr className="border-b"><td className="p-2 text-gray-600">Despesas Acumuladas</td><td className="p-2 text-right font-mono font-bold text-red-700">− {fmt(despesaAno)}</td></tr>
+              <tr className="bg-blue-50 font-bold"><td className="p-2 text-blue-800">Lucro Acumulado</td><td className={`p-2 text-right font-mono text-xl ${lucroAno >= 0 ? "text-blue-700" : "text-red-700"}`}>{fmt(lucroAno)}</td></tr>
+              {receitaAno > 0 && <tr><td className="p-2 text-xs text-gray-400" colSpan={2}>Margem: {fmtPct((lucroAno / receitaAno) * 100)}</td></tr>}
+            </tbody>
+          </table>
+        </DialogContent>
+      </Dialog>
+
     </AppLayout>
   );
 }
