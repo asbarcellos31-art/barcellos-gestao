@@ -265,6 +265,60 @@ export default function RelatorioFinanceiro() {
           </div>
         </section>
 
+        {/* ── Comparativo Mensal ── */}
+        <section className="print:break-inside-avoid">
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Comparativo Mensal — {ano}</h2>
+          <Card>
+            <CardContent className="p-0 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-gray-50">
+                    <th className="p-3 text-left font-medium">Mês</th>
+                    <th className="p-3 text-right font-medium text-green-700">Receita</th>
+                    <th className="p-3 text-right font-medium text-red-700">Despesa</th>
+                    <th className="p-3 text-right font-medium text-blue-700">Lucro</th>
+                    <th className="p-3 text-right font-medium text-gray-600">Margem</th>
+                    <th className="p-3 text-right font-medium text-yellow-700">Meta</th>
+                    <th className="p-3 text-right font-medium">vs Meta</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {graficoDre.map((row, i) => {
+                    if (row.Receita === 0 && row.Despesa === 0) return null;
+                    const margem = row.Receita > 0 ? (row.Lucro / row.Receita) * 100 : 0;
+                    const pct = row.Meta > 0 ? (row.Receita / row.Meta) * 100 : null;
+                    const isMesSel = i + 1 === mes;
+                    return (
+                      <tr key={i} className={`border-b ${isMesSel ? "bg-blue-50/60 font-semibold" : "hover:bg-gray-50"}`}>
+                        <td className="p-3">{MESES[i]}</td>
+                        <td className="p-3 text-right font-mono text-green-700">{fmt(row.Receita)}</td>
+                        <td className="p-3 text-right font-mono text-red-700">{fmt(row.Despesa)}</td>
+                        <td className={`p-3 text-right font-mono font-bold ${row.Lucro >= 0 ? "text-blue-700" : "text-red-700"}`}>{fmt(row.Lucro)}</td>
+                        <td className={`p-3 text-right ${margem >= 30 ? "text-green-600" : margem >= 15 ? "text-yellow-600" : "text-red-600"}`}>{fmtPct(margem)}</td>
+                        <td className="p-3 text-right font-mono text-yellow-700">{row.Meta > 0 ? fmt(row.Meta) : "—"}</td>
+                        <td className="p-3 text-right">
+                          {pct !== null ? (
+                            <span className={`font-bold ${pct >= 100 ? "text-green-700" : pct >= 80 ? "text-yellow-700" : "text-red-700"}`}>{fmtPct(pct)}</span>
+                          ) : "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  <tr className="bg-gray-100 font-bold border-t-2">
+                    <td className="p-3">Total</td>
+                    <td className="p-3 text-right font-mono text-green-700">{fmt(receitaAno)}</td>
+                    <td className="p-3 text-right font-mono text-red-700">{fmt(despesaAno)}</td>
+                    <td className={`p-3 text-right font-mono ${lucroAno >= 0 ? "text-blue-700" : "text-red-700"}`}>{fmt(lucroAno)}</td>
+                    <td className={`p-3 text-right ${receitaAno > 0 && (lucroAno / receitaAno) * 100 >= 15 ? "text-green-600" : "text-red-600"}`}>{receitaAno > 0 ? fmtPct((lucroAno / receitaAno) * 100) : "—"}</td>
+                    <td className="p-3 text-right font-mono text-yellow-700">{fmt(metas?.reduce((s: number, m: any) => s + parseFloat(m.metaReceita || "0"), 0) ?? 0)}</td>
+                    <td className="p-3 text-right">—</td>
+                  </tr>
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
+        </section>
+
         {/* ── Gráfico: Receita x Despesa x Meta ── */}
         <section className="print:break-inside-avoid">
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Receita x Despesa x Meta — {ano}</h2>
