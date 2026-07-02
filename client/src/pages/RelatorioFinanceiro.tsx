@@ -15,6 +15,7 @@ import { Printer, TrendingUp, TrendingDown, DollarSign, Target, AlertTriangle, B
 
 const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 const MESES_ABR = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+const CORES_GRAFICO = ["#3b82f6","#8b5cf6","#22c55e","#f59e0b","#ef4444","#06b6d4","#ec4899"];
 const ANOS = Array.from({ length: 10 }, (_, i) => 2020 + i);
 
 const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
@@ -71,6 +72,121 @@ function KpiCard({ label, value, sub, color, icon: Icon, onClick }: { label: str
 
 type ModalTipo = "receita" | "despesa-barcellos" | "lucro" | "despesas-pagas" | "pendentes" | "lucro-acumulado" | "receita-acumulada" | null;
 
+function ComparativoMensalSection({ comp }: { comp: any }) {
+  const anosDisponiveis: number[] = comp?.anos ?? [];
+  const meses: string[] = comp?.meses ?? MESES_ABR;
+
+  const dadosTabela = useMemo(() => {
+    if (!comp) return [];
+    return meses.map((mes, mesIdx) => {
+      const row: Record<string, any> = { mes };
+      anosDisponiveis.forEach((ano, anoIdx) => {
+        row[ano] = comp.dados[ano]?.[mesIdx] ?? 0;
+        if (mesIdx > 0) {
+          const prev = comp.dados[ano]?.[mesIdx - 1] ?? 0;
+          row[`var_${ano}`] = prev > 0 ? (row[ano] - prev) / prev : null;
+        } else {
+          row[`var_${ano}`] = null;
+        }
+        if (anoIdx > 0) {
+          const anoAnterior = anosDisponiveis[anoIdx - 1];
+          const prevYoY = comp.dados[anoAnterior]?.[mesIdx] ?? 0;
+          row[`yoy_${ano}`] = prevYoY > 0 ? (row[ano] - prevYoY) / prevYoY : null;
+        } else {
+          row[`yoy_${ano}`] = null;
+        }
+      });
+      return row;
+    });
+  }, [comp, meses, anosDisponiveis]);
+
+  const totaisAnuais = useMemo(() => {
+    if (!comp) return {} as Record<number, number>;
+    const tot: Record<number, number> = {};
+    anosDisponiveis.forEach((ano) => {
+      tot[ano] = (comp.dados[ano] ?? []).reduce((s: number, v: number) => s + v, 0);
+    });
+    return tot;
+  }, [comp, anosDisponiveis]);
+
+  const anosGrafico = anosDisponiveis.slice(-3);
+  const graficoData = meses.map((mes, i) => {
+    const row: Record<string, any> = { mes };
+    anosGrafico.forEach((ano) => { row[ano] = comp?.dados[ano]?.[i] ?? 0; });
+    return row;
+  });
+
+  const fmtPct2 = (v: number) => `${(v * 100).toFixed(1)}%`;
+
+  return (
+    <section className="space-y-4 print:break-inside-avoid">
+      <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Comparativo Mensal — Últimos 3 Anos</h2>
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Receita Mensal — {anosGrafico.join(", ")}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={220}>
+            <LineChart data={graficoData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis dataKey="mes" tick={{ fontSize: 11 }} />
+              <YAxis tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 11 }} />
+              <Tooltip formatter={(v: number) => fmt(v)} />
+              <Legend />
+              {anosGrafico.map((ano, i) => (
+                <Line key={ano} type="monotone" dataKey={ano} name={String(ano)} stroke={CORES_GRAFICO[i]} strokeWidth={2} dot={{ r: 3 }} />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+
+      <div className="overflow-x-auto rounded-lg border">
+        <table className="w-full text-xs border-collapse">
+          <thead>
+            <tr className="bg-muted/50">
+              <th className="text-left py-2 px-3 sticky left-0 bg-muted/50">MÊS</th>
+              {anosDisponiveis.map((ano) => (
+                <th key={ano} className="text-right py-2 px-2 min-w-[80px]">{ano}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {dadosTabela.map((row) => (
+              <tr key={row.mes} className="border-b hover:bg-muted/20">
+                <td className="py-1.5 px-3 font-medium sticky left-0 bg-background">{row.mes}</td>
+                {anosDisponiveis.map((ano) => (
+                  <td key={ano} className="text-right py-1.5 px-2">
+                    <div>{row[ano] > 0 ? fmt(row[ano]) : "—"}</div>
+                    {row[`var_${ano}`] !== null && row[`var_${ano}`] !== undefined && row[ano] > 0 && (
+                      <div className={`text-[10px] ${row[`var_${ano}`] >= 0 ? "text-green-600" : "text-red-500"}`} title="Variação vs mês anterior">
+                        {row[`var_${ano}`] >= 0 ? "▲" : "▼"} {fmtPct2(Math.abs(row[`var_${ano}`]))}
+                      </div>
+                    )}
+                    {row[`yoy_${ano}`] !== null && row[`yoy_${ano}`] !== undefined && row[ano] > 0 && (
+                      <div className={`text-[10px] font-medium ${row[`yoy_${ano}`] >= 0 ? "text-blue-600" : "text-orange-500"}`} title="Variação vs mesmo mês ano anterior">
+                        YoY {row[`yoy_${ano}`] >= 0 ? "▲" : "▼"} {fmtPct2(Math.abs(row[`yoy_${ano}`]))}
+                      </div>
+                    )}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="bg-muted/30 font-bold">
+              <td className="py-1.5 px-3 sticky left-0 bg-muted/30">TOTAL ANUAL</td>
+              {anosDisponiveis.map((ano) => (
+                <td key={ano} className="text-right py-1.5 px-2">{totaisAnuais[ano] > 0 ? fmt(totaisAnuais[ano]) : "—"}</td>
+              ))}
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 export default function RelatorioFinanceiro() {
   const hoje = new Date();
   const [mes, setMes] = useState(hoje.getMonth() + 1);
@@ -87,6 +203,7 @@ export default function RelatorioFinanceiro() {
   const { data: resumoDre } = trpc.financeiro.resumoDre.useQuery({ ano });
   const { data: metricasContas } = trpc.contas.metricas.useQuery({ mes, ano });
   const { data: resumoMensalContas } = trpc.contas.resumoMensal.useQuery({ ano });
+  const { data: comp } = trpc.financeiro.comparativoMensal.useQuery();
   const { data: contasMes } = trpc.contas.listar.useQuery({ mes, ano });
   const { data: metricasInadimpl } = trpc.inadimplentes.metricas.useQuery({ mes, ano });
   const { data: metricasComissoes } = trpc.comissoes.metricas.useQuery({ mes, ano });
@@ -265,59 +382,10 @@ export default function RelatorioFinanceiro() {
           </div>
         </section>
 
-        {/* ── Comparativo Mensal ── */}
-        <section className="print:break-inside-avoid">
-          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Comparativo Mensal — {ano}</h2>
-          <Card>
-            <CardContent className="p-0 overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-gray-50">
-                    <th className="p-3 text-left font-medium">Mês</th>
-                    <th className="p-3 text-right font-medium text-green-700">Receita</th>
-                    <th className="p-3 text-right font-medium text-red-700">Despesa</th>
-                    <th className="p-3 text-right font-medium text-blue-700">Lucro</th>
-                    <th className="p-3 text-right font-medium text-gray-600">Margem</th>
-                    <th className="p-3 text-right font-medium text-yellow-700">Meta</th>
-                    <th className="p-3 text-right font-medium">vs Meta</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {graficoDre.map((row, i) => {
-                    if (row.Receita === 0 && row.Despesa === 0) return null;
-                    const margem = row.Receita > 0 ? (row.Lucro / row.Receita) * 100 : 0;
-                    const pct = row.Meta > 0 ? (row.Receita / row.Meta) * 100 : null;
-                    const isMesSel = i + 1 === mes;
-                    return (
-                      <tr key={i} className={`border-b ${isMesSel ? "bg-blue-50/60 font-semibold" : "hover:bg-gray-50"}`}>
-                        <td className="p-3">{MESES[i]}</td>
-                        <td className="p-3 text-right font-mono text-green-700">{fmt(row.Receita)}</td>
-                        <td className="p-3 text-right font-mono text-red-700">{fmt(row.Despesa)}</td>
-                        <td className={`p-3 text-right font-mono font-bold ${row.Lucro >= 0 ? "text-blue-700" : "text-red-700"}`}>{fmt(row.Lucro)}</td>
-                        <td className={`p-3 text-right ${margem >= 30 ? "text-green-600" : margem >= 15 ? "text-yellow-600" : "text-red-600"}`}>{fmtPct(margem)}</td>
-                        <td className="p-3 text-right font-mono text-yellow-700">{row.Meta > 0 ? fmt(row.Meta) : "—"}</td>
-                        <td className="p-3 text-right">
-                          {pct !== null ? (
-                            <span className={`font-bold ${pct >= 100 ? "text-green-700" : pct >= 80 ? "text-yellow-700" : "text-red-700"}`}>{fmtPct(pct)}</span>
-                          ) : "—"}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  <tr className="bg-gray-100 font-bold border-t-2">
-                    <td className="p-3">Total</td>
-                    <td className="p-3 text-right font-mono text-green-700">{fmt(receitaAno)}</td>
-                    <td className="p-3 text-right font-mono text-red-700">{fmt(despesaAno)}</td>
-                    <td className={`p-3 text-right font-mono ${lucroAno >= 0 ? "text-blue-700" : "text-red-700"}`}>{fmt(lucroAno)}</td>
-                    <td className={`p-3 text-right ${receitaAno > 0 && (lucroAno / receitaAno) * 100 >= 15 ? "text-green-600" : "text-red-600"}`}>{receitaAno > 0 ? fmtPct((lucroAno / receitaAno) * 100) : "—"}</td>
-                    <td className="p-3 text-right font-mono text-yellow-700">{fmt(metas?.reduce((s: number, m: any) => s + parseFloat(m.metaReceita || "0"), 0) ?? 0)}</td>
-                    <td className="p-3 text-right">—</td>
-                  </tr>
-                </tbody>
-              </table>
-            </CardContent>
-          </Card>
-        </section>
+        {/* ── Comparativo Mensal Multi-Ano ── */}
+        {comp && (
+          <ComparativoMensalSection comp={comp} />
+        )}
 
         {/* ── Gráfico: Receita x Despesa x Meta ── */}
         <section className="print:break-inside-avoid">
