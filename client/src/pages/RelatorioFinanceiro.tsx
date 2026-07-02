@@ -154,22 +154,44 @@ export default function RelatorioFinanceiro() {
       .sort((a, b) => b.valor - a.valor);
   }, [lancMes]);
 
-  // ── Contas por categoria (mês) ─────────────────────────────────────────────
+  // Entradas auto-geradas pela confirmação do extrato têm este padrão no descricao
+  const isAutoExtrato = (descricao: string | null) => !!(descricao?.includes("lançamentos do extrato"));
+  const isDistribuicao = (cat: string) => cat === "DISTRIBUICAO" || cat === "Distribuição";
+
+  // ── Contas por categoria (mês) — exclui RECEITA e entradas auto-geradas do extrato ──
   const contasPorCat = useMemo(() => {
     if (!contasMes) return [];
     const map: Record<string, { pago: number; pendente: number }> = {};
     for (const c of contasMes) {
       if ((c as any).tipo === "RECEITA") continue;
-      if (!map[c.categoria]) map[c.categoria] = { pago: 0, pendente: 0 };
+      if (isAutoExtrato(c.descricao)) continue;
+      const key = isDistribuicao(c.categoria)
+        ? ((c as any).vinculo ?? c.descricao ?? "DISTRIBUICAO")
+        : c.categoria;
+      if (!map[key]) map[key] = { pago: 0, pendente: 0 };
       const v = parseFloat(c.valorPago ?? c.valor ?? "0");
-      if (c.status === "PAGO") map[c.categoria].pago += v;
-      else map[c.categoria].pendente += v;
+      if (c.status === "PAGO") map[key].pago += v;
+      else map[key].pendente += v;
     }
     return Object.entries(map).map(([cat, vals]) => ({ cat, ...vals })).sort((a, b) => (b.pago + b.pendente) - (a.pago + a.pendente));
   }, [contasMes]);
 
-  const totalPago = contasMes?.filter((c: any) => c.status === "PAGO" && (c as any).tipo !== "RECEITA").reduce((s: number, c: any) => s + parseFloat(c.valorPago ?? c.valor ?? "0"), 0) ?? 0;
-  const totalPendente = contasMes?.filter((c: any) => c.status !== "PAGO" && (c as any).tipo !== "RECEITA").reduce((s: number, c: any) => s + parseFloat(c.valor ?? "0"), 0) ?? 0;
+  const totalPago = contasMes?.filter((c: any) => c.status === "PAGO" && (c as any).tipo !== "RECEITA" && !isAutoExtrato(c.descricao)).reduce((s: number, c: any) => s + parseFloat(c.valorPago ?? c.valor ?? "0"), 0) ?? 0;
+  const totalPendente = contasMes?.filter((c: any) => c.status !== "PAGO" && (c as any).tipo !== "RECEITA" && !isAutoExtrato(c.descricao)).reduce((s: number, c: any) => s + parseFloat(c.valor ?? "0"), 0) ?? 0;
+  const totalDistribuicao = contasMes?.filter((c: any) => isDistribuicao(c.categoria) && !isAutoExtrato(c.descricao)).reduce((s: number, c: any) => s + parseFloat(c.valorPago ?? c.valor ?? "0"), 0) ?? 0;
+  const despesaBarcellos = totalPago - totalDistribuicao;
+
+  // ── Distribuição por pessoa — vem do extrato bancário ─────────────────────
+  const distribuicaoPorPessoa = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const l of lancamentosExtrato as any[]) {
+      if (!isDistribuicao(l.categoria)) continue;
+      if (l.tipo !== "Saída") continue;
+      const pessoa = l.vinculo ?? "SEM VÍNCULO";
+      map[pessoa] = (map[pessoa] || 0) + parseFloat(l.valor ?? "0");
+    }
+    return Object.entries(map).map(([pessoa, total]) => ({ pessoa, total })).sort((a, b) => b.total - a.total);
+  }, [lancamentosExtrato]);
 
   // ── Cores do gráfico de pizza ──────────────────────────────────────────────
   const CORES = ["#3b82f6","#8b5cf6","#22c55e","#f59e0b","#ef4444","#06b6d4","#ec4899","#f97316","#84cc16","#a855f7","#14b8a6","#fb923c","#e11d48"];
@@ -212,7 +234,7 @@ export default function RelatorioFinanceiro() {
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Resumo do Mês — {MESES[mes-1]}</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
             <KpiCard label="Receita Bruta" value={fmt(receitaMes)} color="#22c55e" icon={TrendingUp} />
-            <KpiCard label="Despesas" value={fmt(despesaMes)} color="#ef4444" icon={TrendingDown} />
+            <KpiCard label="Despesa Barcellos" value={fmt(despesaBarcellos)} color="#ef4444" icon={TrendingDown} />
             <KpiCard label="Lucro Líquido" value={fmt(lucroMes)} sub={fmtPct(margemMes) + " de margem"} color={lucroMes >= 0 ? "#3b82f6" : "#ef4444"} icon={DollarSign} />
             <KpiCard label="Meta Vendas" value={metaReceita > 0 ? fmt(metaReceita) : "—"} sub={metaReceita > 0 ? `${fmt(vendasMes)} realizado — ${fmtPct(pctMeta)}` : "Sem meta"} color={pctMeta >= 100 ? "#22c55e" : pctMeta >= 80 ? "#f59e0b" : "#ef4444"} icon={Target} />
             <KpiCard label="Despesas Pagas" value={fmt(totalPago)} sub="Contas a Pagar" color="#06b6d4" icon={DollarSign} />
@@ -535,7 +557,7 @@ export default function RelatorioFinanceiro() {
             const extratoSaidasReal = (lancamentosExtrato as any[])
               .filter((l: any) => l.tipo === "Saída")
               .reduce((s: number, l: any) => s + parseFloat(l.valor ?? "0"), 0);
-            const totalSaidas = totalPago + extratoSaidasReal;
+            const totalSaidas = totalPago;
             const totalEntradas = receitaMes;
             const saldo = totalEntradas - totalSaidas;
             return (
@@ -549,7 +571,7 @@ export default function RelatorioFinanceiro() {
                   <div className="bg-red-50 rounded-xl p-4 text-center">
                     <div className="text-xs text-red-600 font-semibold mb-1">Total Saídas</div>
                     <div className="text-lg font-bold text-red-700">{fmt(totalSaidas)}</div>
-                    <div className="text-xs text-gray-400 mt-1">Despesas pagas{extratoSaidasReal > 0 ? ` + Extrato: ${fmt(extratoSaidasReal)}` : ""}</div>
+                    <div className="text-xs text-gray-400 mt-1">Contas a Pagar</div>
                   </div>
                   <div className={`rounded-xl p-4 text-center ${saldo >= 0 ? "bg-blue-50" : "bg-orange-50"}`}>
                     <div className={`text-xs font-semibold mb-1 ${saldo >= 0 ? "text-blue-600" : "text-orange-600"}`}>Saldo</div>

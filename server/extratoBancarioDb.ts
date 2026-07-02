@@ -276,7 +276,21 @@ export async function excluirLancamentosSemCategoria(uploadId: number): Promise<
 
 // Excluir um lançamento individual
 export async function excluirLancamentoExtrato(id: number): Promise<void> {
-  await getPool().execute("DELETE FROM extrato_bancario WHERE id = ? AND confirmado = FALSE", [id]);
+  const pool = getPool();
+  // Busca uploadId e tipo antes de deletar para recalcular totais
+  const [rows] = await pool.execute("SELECT uploadId, tipo FROM extrato_bancario WHERE id = ?", [id]) as any[];
+  await pool.execute("DELETE FROM extrato_bancario WHERE id = ? AND confirmado = FALSE", [id]);
+  if (rows.length > 0) {
+    const { uploadId } = rows[0];
+    await pool.execute(
+      `UPDATE uploads_extrato_bancario
+       SET totalEntradas = (SELECT COALESCE(SUM(ABS(valor)),0) FROM extrato_bancario WHERE uploadId = ? AND tipo = 'Entrada'),
+           totalSaidas   = (SELECT COALESCE(SUM(ABS(valor)),0) FROM extrato_bancario WHERE uploadId = ? AND tipo = 'Saída'),
+           totalLancamentos = (SELECT COUNT(*) FROM extrato_bancario WHERE uploadId = ?)
+       WHERE id = ?`,
+      [uploadId, uploadId, uploadId, uploadId]
+    );
+  }
 }
 
 // Corrigir mês/ano de um upload (e dos lançamentos vinculados no Contas a Pagar)
