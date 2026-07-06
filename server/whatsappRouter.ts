@@ -37,6 +37,117 @@ async function rawQuery<T = any>(sql: string, params?: any[]): Promise<T[]> {
   return rows as T[];
 }
 
+export async function executarDisparoCampanha(campanhaId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  const [campanha] = await db.select().from(whatsappCampanhas).where(eq(whatsappCampanhas.id, campanhaId));
+  if (!campanha || !campanha.listaId) return;
+
+  // Buscar todos os contatos da lista
+  const todos = await db
+    .select({ nome: whatsappContatos.nome, telefone: whatsappContatos.telefone })
+    .from(whatsappContatos)
+    .where(eq(whatsappContatos.listaId, campanha.listaId));
+
+  // Filtrar contatos que já receberam com sucesso nesta campanha
+  const jaEnviados = await db
+    .select({ telefone: whatsappEnvios.telefone })
+    .from(whatsappEnvios)
+    .where(and(eq(whatsappEnvios.campanhaId, campanhaId), eq(whatsappEnvios.status, "ENVIADO")));
+  const jaEnviadosSet = new Set(jaEnviados.map(e => e.telefone));
+  const contatos = todos.filter(c => !jaEnviadosSet.has(c.telefone));
+
+  if (contatos.length === 0) {
+    await db.update(whatsappCampanhas)
+      .set({ status: "CONCLUIDA", dataConclusao: new Date() })
+      .where(eq(whatsappCampanhas.id, campanhaId));
+    return;
+  }
+
+  await db.update(whatsappCampanhas)
+    .set({ status: "ENVIANDO", totalDestinatarios: todos.length })
+    .where(eq(whatsappCampanhas.id, campanhaId));
+
+  let enviados = campanha.totalEnviados || 0;
+  let erros = campanha.totalErros || 0;
+
+  const isMesmoDia = (d: Date | null | undefined) => {
+    if (!d) return false;
+    const hoje = new Date();
+    return d.getFullYear() === hoje.getFullYear() &&
+      d.getMonth() === hoje.getMonth() &&
+      d.getDate() === hoje.getDate();
+  };
+
+  let [camp] = await db.select().from(whatsappCampanhas).where(eq(whatsappCampanhas.id, campanhaId));
+  let enviadosHoje = isMesmoDia(camp.dataUltimoEnvio) ? (camp.enviadosHoje || 0) : 0;
+
+  for (const contato of contatos) {
+    [camp] = await db.select().from(whatsappCampanhas).where(eq(whatsappCampanhas.id, campanhaId));
+    if (camp.pausada) {
+      await db.update(whatsappCampanhas)
+        .set({ status: "AGENDADA", totalEnviados: enviados, totalErros: erros })
+        .where(eq(whatsappCampanhas.id, campanhaId));
+      return;
+    }
+
+    if (camp.limiteDiario && camp.limiteDiario > 0) {
+      [camp] = await db.select().from(whatsappCampanhas).where(eq(whatsappCampanhas.id, campanhaId));
+      enviadosHoje = isMesmoDia(camp.dataUltimoEnvio) ? (camp.enviadosHoje || 0) : 0;
+      if (enviadosHoje >= camp.limiteDiario) {
+        const amanha = new Date();
+        amanha.setDate(amanha.getDate() + 1);
+        amanha.setHours(8, 0, 0, 0);
+        await db.update(whatsappCampanhas)
+          .set({ status: "AGENDADA", dataAgendada: amanha, totalEnviados: enviados, totalErros: erros })
+          .where(eq(whatsappCampanhas.id, campanhaId));
+        console.log(`[WA] Campanha "${camp.nome}" pausada por limite diário (${enviadosHoje}/${camp.limiteDiario}). Retoma amanhã às 8h.`);
+        return;
+      }
+    }
+
+    const vars: Record<string, string> = { nome: contato.nome || "Cliente" };
+    const mensagem = Object.entries(vars).reduce(
+      (t, [k, v]) => t.replace(new RegExp(`\\{\\{${k}\\}\\}`, "gi"), v),
+      camp.mensagem
+    );
+    let resultado: { sucesso: boolean; erro?: string };
+    const instancia = (camp.instanciaId as string) || INSTANCIAS.campanhas;
+    if (camp.mediaUrl && camp.mediaType) {
+      resultado = await enviarMidiaEvolution(
+        contato.telefone, camp.mediaUrl, camp.mediaType as "image" | "video" | "document", mensagem, instancia
+      );
+    } else {
+      resultado = await enviarMensagemEvolution(contato.telefone, mensagem, instancia);
+    }
+    await registrarEnvioWhatsapp({
+      campanhaId,
+      nome: contato.nome,
+      telefone: contato.telefone,
+      mensagem,
+      tipo: "CAMPANHA",
+      status: resultado.sucesso ? "ENVIADO" : "ERRO",
+      erro: resultado.erro,
+    });
+    if (resultado.sucesso) {
+      enviados++;
+      enviadosHoje++;
+      await db.update(whatsappCampanhas)
+        .set({ totalEnviados: enviados, totalErros: erros, enviadosHoje, dataUltimoEnvio: new Date() })
+        .where(eq(whatsappCampanhas.id, campanhaId));
+    } else {
+      erros++;
+    }
+    await new Promise(r => setTimeout(r, camp.intervaloMs || 3000));
+  }
+
+  await db.update(whatsappCampanhas)
+    .set({ status: "CONCLUIDA", totalEnviados: enviados, totalErros: erros, dataConclusao: new Date() })
+    .where(eq(whatsappCampanhas.id, campanhaId));
+  console.log(`[WA] Campanha "${camp.nome}" concluída: ${enviados} enviados, ${erros} erros`);
+}
+
 function parseDatetimeLocalBrasilia(dtLocal: string): Date {
   // dtLocal: "2026-03-15T09:00" — interpreta como horário de Brasília (UTC-3)
   const [datePart, timePart] = dtLocal.split("T");
@@ -278,124 +389,17 @@ export const whatsappRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB indisponível");
 
-      const [campanha] = await db
-        .select()
-        .from(whatsappCampanhas)
-        .where(eq(whatsappCampanhas.id, input.id));
+      const [campanha] = await db.select().from(whatsappCampanhas).where(eq(whatsappCampanhas.id, input.id));
       if (!campanha) throw new Error("Campanha não encontrada");
+      if (!campanha.listaId) throw new Error("Lista sem contatos.");
 
-       // Buscar contatos da lista
-      let contatos: Array<{ nome: string; telefone: string }> = [];
-      if (campanha.listaId) {
-        contatos = await db
-          .select({ nome: whatsappContatos.nome, telefone: whatsappContatos.telefone })
-          .from(whatsappContatos)
-          .where(eq(whatsappContatos.listaId, campanha.listaId));
-      }
-
-      if (contatos.length === 0) throw new Error("Lista sem contatos.");
-
-      // Marcar como ENVIANDO
-      await db
-        .update(whatsappCampanhas)
-        .set({ status: "ENVIANDO", totalDestinatarios: contatos.length, dataInicio: new Date() })
+      await db.update(whatsappCampanhas)
+        .set({ dataInicio: new Date() })
         .where(eq(whatsappCampanhas.id, input.id));
 
-      // Disparo assíncrono (não bloqueia a resposta)
-      (async () => {
-        let enviados = 0;
-        let erros = 0;
+      executarDisparoCampanha(input.id).catch(e => console.error("[WA] Erro no disparo:", e));
 
-        // Helpers para reset diário
-        const isMesmoDia = (d: Date | null | undefined) => {
-          if (!d) return false;
-          const hoje = new Date();
-          return d.getFullYear() === hoje.getFullYear() &&
-            d.getMonth() === hoje.getMonth() &&
-            d.getDate() === hoje.getDate();
-        };
-
-        // Recarregar campanha para pegar enviadosHoje atualizado
-        let [camp] = await db.select().from(whatsappCampanhas).where(eq(whatsappCampanhas.id, input.id));
-        let enviadosHoje = isMesmoDia(camp.dataUltimoEnvio) ? (camp.enviadosHoje || 0) : 0;
-
-        for (const contato of contatos) {
-          // Verificar se campanha foi pausada
-          [camp] = await db.select().from(whatsappCampanhas).where(eq(whatsappCampanhas.id, input.id));
-          if (camp.pausada) {
-            console.log(`[WA] Campanha "${camp.nome}" pausada pelo usuário. Parando envio.`);
-            await db.update(whatsappCampanhas)
-              .set({ status: "AGENDADA", totalEnviados: enviados, totalErros: erros })
-              .where(eq(whatsappCampanhas.id, input.id));
-            return;
-          }
-          // Verificar limite diário
-          if (camp.limiteDiario && camp.limiteDiario > 0) {
-            // Recarregar para ter valor atualizado
-            [camp] = await db.select().from(whatsappCampanhas).where(eq(whatsappCampanhas.id, input.id));
-            enviadosHoje = isMesmoDia(camp.dataUltimoEnvio) ? (camp.enviadosHoje || 0) : 0;
-
-            if (enviadosHoje >= camp.limiteDiario) {
-              // Pausar até amanhã
-              const amanha = new Date();
-              amanha.setDate(amanha.getDate() + 1);
-              amanha.setHours(8, 0, 0, 0); // retomar às 8h
-              await db.update(whatsappCampanhas)
-                .set({ status: "AGENDADA", dataAgendada: amanha, totalEnviados: enviados, totalErros: erros })
-                .where(eq(whatsappCampanhas.id, input.id));
-              console.log(`[WA] Campanha "${camp.nome}" pausada por limite diário (${enviadosHoje}/${camp.limiteDiario}). Retoma às 8h.`);
-              return;
-            }
-          }
-
-          const vars: Record<string, string> = { nome: contato.nome || "Cliente" };
-          const mensagem = Object.entries(vars).reduce(
-            (t, [k, v]) => t.replace(new RegExp(`\\{\\{${k}\\}\\}`, "gi"), v),
-            camp.mensagem
-          );
-          // Enviar texto ou mídia dependendo da campanha
-          let resultado: { sucesso: boolean; erro?: string };
-          const instancia = (camp.instanciaId as string) || INSTANCIAS.campanhas;
-          if (camp.mediaUrl && camp.mediaType) {
-            resultado = await enviarMidiaEvolution(
-              contato.telefone,
-              camp.mediaUrl,
-              camp.mediaType as "image" | "video" | "document",
-              mensagem,
-              instancia
-            );
-          } else {
-            resultado = await enviarMensagemEvolution(contato.telefone, mensagem, instancia);
-          }
-          await registrarEnvioWhatsapp({
-            campanhaId: input.id,
-            nome: contato.nome,
-            telefone: contato.telefone,
-            mensagem,
-            tipo: "CAMPANHA",
-            status: resultado.sucesso ? "ENVIADO" : "ERRO",
-            erro: resultado.erro,
-          });
-          if (resultado.sucesso) {
-            enviados++;
-            enviadosHoje++;
-            const agora = new Date();
-            await db.update(whatsappCampanhas)
-              .set({ totalEnviados: enviados, totalErros: erros, enviadosHoje, dataUltimoEnvio: agora })
-              .where(eq(whatsappCampanhas.id, input.id));
-          } else {
-            erros++;
-          }
-          await new Promise(r => setTimeout(r, camp.intervaloMs || 3000));
-        }
-        await db
-          .update(whatsappCampanhas)
-          .set({ status: "CONCLUIDA", totalEnviados: enviados, totalErros: erros, dataConclusao: new Date() })
-          .where(eq(whatsappCampanhas.id, input.id));
-        console.log(`[WA] Campanha "${camp.nome}" concluída: ${enviados} enviados, ${erros} erros`);
-      })().catch(e => console.error("[WA] Erro no disparo:", e));
-
-      return { ok: true, total: contatos.length };
+      return { ok: true };
     }),
 
   // ── Pausar/Retomar Campanha ───────────────────────────────────────────────
@@ -884,10 +888,9 @@ export const whatsappRouter = router({
           lte(whatsappCampanhas.dataAgendada, new Date())
         )
       );
-    // Cada campanha agendada é disparada via dispararCampanha internamente
-    // (simplificado: apenas marca como ENVIANDO para o job externo processar)
     for (const c of campanhas) {
-      console.log(`[WA] Campanha agendada pronta para disparo: "${c.nome}" (id=${c.id})`);
+      console.log(`[WA] Retomando campanha agendada: "${c.nome}" (id=${c.id})`);
+      executarDisparoCampanha(c.id).catch(e => console.error(`[WA] Erro ao retomar campanha ${c.id}:`, e));
     }
     return { disparadas: campanhas.length };
   }),

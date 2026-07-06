@@ -16,7 +16,9 @@ import { magBoletosExpressRouter } from "../magBoletosRouter";
 import { garantirAdminPadrao } from "../configuracoesDb";
 import { verificarEDisparar } from "../emailAutomacao";
 import { getDb } from "../db";
-import { sql } from "drizzle-orm";
+import { executarDisparoCampanha } from "../whatsappRouter";
+import { whatsappCampanhas } from "../../drizzle/schema";
+import { sql, and, lte, eq as eqORM } from "drizzle-orm";
 import { ensureTimerTable } from "../timerDb";
 
 function isPortAvailable(port: number): Promise<boolean> {
@@ -452,6 +454,21 @@ async function startServer() {
     verificarEDisparar().catch(console.error);
   }, 60 * 1000);
   setTimeout(() => verificarEDisparar().catch(console.error), 5000);
+
+  // Cron de campanhas WhatsApp agendadas (verifica a cada minuto)
+  const verificarCampanhasAgendadas = async () => {
+    const db = await getDb();
+    if (!db) return;
+    const campanhas = await db.select().from(whatsappCampanhas).where(
+      and(eqORM(whatsappCampanhas.status, "AGENDADA"), lte(whatsappCampanhas.dataAgendada, new Date()))
+    );
+    for (const c of campanhas) {
+      console.log(`[WA] Retomando campanha agendada: "${c.nome}" (id=${c.id})`);
+      executarDisparoCampanha(c.id).catch(e => console.error(`[WA] Erro ao retomar campanha ${c.id}:`, e));
+    }
+  };
+  setInterval(() => verificarCampanhasAgendadas().catch(console.error), 60 * 1000);
+  setTimeout(() => verificarCampanhasAgendadas().catch(console.error), 10000);
 }
 
 startServer().catch(err => {
