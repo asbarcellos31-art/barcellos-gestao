@@ -567,12 +567,6 @@ export default function Inadimplentes() {
           <Button variant="outline" onClick={exportarCSV} className="gap-2">
             <Download className="h-4 w-4" /> Exportar CSV
           </Button>
-          <Button
-            onClick={() => abrirModalMag(true)}
-            className="gap-2 bg-orange-500 hover:bg-orange-600 text-white"
-          >
-            <FileDown className="w-4 h-4" /> Buscar Boletos MAG
-          </Button>
           <Button onClick={abrirNovo} className="gap-2">
             <Plus className="w-4 h-4" /> Novo Registro Manual
           </Button>

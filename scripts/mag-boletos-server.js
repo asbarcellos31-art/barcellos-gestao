@@ -539,46 +539,80 @@ async function buscarBoletoPorCpf(cpf, nome) {
 
     console.log("  Gerando link de pagamento...");
     await screenshot(page, `7-gerar-${cpfLimpo}-${rodada}`);
+    await btnGerar.click();
+    await sleep(4000); // aguarda MAG processar sem bloquear em nova aba
 
-    // Aguarda nova aba
+    // Verifica o que aconteceu: nova aba, download ou permaneceu na mesma página
+    const abasDepois = context.pages().filter(p => !p.isClosed());
+    const novaAba = abasDepois.find(p => p !== page) || null;
+    await screenshot(page, `7c-pos-gerar-${cpfLimpo}-${rodada}`);
+    if (novaAba) await screenshot(novaAba, `7d-nova-aba-${cpfLimpo}-${rodada}`);
+
+    const paginaBoleto = novaAba || page;
+
+    if (novaAba) {
+      await novaAba.waitForLoadState("domcontentloaded", { timeout: 20000 }).catch(() => {});
+      await sleep(2000);
+      console.log("  Nova aba:", novaAba.url().slice(0, 80));
+    } else {
+      console.log("  Sem nova aba — analisando página atual para link/download");
+    }
+
+    // Tenta selecionar opção Boleto se houver
+    const optBoleto = await esperarQualquer(paginaBoleto, [
+      'label:has-text("Boleto")', 'input[value*="BOLETO"]',
+      'button:has-text("Boleto")', 'li:has-text("Boleto")',
+    ], 5000);
+    if (optBoleto) { await optBoleto.click().catch(() => {}); await sleep(800); }
+
+    // Tenta download direto
+    let baixou = false;
     try {
-      const [novaAba] = await Promise.all([
-        context.waitForEvent("page", { timeout: 30000 }),
-        btnGerar.click(),
+      const [dl] = await Promise.all([
+        paginaBoleto.waitForEvent("download", { timeout: 15000 }),
+        paginaBoleto.click(
+          'button:has-text("Gerar boleto"), button:has-text("Baixar boleto"), button:has-text("Baixar"), button:has-text("PDF")',
+          { timeout: 8000 }
+        ),
       ]);
-      await novaAba.waitForLoadState("domcontentloaded", { timeout: 30000 }).catch(() => {});
-      await sleep(3000);
-      await screenshot(novaAba, `8-pagamento-${cpfLimpo}-${rodada}`);
+      const filePath = path.join(DOWNLOAD_DIR, nomeArquivo);
+      await dl.saveAs(filePath);
+      if (novaAba) await novaAba.close().catch(() => {});
+      const base64 = fs.readFileSync(filePath).toString("base64");
+      fs.unlink(filePath, () => {});
+      boletos.push({ base64, nomeArquivo });
+      console.log(`  ✓ Boleto: ${nomeArquivo}`);
+      baixou = true;
+    } catch { /* sem download direto — tenta via link */ }
 
-      // Seleciona Boleto se houver opção
-      const optBoleto = await esperarQualquer(novaAba, [
-        'label:has-text("Boleto")', 'input[value*="BOLETO"]',
-        'button:has-text("Boleto")', 'li:has-text("Boleto")',
-      ], 8000);
-      if (optBoleto) { await optBoleto.click().catch(() => {}); await sleep(800); }
+    if (!baixou) {
+      // Procura link de boleto/pagamento no DOM (shadow DOM inclusive)
+      const linkInfo = await paginaBoleto.evaluate(() => {
+        function findLink(root) {
+          for (const el of root.querySelectorAll('a, [href]')) {
+            const href = el.getAttribute('href') || '';
+            const txt = (el.textContent || '').trim();
+            if (href.match(/boleto|pay|pagamento|download/i) || txt.match(/Boleto|Baixar|PDF|Copiar link/i)) {
+              el.scrollIntoView({ block: 'center', behavior: 'instant' });
+              const r = el.getBoundingClientRect();
+              return { href, txt, x: r.x + r.width / 2, y: r.y + r.height / 2 };
+            }
+          }
+          for (const el of root.querySelectorAll('*')) {
+            if (el.shadowRoot) { const r = findLink(el.shadowRoot); if (r) return r; }
+          }
+          return null;
+        }
+        return findLink(document);
+      }).catch(() => null);
 
-      try {
-        const [dl] = await Promise.all([
-          novaAba.waitForEvent("download", { timeout: 45000 }),
-          novaAba.click(
-            'button:has-text("Gerar boleto"), button:has-text("Gerar"), button:has-text("Baixar")',
-            { timeout: 15000 }
-          ),
-        ]);
-        const filePath = path.join(DOWNLOAD_DIR, nomeArquivo);
-        await dl.saveAs(filePath);
-        await novaAba.close().catch(() => {});
-        const base64 = fs.readFileSync(filePath).toString("base64");
-        fs.unlink(filePath, () => {});
-        boletos.push({ base64, nomeArquivo });
-        console.log(`  ✓ Boleto: ${nomeArquivo}`);
-      } catch {
-        await screenshot(novaAba, `8b-sem-dl-${cpfLimpo}-${rodada}`);
-        await novaAba.close().catch(() => {});
-        break;
+      if (linkInfo) {
+        console.log(`  Link encontrado: "${linkInfo.txt}" href="${(linkInfo.href||'').slice(0,60)}"`);
       }
-    } catch {
-      await screenshot(page, `7b-sem-aba-${cpfLimpo}-${rodada}`);
+
+      await screenshot(paginaBoleto, `8-diagnostico-${cpfLimpo}-${rodada}`);
+      if (novaAba) await novaAba.close().catch(() => {});
+      console.log("  Não conseguiu baixar — ver screenshot 7c / 8-diagnostico para próximo passo");
       break;
     }
 
