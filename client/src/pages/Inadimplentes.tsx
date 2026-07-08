@@ -953,7 +953,7 @@ export default function Inadimplentes() {
                 size="sm"
                 variant="secondary"
                 className="h-7 text-xs gap-1 bg-orange-500 text-white hover:bg-orange-600"
-                onClick={abrirModalMag}
+                onClick={() => abrirModalMag(false)}
                 title={cpfsMagSelecionados.length === 0 ? "Selecione clientes com CPF" : `Buscar boletos para ${cpfsMagSelecionados.length} cliente(s)`}
               >
                 <FileDown className="w-3 h-3" /> MAG ({cpfsMagSelecionados.length})
