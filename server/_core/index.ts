@@ -55,8 +55,9 @@ async function startServer() {
   if (db) {
     const migrations = [
       sql`ALTER TABLE relatorios_executivos ADD COLUMN imap DECIMAL(5,2)`,
-      sql`ALTER TABLE inadimplentes ADD COLUMN boleto_pdf TEXT`,
+      sql`ALTER TABLE inadimplentes ADD COLUMN boleto_pdf MEDIUMTEXT`,
       sql`ALTER TABLE inadimplentes ADD COLUMN boleto_nome VARCHAR(255)`,
+      sql`ALTER TABLE inadimplentes MODIFY COLUMN boleto_pdf MEDIUMTEXT`,
       sql`ALTER TABLE tarefa_ocorrencias MODIFY COLUMN status ENUM('PENDENTE','CONCLUIDA','ATRASADA','CANCELADA') NOT NULL DEFAULT 'PENDENTE'`,
       sql`ALTER TABLE tarefa_ocorrencias ADD UNIQUE INDEX uq_tarefa_ocorrencia (tarefaId, appUserId, data)`,
       sql`ALTER TABLE whatsapp_campanhas ADD COLUMN limiteDiario INT NOT NULL DEFAULT 0`,

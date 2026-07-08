@@ -25,10 +25,11 @@ const MAG_URL      = "https://plataformadosprodutores.mag.com.br/s/";
 const SS_DIR       = path.join(os.homedir(), "Desktop", "mag-screenshots");
 
 // ── Estado global ─────────────────────────────────────────────────────────────
-let context     = null;
-let mainPage    = null;
-let loginStatus = "aguardando";
-let tunnelUrl   = null;
+let context        = null;
+let mainPage       = null;
+let loginStatus    = "aguardando";
+let tunnelUrl      = null;
+let jobEmExecucao  = false;
 
 const USER_DATA_DIR = path.join(os.homedir(), ".mag-boletos-session");
 
@@ -141,11 +142,15 @@ app.post("/buscar-boletos", async (req, res) => {
     return res.status(400).json({ erro: "jobId, callbackUrl e apiKey são obrigatórios" });
   if (loginStatus !== "logado")
     return res.status(400).json({ erro: "sem_sessao" });
+  if (jobEmExecucao)
+    return res.status(409).json({ erro: "Já há um job em execução. Aguarde." });
 
+  jobEmExecucao = true;
   res.json({ ok: true, total: clientes.length });
 
   processarBoletos(jobId, clientes, callbackUrl, apiKey).catch(err => {
     console.error("[MAG] Erro fatal:", err.message);
+    jobEmExecucao = false;
     enviarProgresso(callbackUrl, apiKey, {
       jobId, tipo: "erro_fatal", motivo: err.message,
       atual: 0, total: clientes.length,
@@ -284,6 +289,7 @@ async function processarBoletos(jobId, clientes, callbackUrl, apiKey) {
     mensagem: "Processamento concluído",
   });
   console.log(`\n[MAG] ✓ Job ${jobId} concluído`);
+  jobEmExecucao = false;
 }
 
 // ── Automação no portal MAG ───────────────────────────────────────────────────
@@ -295,64 +301,75 @@ async function buscarBoletoPorCpf(cpf, nome) {
 
   console.log(`  CPF: ${cpfFormatado}`);
 
-  // ── 1. Navega para inadimplências ─────────────────────────────────────────
+  // ── 1. Navega para inadimplências e aguarda carregar ─────────────────────
   const urlAtual = page.url();
   if (!urlAtual.includes("inadimplencia")) {
     const base    = urlAtual.split("/s/")[0];
     const urlInad = (base || MAG_URL.split("/s/")[0]) + "/s/inadimplencias";
     console.log(`  Navegando para: ${urlInad}`);
     await page.goto(urlInad, { waitUntil: "domcontentloaded", timeout: 30000 });
-    await sleep(3000);
   }
+  // Verifica se sessão expirou (redirecionou para login)
+  const urlPosNav = page.url();
+  if (urlPosNav.includes("login") || urlPosNav.includes("identidade.mag") || urlPosNav.includes("secur/login")) {
+    loginStatus = "aguardando";
+    console.log("  [SESSÃO] Sessão expirada — redirecionado para login");
+    return { sucesso: false, erro: "sessao_expirada" };
+  }
+  // Aguarda tabela ter dados reais (waitForSelector pierca shadow DOM)
+  await page.waitForSelector(
+    'tr:has-text("R$"), [role="row"]:has-text("R$"), tr:has-text("Regulari"), [role="row"]:has-text("Pend")',
+    { timeout: 25000 }
+  ).catch(() => {});
+  // Verifica novamente após espera (pode ter redirecionado durante carregamento)
+  if (page.url().includes("login") || page.url().includes("identidade.mag")) {
+    loginStatus = "aguardando";
+    return { sucesso: false, erro: "sessao_expirada" };
+  }
+  await sleep(1500);
   await screenshot(page, `1-inadimplencias-${cpfLimpo}`);
 
   // ── 2. Busca pelo cliente ─────────────────────────────────────────────────
   const campoBusca = await esperarQualquer(page, [
     'input[placeholder*="nome" i]',
-    'input[placeholder*="buscar" i]',
-    'input[placeholder*="pesquisar" i]',
     'input[placeholder*="Digite" i]',
+    'input[placeholder*="buscar" i]',
     'input[placeholder*="search" i]',
     'input[type="search"]',
-    '.searchInput input',
     'lightning-input input',
-  ], 15000);
+  ], 10000);
 
   if (!campoBusca) {
     await screenshot(page, `erro-campo-busca-${cpfLimpo}`);
     return { sucesso: false, erro: "Campo de busca não encontrado" };
   }
 
-  const termos = [];
-  if (nome?.trim()) termos.push(nome.trim().split(" ")[0]);
-  termos.push(cpfFormatado, cpfLimpo);
-
+  const termoBusca = nome?.trim().split(" ")[0] || cpfFormatado;
   let linhaCliente = null;
-  const urlLista = page.url();
 
-  for (const termo of termos) {
-    console.log(`  Buscando por: "${termo}"`);
-    await campoBusca.click({ clickCount: 3 });
-    await campoBusca.fill(termo);
-    await sleep(400);
-    await page.keyboard.press("Enter");
-    await sleep(3000);
-    try {
-      await page.waitForFunction(
-        () => document.querySelectorAll("table tr, [role='row']").length > 1,
-        { timeout: 5000 }
-      );
-    } catch {}
+  console.log(`  Buscando por: "${termoBusca}"`);
+  await campoBusca.click({ clickCount: 3 });
+  await page.keyboard.press("Control+a");
+  // type() simula teclas reais — dispara eventos do LWC (fill() não dispara)
+  await page.keyboard.type(termoBusca, { delay: 80 });
+  await sleep(800);
+  await page.keyboard.press("Enter");
 
-    await screenshot(page, `2-resultado-busca-${cpfLimpo}`);
+  // Aguarda linha com o nome aparecer nos resultados filtrados
+  await page.waitForSelector(
+    `tr:has-text("${termoBusca}"), [role="row"]:has-text("${termoBusca}")`,
+    { timeout: 12000 }
+  ).catch(() => {});
+  await sleep(1000);
+  await screenshot(page, `2-resultado-busca-${cpfLimpo}`);
 
-    linhaCliente = await page.$(`tr:has-text("${cpfFormatado}")`);
-    if (!linhaCliente) linhaCliente = await page.$(`[role="row"]:has-text("${cpfFormatado}")`);
-    if (!linhaCliente) linhaCliente = await page.$(`tr:has-text("${cpfLimpo}")`);
-    if (!linhaCliente) linhaCliente = await page.$(`[role="row"]:has-text("${cpfLimpo}")`);
-
-    if (linhaCliente) { console.log(`  ✓ Cliente encontrado com "${termo}"`); break; }
-  }
+  linhaCliente = await page.$(`tr:has-text("${cpfFormatado}")`);
+  if (!linhaCliente) linhaCliente = await page.$(`[role="row"]:has-text("${cpfFormatado}")`);
+  if (!linhaCliente) linhaCliente = await page.$(`tr:has-text("${cpfLimpo}")`);
+  if (!linhaCliente) linhaCliente = await page.$(`[role="row"]:has-text("${cpfLimpo}")`);
+  if (!linhaCliente) linhaCliente = await page.$(`tr:has-text("${termoBusca.toUpperCase()}")`);
+  if (!linhaCliente) linhaCliente = await page.$(`[role="row"]:has-text("${termoBusca.toUpperCase()}")`);
+  if (linhaCliente) console.log(`  ✓ Cliente encontrado`);
 
   if (!linhaCliente) {
     await screenshot(page, `erro-cliente-nao-encontrado-${cpfLimpo}`);
@@ -368,10 +385,15 @@ async function buscarBoletoPorCpf(cpf, nome) {
   const linkNome = await celulaCliente.$('a').catch(() => null);
 
   console.log("  Abrindo página de competências...");
-  if (linkNome) {
-    await linkNome.click();
-  } else if (celulaCliente) {
-    await celulaCliente.click();
+  // Dismiss backdrop/modal antes de clicar — Salesforce LWC mantém overlay que intercepta cliques
+  await page.keyboard.press('Escape').catch(() => {});
+  await sleep(600);
+
+  // Usa page.mouse com coordenadas para bypassar o backdrop overlay
+  const elClick = linkNome || celulaCliente;
+  const bbClick = elClick ? await elClick.boundingBox().catch(() => null) : null;
+  if (bbClick) {
+    await page.mouse.click(bbClick.x + bbClick.width / 2, bbClick.y + bbClick.height / 2);
   } else {
     await linhaCliente.click();
   }
@@ -380,29 +402,31 @@ async function buscarBoletoPorCpf(cpf, nome) {
     page.waitForLoadState("domcontentloaded", { timeout: 20000 })
   );
   await sleep(3000);
+  const urlFicha = page.url(); // salva URL da ficha para poder retornar após cada link
   await screenshot(page, `3-competencias-${cpfLimpo}`);
 
-  // ── 4-N. Processa cada competência individualmente ────────────────────────
-  // Garante aba "Não trabalhadas" ativa
-  const abaNT = await esperarQualquer(page, [
-    'a:has-text("Não trabalhadas")',
-    'button:has-text("Não trabalhadas")',
-    '[role="tab"]:has-text("Não trabalhadas")',
-  ], 5000);
-  if (abaNT) { await abaNT.click().catch(() => {}); await sleep(1500); }
+  // ── 4. FASE 1: Gera links para todas as competências "Não trabalhadas" ───
+  const clicarAbaNT = async () => {
+    const abaNT = await esperarQualquer(page, [
+      'a:has-text("Não trabalhadas")',
+      'button:has-text("Não trabalhadas")',
+      '[role="tab"]:has-text("Não trabalhadas")',
+    ], 5000);
+    if (abaNT) { await abaNT.click().catch(() => {}); await sleep(1500); }
+  };
+  await clicarAbaNT();
 
   const nomeLimpo = nome
     ? nome.replace(/[^a-zA-ZÀ-ÿ0-9\s]/g, "").trim().substring(0, 40).replace(/\s+/g, "_")
     : cpfLimpo;
 
   const boletos = [];
+  let competenciasGeradas = 0;
 
   for (let rodada = 0; rodada < 10; rodada++) {
-    // Pega a primeira linha da tabela (cada ciclo a anterior some após o boleto)
     const primeiraLinha = await page.$('table tbody tr:first-child').catch(() => null);
-    if (!primeiraLinha) { console.log("  Sem mais linhas — concluído"); break; }
+    if (!primeiraLinha) { console.log("  Sem mais linhas não-trabalhadas"); break; }
 
-    // Lê a competência da linha para nomear o arquivo
     const competencia = await primeiraLinha.evaluate(tr => {
       for (const td of tr.querySelectorAll("td")) {
         const t = td.textContent?.trim() || "";
@@ -413,7 +437,7 @@ async function buscarBoletoPorCpf(cpf, nome) {
     }).catch(() => "");
     console.log(`  Rodada ${rodada + 1}: competência "${competencia || "?"}"`);
 
-    // Busca shadow DOM recursivo — mesmo padrão do script INVISTO (LWC não expõe checkbox no DOM normal)
+    // Clica checkbox — shadow DOM recursivo
     const checkCoords = await primeiraLinha.evaluate(tr => {
       function findCheckbox(root) {
         for (const el of root.querySelectorAll('*')) {
@@ -421,17 +445,9 @@ async function buscarBoletoPorCpf(cpf, nome) {
           if (tag === 'input' && el.type === 'checkbox') {
             el.scrollIntoView({ block: 'center', behavior: 'instant' });
             const r = el.getBoundingClientRect();
-            if (r.width > 0 && r.height > 0) return { x: r.x + r.width / 2, y: r.y + r.height / 2, via: 'input' };
+            if (r.width > 0 && r.height > 0) return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
           }
-          // LWC checkbox wrapper (lightning-primitive-cell-checkbox, c-checkbox, etc.)
-          if (tag.includes('checkbox') && el.shadowRoot) {
-            const r = findCheckbox(el.shadowRoot);
-            if (r) return r;
-          }
-          if (el.shadowRoot) {
-            const r = findCheckbox(el.shadowRoot);
-            if (r) return r;
-          }
+          if (el.shadowRoot) { const r = findCheckbox(el.shadowRoot); if (r) return r; }
         }
         return null;
       }
@@ -439,38 +455,27 @@ async function buscarBoletoPorCpf(cpf, nome) {
     }).catch(() => null);
 
     if (checkCoords) {
-      console.log(`  Checkbox via shadow DOM em (${Math.round(checkCoords.x)}, ${Math.round(checkCoords.y)}) [${checkCoords.via}]`);
       await page.mouse.click(checkCoords.x, checkCoords.y);
       await sleep(1200);
     } else {
-      // Fallback: clique por coordenada na célula (abordagem anterior)
-      console.log("  Checkbox não encontrado no shadow DOM — usando fallback por coordenada");
       const celulaCheck = await primeiraLinha.$("td:first-child").catch(() => null);
       if (celulaCheck) {
         const bb = await celulaCheck.boundingBox().catch(() => null);
-        if (bb) {
-          await page.mouse.click(bb.x + bb.width / 2, bb.y + bb.height / 2);
-          await sleep(1200);
-        }
+        if (bb) { await page.mouse.click(bb.x + bb.width / 2, bb.y + bb.height / 2); await sleep(1200); }
       }
     }
     await screenshot(page, `4-cb-${cpfLimpo}-${rodada}`);
 
-    // Confirma que o botão habilitou
     const btnCobrar = await esperarQualquer(page, [
       'button:has-text("Cobrar inadimplência")',
       'button:has-text("Cobrar Inadimplência")',
       'button:has-text("Cobrar")',
     ], 10000);
+    if (!btnCobrar) { console.log("  Botão Cobrar não encontrado"); break; }
 
-    if (!btnCobrar) {
-      console.log("  Botão Cobrar não encontrado"); break;
-    }
     let habilitado = await btnCobrar.isEnabled().catch(() => false);
-
-    // Fallback: dispatchEvent direto no input se botão ainda desabilitado
     if (!habilitado) {
-      console.log("  Botão desabilitado — tentando dispatchEvent no checkbox...");
+      // Fallback dispatchEvent
       await primeiraLinha.evaluate(tr => {
         function triggerCheckbox(root) {
           for (const el of root.querySelectorAll('input[type="checkbox"]')) {
@@ -491,136 +496,294 @@ async function buscarBoletoPorCpf(cpf, nome) {
       await sleep(1000);
       habilitado = await btnCobrar.isEnabled().catch(() => false);
     }
+    if (!habilitado) { console.log("  Checkbox não registrou"); break; }
 
-    if (!habilitado) {
-      console.log("  Botão desabilitado — checkbox não registrou (ver screenshots)"); break;
-    }
-
-    // Clica "Cobrar inadimplência"
     console.log("  Clicando Cobrar inadimplência...");
-    await btnCobrar.click();
+    { const bb = await btnCobrar.boundingBox().catch(() => null);
+      if (bb) await page.mouse.click(bb.x + bb.width / 2, bb.y + bb.height / 2);
+      else await btnCobrar.click({ force: true }); }
     await sleep(2000);
     await screenshot(page, `5-cobrar-${cpfLimpo}-${rodada}`);
 
-    // Aguarda modal
     const modal = await esperarQualquer(page, [
       '[role="dialog"]', '.slds-modal', 'div[aria-modal="true"]',
       'div:has-text("Gerar link de pagamento")',
       'div:has-text("Cobrança de inadimplência")',
     ], 20000);
-
-    if (!modal) {
-      console.log("  Modal não apareceu"); break;
-    }
+    if (!modal) { console.log("  Modal não apareceu"); break; }
     await sleep(1500);
     await screenshot(page, `6-modal-${cpfLimpo}-${rodada}`);
 
-    // Verifica se modal tem itens
     const vazio = await page.$('text="Nenhum resultado encontrado"').catch(() => null);
     if (vazio) {
-      await page.click('button:has-text("Cancelar")').catch(() => {});
-      console.log("  Modal vazio — sem itens selecionados"); break;
+      await page.click('button:has-text("Cancelar")', { force: true }).catch(() => {});
+      console.log("  Modal vazio — sem itens"); break;
     }
 
-    // Clica "Gerar link de pagamento"
     const btnGerar = await esperarQualquer(page, [
       'button:has-text("Gerar link de pagamento")',
       'button:has-text("Gerar Link de Pagamento")',
       'button:has-text("Gerar link")',
       'button:has-text("Gerar")',
     ], 10000);
+    if (!btnGerar) { console.log("  Botão Gerar não encontrado"); break; }
 
-    if (!btnGerar) {
-      console.log("  Botão Gerar link não encontrado"); break;
-    }
+    console.log("  Clicando Gerar link de pagamento...");
+    { const bb = await btnGerar.boundingBox().catch(() => null);
+      if (bb) await page.mouse.click(bb.x + bb.width / 2, bb.y + bb.height / 2);
+      else await btnGerar.click({ force: true }); }
 
-    const compTag = competencia.replace(/[^a-zA-Z0-9\-]/g, "_") || `rodada${rodada}`;
-    const nomeArquivo = `${nomeLimpo}-${cpfLimpo}-${compTag}.pdf`;
+    // Aguarda modal fechar (link gerado com sucesso) — sem esperar nova aba
+    await page.waitForFunction(
+      () => !document.querySelector('[role="dialog"], .slds-modal'),
+      { timeout: 15000 }
+    ).catch(() => {});
+    await sleep(2000);
+    await screenshot(page, `7-pos-gerar-${cpfLimpo}-${rodada}`);
+    console.log(`  ✓ Link gerado para competência "${competencia}"`);
+    competenciasGeradas++;
+    // O modal do MAG gera links para TODAS as competências de uma vez —
+    // sai do loop imediatamente e vai para Fase 2
+    break;
+  }
 
-    console.log("  Gerando link de pagamento...");
-    await screenshot(page, `7-gerar-${cpfLimpo}-${rodada}`);
-    await btnGerar.click();
-    await sleep(4000); // aguarda MAG processar sem bloquear em nova aba
+  // Mesmo sem gerar novos links, pode haver links já emitidos anteriormente — vai direto para Fase 2
+  if (competenciasGeradas === 0) {
+    console.log("  Sem competências novas para gerar — verificando links já emitidos na aba Trabalhadas...");
+  }
 
-    // Verifica o que aconteceu: nova aba, download ou permaneceu na mesma página
-    const abasDepois = context.pages().filter(p => !p.isClosed());
-    const novaAba = abasDepois.find(p => p !== page) || null;
-    await screenshot(page, `7c-pos-gerar-${cpfLimpo}-${rodada}`);
-    if (novaAba) await screenshot(novaAba, `7d-nova-aba-${cpfLimpo}-${rodada}`);
+  // ── 5. FASE 2: Aba "Trabalhadas" — clica em cada link emitido e baixa ────
+  console.log(`\n  ${competenciasGeradas} link(s) gerado(s) — verificando posição...`);
 
-    const paginaBoleto = novaAba || page;
+  // Só navega de volta se saímos da ficha do cliente (evita reload desnecessário)
+  const urlAtualFase2 = page.url();
+  const fichaBase = urlFicha.split('?')[0];
+  if (!urlAtualFase2.startsWith(fichaBase)) {
+    console.log(`  Voltando para ficha: ${urlFicha.slice(0, 60)}`);
+    await page.goto(urlFicha, { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {});
+    await sleep(8000);
+  } else {
+    console.log(`  Já na ficha — sem reload`);
+    await sleep(1000);
+  }
 
-    if (novaAba) {
-      await novaAba.waitForLoadState("domcontentloaded", { timeout: 20000 }).catch(() => {});
-      await sleep(2000);
-      console.log("  Nova aba:", novaAba.url().slice(0, 80));
-    } else {
-      console.log("  Sem nova aba — analisando página atual para link/download");
-    }
-
-    // Tenta selecionar opção Boleto se houver
-    const optBoleto = await esperarQualquer(paginaBoleto, [
-      'label:has-text("Boleto")', 'input[value*="BOLETO"]',
-      'button:has-text("Boleto")', 'li:has-text("Boleto")',
-    ], 5000);
-    if (optBoleto) { await optBoleto.click().catch(() => {}); await sleep(800); }
-
-    // Tenta download direto
-    let baixou = false;
-    try {
-      const [dl] = await Promise.all([
-        paginaBoleto.waitForEvent("download", { timeout: 15000 }),
-        paginaBoleto.click(
-          'button:has-text("Gerar boleto"), button:has-text("Baixar boleto"), button:has-text("Baixar"), button:has-text("PDF")',
-          { timeout: 8000 }
-        ),
-      ]);
-      const filePath = path.join(DOWNLOAD_DIR, nomeArquivo);
-      await dl.saveAs(filePath);
-      if (novaAba) await novaAba.close().catch(() => {});
-      const base64 = fs.readFileSync(filePath).toString("base64");
-      fs.unlink(filePath, () => {});
-      boletos.push({ base64, nomeArquivo });
-      console.log(`  ✓ Boleto: ${nomeArquivo}`);
-      baixou = true;
-    } catch { /* sem download direto — tenta via link */ }
-
-    if (!baixou) {
-      // Procura link de boleto/pagamento no DOM (shadow DOM inclusive)
-      const linkInfo = await paginaBoleto.evaluate(() => {
-        function findLink(root) {
-          for (const el of root.querySelectorAll('a, [href]')) {
-            const href = el.getAttribute('href') || '';
-            const txt = (el.textContent || '').trim();
-            if (href.match(/boleto|pay|pagamento|download/i) || txt.match(/Boleto|Baixar|PDF|Copiar link/i)) {
+  const clicarAbaT = async () => {
+    // Usa evaluate com busca recursiva em shadow DOM — mesmo padrão que funciona no INVISTO
+    const deadline = Date.now() + 20000;
+    while (Date.now() < deadline) {
+      const coords = await page.evaluate(() => {
+        function findTab(root) {
+          for (const el of root.querySelectorAll('a, button, [role="tab"], li')) {
+            const t = (el.textContent || '').trim();
+            if (t === 'Trabalhadas' || (t.startsWith('Trabalhadas') && t.length < 25)) {
               el.scrollIntoView({ block: 'center', behavior: 'instant' });
               const r = el.getBoundingClientRect();
-              return { href, txt, x: r.x + r.width / 2, y: r.y + r.height / 2 };
+              if (r.width > 0 && r.height > 0) return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
             }
           }
           for (const el of root.querySelectorAll('*')) {
-            if (el.shadowRoot) { const r = findLink(el.shadowRoot); if (r) return r; }
+            if (el.shadowRoot) { const r = findTab(el.shadowRoot); if (r) return r; }
           }
           return null;
         }
-        return findLink(document);
+        return findTab(document);
       }).catch(() => null);
 
-      if (linkInfo) {
-        console.log(`  Link encontrado: "${linkInfo.txt}" href="${(linkInfo.href||'').slice(0,60)}"`);
+      if (coords) {
+        await page.mouse.click(coords.x, coords.y);
+        await sleep(2000);
+        return true;
       }
-
-      await screenshot(paginaBoleto, `8-diagnostico-${cpfLimpo}-${rodada}`);
-      if (novaAba) await novaAba.close().catch(() => {});
-      console.log("  Não conseguiu baixar — ver screenshot 7c / 8-diagnostico para próximo passo");
-      break;
+      await sleep(600);
     }
+    return false;
+  };
 
-    await sleep(2000); // pausa antes da próxima competência
+  // Tenta coletar links já visíveis antes de clicar na aba
+  await sleep(1500);
+  const linksPrevia = await coletarLinksEmitidos();
+  const jaTemLinks = linksPrevia.filter(l => !['publicar','pesquisa','propostas','campanhas','negociacoes'].includes(l.txt.toLowerCase())).length > 0;
+
+  if (!jaTemLinks) {
+    // Não tem links visíveis — precisa clicar na aba Trabalhadas
+    if (!await clicarAbaT()) {
+      return { sucesso: false, erro: "Aba Trabalhadas não encontrada" };
+    }
+  } else {
+    console.log(`  Já na aba Trabalhadas com links visíveis`);
+  }
+  await screenshot(page, `8-trabalhadas-${cpfLimpo}`);
+
+  // Coleta links curtos da aba Trabalhadas via shadow DOM recursivo — captura href absoluta
+  async function coletarLinksEmitidos() {
+    return page.evaluate(() => {
+      function findLinks(root) {
+        const links = [];
+        for (const el of root.querySelectorAll('a')) {
+          const txt = (el.textContent || '').trim();
+          // Só links curtos lowercase/dígitos (ex: "05daf", "35068") — exclui menu
+          if (txt.length >= 4 && txt.length <= 12 && /^[a-z0-9]+$/.test(txt)) {
+            el.scrollIntoView({ block: 'center', behavior: 'instant' });
+            const r = el.getBoundingClientRect();
+            if (r.width > 0 && r.height > 0) {
+              links.push({ txt, href: el.href || el.getAttribute('href') || '' });
+            }
+          }
+        }
+        for (const el of root.querySelectorAll('*')) {
+          if (el.shadowRoot) links.push(...findLinks(el.shadowRoot));
+        }
+        return links;
+      }
+      return findLinks(document);
+    }).catch(() => []);
   }
 
+  const todosLinks = await coletarLinksEmitidos();
+  const vistos = new Set();
+  const linksEmitidos = todosLinks.filter(l => {
+    if (vistos.has(l.txt) || !l.href) return false;
+    vistos.add(l.txt); return true;
+  });
+  console.log(`  ${linksEmitidos.length} link(s): ${linksEmitidos.map(l => l.txt).join(', ')}`);
+
+  if (linksEmitidos.length === 0) {
+    await screenshot(page, `8b-sem-links-${cpfLimpo}`);
+    return { sucesso: false, erro: "Nenhum link emitido encontrado na aba Trabalhadas" };
+  }
+
+  // Processa cada link — reusa UMA página para evitar CAPTCHA em nova aba
+  const paginaLink = await context.newPage();
+  let pdfBytes = null;
+  paginaLink.on('response', async (resp) => {
+    if ((resp.headers()['content-type'] || '').includes('application/pdf')) {
+      pdfBytes = await resp.body().catch(() => null);
+    }
+  });
+
+  for (let i = 0; i < linksEmitidos.length; i++) {
+    pdfBytes = null;
+    const link = linksEmitidos[i];
+    const nomeArquivo = `${nomeLimpo}-${cpfLimpo}-link${i + 1}-${link.txt}.pdf`;
+    console.log(`\n  Link ${i + 1}/${linksEmitidos.length}: "${link.txt}" → ${link.href.slice(0, 70)}`);
+
+    await paginaLink.goto(link.href, { waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => {});
+    await sleep(3000);
+    await screenshot(paginaLink, `9-link-${cpfLimpo}-${i}`);
+
+    // magpag.mag.com.br é React normal — scrollIntoView + el.click() via evaluate
+    // (não usa page.mouse.click que falha quando botão está abaixo do viewport)
+    const clicarMagpag = async (el) => {
+      await el.evaluate(e => {
+        e.scrollIntoView({ block: 'center', behavior: 'instant' });
+        e.click();
+      }).catch(() => {});
+    };
+
+    // Passo 1: ESCOLHER PAGAMENTO
+    const btnEscolher = await esperarQualquer(paginaLink, [
+      'button:has-text("ESCOLHER PAGAMENTO")',
+      'button:has-text("Escolher Pagamento")',
+      'a:has-text("ESCOLHER PAGAMENTO")',
+    ], 8000);
+    if (btnEscolher) {
+      console.log("  → ESCOLHER PAGAMENTO");
+      await clicarMagpag(btnEscolher);
+      await sleep(3000);
+      await screenshot(paginaLink, `9a-escolher-${cpfLimpo}-${i}`);
+    }
+
+    // Passo 2: seleciona Boleto (radio)
+    const optBoleto = await esperarQualquer(paginaLink, [
+      'button:has-text("Boleto")', 'label:has-text("Boleto")',
+      'input[value*="boleto" i]',
+      'li:has-text("Boleto")', '[data-method*="boleto" i]',
+      'button:has-text("Bancário")',
+    ], 8000);
+    if (optBoleto) {
+      console.log("  → Boleto");
+      await clicarMagpag(optBoleto);
+      await sleep(2000);
+    }
+    await screenshot(paginaLink, `9b-boleto-${cpfLimpo}-${i}`);
+
+    // Passo 3: GERAR BOLETO (gera na tela, não dispara download ainda)
+    const btnGerarBoleto = await esperarQualquer(paginaLink, [
+      'button:has-text("GERAR BOLETO")',
+      'button:has-text("Gerar Boleto")',
+      'button:has-text("Gerar boleto")',
+    ], 8000);
+    if (btnGerarBoleto) {
+      console.log("  → GERAR BOLETO");
+      await clicarMagpag(btnGerarBoleto);
+      await sleep(5000);
+      await screenshot(paginaLink, `9b2-gerado-${cpfLimpo}-${i}`);
+    }
+
+    // Passo 4: BAIXAR BOLETO — aqui sim dispara o download
+    let baixou = false;
+    try {
+      const btnBaixar = await esperarQualquer(paginaLink, [
+        'button:has-text("BAIXAR BOLETO")',
+        'a:has-text("BAIXAR BOLETO")',
+        'button:has-text("Baixar Boleto")',
+        'a:has-text("Baixar Boleto")',
+        'button:has-text("Baixar")',
+        'a:has-text("Baixar")',
+      ], 10000);
+
+      if (btnBaixar) {
+        console.log("  → BAIXAR BOLETO");
+        const [dl] = await Promise.all([
+          paginaLink.waitForEvent('download', { timeout: 20000 }),
+          clicarMagpag(btnBaixar),
+        ]);
+        const filePath = path.join(DOWNLOAD_DIR, nomeArquivo);
+        await dl.saveAs(filePath);
+        const base64 = fs.readFileSync(filePath).toString('base64');
+        fs.unlink(filePath, () => {});
+        boletos.push({ base64, nomeArquivo });
+        console.log(`  ✓ ${nomeArquivo}`);
+        baixou = true;
+      }
+    } catch (err) {
+      console.log(`  ✗ Download falhou: ${String(err.message || err).slice(0, 80)}`);
+    }
+
+    // Estratégia 2: PDF interceptado via response
+    if (!baixou && pdfBytes) {
+      boletos.push({ base64: pdfBytes.toString('base64'), nomeArquivo });
+      console.log(`  ✓ ${nomeArquivo} (PDF interceptado)`);
+      baixou = true;
+    }
+
+    // Estratégia 3: extrai código de barras visível na tela
+    if (!baixou) {
+      const codigoBarra = await paginaLink.evaluate(() => {
+        const els = document.querySelectorAll('p, span, div');
+        for (const el of els) {
+          const t = (el.textContent || '').trim().replace(/\s/g, '');
+          if (/^\d{47,48}$/.test(t)) return t;
+        }
+        return null;
+      }).catch(() => null);
+      if (codigoBarra) {
+        console.log(`  → Código de barras: ${codigoBarra}`);
+        boletos.push({ base64: null, codigoBarra, nomeArquivo });
+        baixou = true;
+      }
+    }
+
+    if (!baixou) {
+      await screenshot(paginaLink, `9c-sem-dl-${cpfLimpo}-${i}`);
+      console.log(`  ✗ Não baixou — ver 9b/9c`);
+    }
+  }
+
+  await paginaLink.close().catch(() => {});
+
   if (boletos.length === 0) {
-    return { sucesso: false, erro: "Nenhum boleto gerado — veja screenshots para diagnóstico" };
+    return { sucesso: false, erro: "Boletos não baixados — ver screenshots 9b/9c" };
   }
   return { sucesso: true, boletos };
 }
