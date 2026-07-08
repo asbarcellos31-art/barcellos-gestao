@@ -93,6 +93,10 @@ export default function CrmLeads() {
   const [importando, setImportando] = useState(false);
   const [mesImport, setMesImport] = useState(String(new Date().getMonth() + 1));
   const [anoImport, setAnoImport] = useState(String(ANO_ATUAL));
+  const [modalDuplicatas, setModalDuplicatas] = useState(false);
+  const [duplicatasInfo, setDuplicatasInfo] = useState<{
+    novos: any[]; existentes: { payload: any; leadId: number; nome: string }[];
+  }>({ novos: [], existentes: [] });
   const [editandoId, setEditandoId] = useState<number | null>(null);
   const [form, setForm] = useState<LeadForm>(FORM_VAZIO);
   const [dataInicio, setDataInicio] = useState("");
@@ -239,6 +243,41 @@ export default function CrmLeads() {
     onSuccess: () => { utils.crmLeads.listar.invalidate(); utils.crmLeads.metricas.invalidate(); },
   });
 
+  const verificarDuplicatasMut = trpc.crmLeads.verificarDuplicatas.useMutation();
+
+  const executarImport = async (novos: any[], existentes: { payload: any; leadId: number }[], modo: "atualizar" | "pular") => {
+    setImportando(true);
+    let criados = 0, atualizados = 0;
+    try {
+      for (const payload of novos) {
+        await criarMut.mutateAsync(payload);
+        criados++;
+      }
+      if (modo === "atualizar") {
+        for (const { payload, leadId } of existentes) {
+          await atualizarMut.mutateAsync({ id: leadId, data: payload });
+          atualizados++;
+        }
+      }
+      utils.crmLeads.listar.invalidate();
+      utils.crmLeads.listarCidades.invalidate();
+      utils.crmLeads.listarUFs.invalidate();
+      const msg = modo === "atualizar"
+        ? `${criados} criado(s), ${atualizados} atualizado(s)!`
+        : `${criados} criado(s), ${existentes.length} duplicata(s) pulada(s).`;
+      toast.success(msg);
+    } finally {
+      setImportando(false);
+      setModalImport(false);
+      setModalDuplicatas(false);
+      setArquivoImport(null);
+      setVendedorImport("");
+      setOrigemImport("");
+      setMesImport(String(new Date().getMonth() + 1));
+      setAnoImport(String(ANO_ATUAL));
+    }
+  };
+
   const excluirLoteMut = trpc.crmLeads.excluirLote.useMutation({
     onSuccess: (res) => {
       utils.crmLeads.listar.invalidate();
@@ -358,14 +397,11 @@ export default function CrmLeads() {
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows: any[] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
 
-      // Detectar cabeçalho
       let headerRow = 0;
       for (let i = 0; i < Math.min(5, rows.length); i++) {
         if (rows[i].some((c: any) => String(c).toLowerCase().includes("nome"))) { headerRow = i; break; }
       }
       const headers = rows[headerRow].map((h: any) => String(h).toLowerCase().trim().replace(/\s+/g, "_"));
-
-      // Detectar se é o formato novo (DOCUMENTO, NOME, TIPO, LOGRADOURO...)
       const isNovoFormato = headers[0] === "documento" || headers.includes("logradouro") || headers.includes("ddd_cel_1");
 
       const fmtFone = (ddd: any, num: any): string | null => {
@@ -375,50 +411,35 @@ export default function CrmLeads() {
         return d ? `(${d}) ${n}` : n;
       };
 
-      let count = 0;
+      // 1. Parseia todos os payloads
+      const payloads: any[] = [];
       for (let i = headerRow + 1; i < rows.length; i++) {
         const row = rows[i];
-
         if (isNovoFormato) {
-          // Índices fixos do novo formato
           const cpfRaw = String(row[0] ?? "").trim();
           const nome = String(row[1] ?? "").trim();
           if (!nome) continue;
-          // col 2=TIPO, 3=LOGRADOURO, 4=NUMERO, 5=COMPLEMENTO, 6=BAIRRO, 7=CIDADE, 8=UF, 9=CEP (ignorado)
           const logradouro = [String(row[2] ?? "").trim(), String(row[3] ?? "").trim()].filter(Boolean).join(" ") || null;
           const numero = String(row[4] ?? "").trim() || null;
           const complemento = String(row[5] ?? "").trim() || null;
           const bairro = String(row[6] ?? "").trim() || null;
           const cidade = String(row[7] ?? "").trim() || null;
           const uf = String(row[8] ?? "").trim().toUpperCase() || null;
-          // col 9=CEP, 10=DDD_CEL_1, 11=CEL_1, 12=DDD_CEL_2, 13=CEL_2, 14=DDD_CEL_3, 15=CEL_3
-          // col 16=DDD_FIX_1, 17=FIX_1, 18=DDD_FIX_2, 19=FIX_2, 20=DDD_FIX_3, 21=FIX_3
           const telefone = fmtFone(row[10], row[11]);
           const celular2 = fmtFone(row[12], row[13]);
           const celular3 = fmtFone(row[14], row[15]);
           const fixo1 = fmtFone(row[16], row[17]);
           const fixo2 = fmtFone(row[18], row[19]);
           const fixo3 = fmtFone(row[20], row[21]);
-          // Formata CPF: 11 dígitos → XXX.XXX.XXX-XX
           const cpfNum = cpfRaw.replace(/\D/g, "").padStart(11, "0");
           const cpf = cpfNum.length === 11
             ? `${cpfNum.slice(0,3)}.${cpfNum.slice(3,6)}.${cpfNum.slice(6,9)}-${cpfNum.slice(9)}`
             : cpfRaw || null;
-
-          await criarMut.mutateAsync({
-            nome, cpf,
-            telefone, celular2, celular3, fixo1, fixo2, fixo3,
-            logradouro, numero, complemento, bairro, cidade, uf,
-            mes: mesImport ? Number(mesImport) : null,
-            ano: anoImport ? Number(anoImport) : null,
-            status: "AGUARDANDO",
-            historico: null, observacao: null, dataFechamento: null, dataEntrega: null,
-            valorEstimado: null,
-            origem: origemImport || null,
-            vendedor: vendedorImport.trim(),
-          });
+          payloads.push({ nome, cpf, telefone, celular2, celular3, fixo1, fixo2, fixo3, logradouro, numero, complemento, bairro, cidade, uf,
+            mes: mesImport ? Number(mesImport) : null, ano: anoImport ? Number(anoImport) : null,
+            status: "AGUARDANDO", historico: null, observacao: null, dataFechamento: null, dataEntrega: null,
+            valorEstimado: null, origem: origemImport || null, vendedor: vendedorImport.trim() });
         } else {
-          // Formato antigo (genérico)
           const nomeIdx = headers.findIndex((h: string) => h.includes("nome"));
           const telIdx = headers.findIndex((h: string) => h.includes("tel") || h.includes("fone"));
           const dataIdx = headers.findIndex((h: string) => h.includes("data") || h.includes("entrega"));
@@ -427,41 +448,53 @@ export default function CrmLeads() {
           const nome = nomeIdx >= 0 ? String(row[nomeIdx] || "").trim() : "";
           if (!nome) continue;
           const statusRaw = statusIdx >= 0 ? String(row[statusIdx] || "").trim().toUpperCase() : "AGUARDANDO";
-          const statusMap: Record<string, string> = {
-            "AGUARDANDO": "AGUARDANDO", "SEM CONTATO": "SEM CONTATO",
-            "EM CONTATO": "EM CONTATO", "AGENDAMENTO": "AGENDAMENTO",
-            "FECHAMENTO": "FECHAMENTO", "RECUSADO": "RECUSADO", "ENVIADO": "ENVIADO",
-          };
+          const statusMap: Record<string, string> = { "AGUARDANDO": "AGUARDANDO", "SEM CONTATO": "SEM CONTATO", "EM CONTATO": "EM CONTATO", "AGENDAMENTO": "AGENDAMENTO", "FECHAMENTO": "FECHAMENTO", "RECUSADO": "RECUSADO", "ENVIADO": "ENVIADO" };
           const valorRaw = valorIdx >= 0 ? parseFloat(String(row[valorIdx] || "0").replace(",", ".")) : null;
-          await criarMut.mutateAsync({
-            nome,
-            telefone: telIdx >= 0 ? (String(row[telIdx] || "").trim().slice(0, 30) || null) : null,
+          payloads.push({ nome, cpf: null, telefone: telIdx >= 0 ? (String(row[telIdx] || "").trim().slice(0, 30) || null) : null,
             dataEntrega: dataIdx >= 0 && row[dataIdx] ? String(row[dataIdx]) : null,
-            mes: mesImport ? Number(mesImport) : null,
-            ano: anoImport ? Number(anoImport) : null,
+            mes: mesImport ? Number(mesImport) : null, ano: anoImport ? Number(anoImport) : null,
             status: (statusMap[statusRaw] || "AGUARDANDO") as any,
             valorEstimado: valorRaw && !isNaN(valorRaw) ? valorRaw : null,
-            historico: null, observacao: null, dataFechamento: null,
-            origem: origemImport || null,
-            vendedor: vendedorImport.trim(),
-          });
+            historico: null, observacao: null, dataFechamento: null, origem: origemImport || null, vendedor: vendedorImport.trim() });
         }
-        count++;
       }
-      toast.success(`${count} lead(s) importado(s) para ${vendedorImport}!`);
-      utils.crmLeads.listar.invalidate();
-      utils.crmLeads.listarCidades.invalidate();
-      utils.crmLeads.listarUFs.invalidate();
-      setModalImport(false);
-      setArquivoImport(null);
-      setVendedorImport("");
-      setOrigemImport("");
-      setMesImport(String(new Date().getMonth() + 1));
-      setAnoImport(String(ANO_ATUAL));
+
+      if (!payloads.length) { toast.error("Nenhum lead encontrado na planilha."); return; }
+
+      // 2. Verifica duplicatas no servidor
+      const cpfs = payloads.map(p => p.cpf ?? null);
+      const nomes = payloads.map(p => p.nome);
+      const encontrados = await verificarDuplicatasMut.mutateAsync({ cpfs, nomes });
+
+      const novos: any[] = [];
+      const existentes: { payload: any; leadId: number; nome: string }[] = [];
+
+      for (const payload of payloads) {
+        const match = encontrados.find((e: any) =>
+          (payload.cpf && e.cpf && e.cpf === payload.cpf) ||
+          e.nome.toUpperCase() === payload.nome.toUpperCase()
+        );
+        if (match) {
+          existentes.push({ payload, leadId: match.id, nome: match.nome });
+        } else {
+          novos.push(payload);
+        }
+      }
+
+      // 3. Se há duplicatas, mostra modal; senão importa direto
+      if (existentes.length > 0) {
+        setDuplicatasInfo({ novos, existentes });
+        setModalImport(false);
+        setArquivoImport(null);
+        setImportando(false);
+        setModalDuplicatas(true);
+        return;
+      }
+
+      await executarImport(novos, [], "pular");
     } catch (err) {
       toast.error("Erro ao importar planilha. Verifique o formato.");
       console.error(err);
-    } finally {
       setImportando(false);
     }
   };
@@ -1867,6 +1900,61 @@ export default function CrmLeads() {
           >
             <FileText className="h-4 w-4" />
             {marcarEnviadosMut.isPending ? "Salvando..." : "Gerar PDF"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    {/* ── Modal: Duplicatas na Importação ─────────────────────────────── */}
+    <Dialog open={modalDuplicatas} onOpenChange={v => { if (!v) setModalDuplicatas(false); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Leads já existem no sistema</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          {duplicatasInfo.existentes.length > 0 && (
+            <div>
+              <p className="text-sm font-medium text-orange-700 mb-1">
+                {duplicatasInfo.existentes.length} lead(s) já cadastrado(s):
+              </p>
+              <ul className="text-sm text-gray-700 space-y-0.5 max-h-40 overflow-y-auto border rounded p-2 bg-orange-50">
+                {duplicatasInfo.existentes.map((e, i) => (
+                  <li key={i} className="flex items-center gap-1">
+                    <span className="text-orange-500">•</span> {e.nome}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {duplicatasInfo.novos.length > 0 && (
+            <p className="text-sm text-gray-600">
+              <span className="font-medium text-green-700">{duplicatasInfo.novos.length} novo(s)</span> serão criados.
+            </p>
+          )}
+          {duplicatasInfo.novos.length === 0 && (
+            <p className="text-sm text-gray-500">Nenhum lead novo para criar.</p>
+          )}
+          <p className="text-sm text-gray-500 pt-1">O que deseja fazer com os existentes?</p>
+        </div>
+        <DialogFooter className="flex-col gap-2 sm:flex-row">
+          <Button
+            variant="outline"
+            onClick={() => setModalDuplicatas(false)}
+          >
+            Cancelar
+          </Button>
+          {duplicatasInfo.novos.length > 0 && (
+            <Button
+              variant="secondary"
+              onClick={() => executarImport(duplicatasInfo.novos, [], "pular")}
+            >
+              Criar apenas os novos ({duplicatasInfo.novos.length})
+            </Button>
+          )}
+          <Button
+            onClick={() => executarImport(duplicatasInfo.novos, duplicatasInfo.existentes, "atualizar")}
+          >
+            Atualizar existentes{duplicatasInfo.novos.length > 0 ? ` e criar novos` : ""}
           </Button>
         </DialogFooter>
       </DialogContent>

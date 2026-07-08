@@ -4,15 +4,13 @@
  * Barcellos Seguros
  *
  * Como usar:
- *
- *   Setup (uma única vez — na raiz do projeto):
+ *   Setup (uma única vez):
  *     cd scripts && npm install
  *     npx playwright install chromium
  *
  *   Toda vez que for usar:
- *     1. node scripts/mag-boletos-server.js
- *     2. ngrok http 4040          (ou ngrok http --url=sua-url-fixa 4040)
- *     3. Cole a URL do ngrok no campo do modal "Buscar Boletos MAG" no sistema
+ *     node scripts/mag-boletos-server.js
+ *     (o túnel Cloudflare abre automaticamente — copie a URL no sistema)
  */
 
 const express = require("express");
@@ -24,44 +22,84 @@ const os      = require("os");
 const PORT         = 4040;
 const DOWNLOAD_DIR = path.join(os.tmpdir(), "mag-boletos");
 const MAG_URL      = "https://plataformadosprodutores.mag.com.br/s/";
+const SS_DIR       = path.join(os.homedir(), "Desktop", "mag-screenshots");
 
 // ── Estado global ─────────────────────────────────────────────────────────────
 let context     = null;
 let mainPage    = null;
-let loginStatus = "aguardando"; // "aguardando" | "logado"
+let loginStatus = "aguardando";
 let tunnelUrl   = null;
 
 const USER_DATA_DIR = path.join(os.homedir(), ".mag-boletos-session");
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
-if (!fs.existsSync(DOWNLOAD_DIR)) fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
-if (!fs.existsSync(USER_DATA_DIR)) fs.mkdirSync(USER_DATA_DIR, { recursive: true });
+for (const d of [DOWNLOAD_DIR, USER_DATA_DIR, SS_DIR]) {
+  if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
+}
 
 const app = express();
 app.use(cors({ origin: "*" }));
 app.use(express.json({ limit: "50mb" }));
 
-// ── Endpoints de login (chamados diretamente pelo browser do usuário) ─────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-// Verifica se o servidor está rodando e qual o status do login
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function screenshot(page, nome) {
+  try {
+    const ts = Date.now();
+    const p = path.join(SS_DIR, `${ts}-${nome}.png`);
+    await page.screenshot({ path: p, fullPage: true });
+    console.log(`  [SS] ${p}`);
+    return p;
+  } catch {}
+}
+
+// Aguarda elemento com múltiplos seletores — retorna o primeiro que encontrar
+async function esperarQualquer(page, seletores, timeout = 15000) {
+  const inicio = Date.now();
+  while (Date.now() - inicio < timeout) {
+    for (const sel of seletores) {
+      try {
+        const el = await page.$(sel);
+        if (el) {
+          const visivel = await el.isVisible().catch(() => false);
+          if (visivel) return el;
+        }
+      } catch {}
+    }
+    await sleep(500);
+  }
+  return null;
+}
+
+// ── Endpoints de controle ─────────────────────────────────────────────────────
+
 app.get("/status", (_req, res) => {
+  // Verifica se o browser ainda está vivo
+  if (loginStatus === "logado" && (!mainPage || mainPage.isClosed())) {
+    loginStatus = "aguardando";
+    context = null;
+    mainPage = null;
+  }
   res.json({ ok: true, logado: loginStatus === "logado", tunnelUrl });
 });
 
-// Compatibilidade com nome antigo
 app.get("/ping", (_req, res) => {
   res.json({ ok: true, loginStatus });
 });
 
-// Abre o Chrome com sessão persistente (não precisa logar de novo se já logou antes)
+app.get("/status-login", (_req, res) => {
+  res.json({ status: loginStatus });
+});
+
 app.post("/iniciar-sessao", async (_req, res) => {
   try {
-    // Se já tem contexto aberto e a página responde, só verifica o login
     if (context && mainPage) {
       try {
         await mainPage.evaluate(() => document.title);
         loginStatus = "aguardando";
-        await mainPage.goto(MAG_URL, { waitUntil: "domcontentloaded" });
+        await mainPage.goto(MAG_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
         monitorarLogin();
         return res.json({ ok: true });
       } catch {
@@ -70,22 +108,19 @@ app.post("/iniciar-sessao", async (_req, res) => {
     }
 
     const { chromium } = require("playwright");
-
-    // Contexto persistente: salva cookies/sessão em ~/.mag-boletos-session
-    // Na primeira vez pede login; nas próximas, já entra direto.
     context = await chromium.launchPersistentContext(USER_DATA_DIR, {
       headless: false,
       args: ["--start-maximized"],
       acceptDownloads: true,
       viewport: null,
+      permissions: ["notifications"],
     });
 
-    // Reusa aba existente se houver, senão abre uma nova
     const pages = context.pages();
     mainPage = pages.length > 0 ? pages[0] : await context.newPage();
 
     loginStatus = "aguardando";
-    await mainPage.goto(MAG_URL, { waitUntil: "domcontentloaded" });
+    await mainPage.goto(MAG_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
     monitorarLogin();
 
     res.json({ ok: true });
@@ -95,60 +130,79 @@ app.post("/iniciar-sessao", async (_req, res) => {
   }
 });
 
-// Polling do frontend para saber se o login foi concluído
-app.get("/status-login", (_req, res) => {
-  res.json({ status: loginStatus });
-});
-
-// ── Endpoint de busca (chamado pelo Railway via ngrok) ────────────────────────
+// ── Busca de boletos (chamado pelo Railway via túnel) ─────────────────────────
 
 app.post("/buscar-boletos", async (req, res) => {
   const { jobId, clientes, callbackUrl, apiKey } = req.body;
 
-  if (!Array.isArray(clientes) || clientes.length === 0) {
+  if (!Array.isArray(clientes) || clientes.length === 0)
     return res.status(400).json({ erro: "Lista de clientes inválida" });
-  }
-  if (!jobId || !callbackUrl || !apiKey) {
+  if (!jobId || !callbackUrl || !apiKey)
     return res.status(400).json({ erro: "jobId, callbackUrl e apiKey são obrigatórios" });
-  }
-  if (loginStatus !== "logado") {
+  if (loginStatus !== "logado")
     return res.status(400).json({ erro: "sem_sessao" });
-  }
 
   res.json({ ok: true, total: clientes.length });
 
-  processarBoletos(jobId, clientes, callbackUrl, apiKey).catch((err) => {
+  processarBoletos(jobId, clientes, callbackUrl, apiKey).catch(err => {
     console.error("[MAG] Erro fatal:", err.message);
     enviarProgresso(callbackUrl, apiKey, {
       jobId, tipo: "erro_fatal", motivo: err.message,
-      atual: 0, total: clientes.length, mensagem: "Erro fatal: " + err.message,
+      atual: 0, total: clientes.length,
+      mensagem: "Erro fatal: " + err.message,
     }).catch(() => {});
   });
 });
 
-// ── Automação ─────────────────────────────────────────────────────────────────
+// ── Detecção de login ─────────────────────────────────────────────────────────
 
 function monitorarLogin() {
+  console.log("[MAG] Monitorando login...");
+  let tentativas = 0;
   const t = setInterval(async () => {
     if (!mainPage) { clearInterval(t); return; }
+    tentativas++;
     try {
       const url = mainPage.url();
-      if (url && !url.includes("/login")) {
-        const temNav = await mainPage.evaluate(() =>
-          !!(document.querySelector("nav") ||
-             document.querySelector(".slds-global-header") ||
-             document.querySelector("[class*='navigation']") ||
-             document.querySelector("[data-aura-class*='Nav']"))
-        ).catch(() => false);
-        if (temNav) {
+      const isLoginPage = url.includes("/login") || url.includes("login?") || url.includes("secur/login");
+
+      if (!isLoginPage && url.includes("plataforma")) {
+        // Detecta elementos típicos do portal logado
+        const logado = await mainPage.evaluate(() => {
+          // Salesforce Lightning — vários seletores possíveis
+          return !!(
+            document.querySelector(".slds-global-header") ||
+            document.querySelector("[data-aura-class*='Nav']") ||
+            document.querySelector("navigation-bar") ||
+            document.querySelector(".slds-global-navigation-bar") ||
+            document.querySelector("[class*='globalHeader']") ||
+            document.querySelector(".comm-header") ||
+            document.querySelector("c-navbar") ||
+            // Verifica se tem menu lateral ou header de usuário logado
+            document.querySelector(".slds-avatar") ||
+            document.querySelector("[data-aura-class*='forceCommunity']") ||
+            // Fallback: se não está na tela de login e tem conteúdo da página
+            (document.body.innerText.length > 500 && !document.body.innerText.toLowerCase().includes("entrar com"))
+          );
+        }).catch(() => false);
+
+        if (logado) {
           loginStatus = "logado";
           console.log("[MAG] ✓ Login detectado —", url);
           clearInterval(t);
+          return;
         }
       }
-    } catch { clearInterval(t); }
+
+      if (tentativas % 5 === 0) console.log(`[MAG] Aguardando login... URL: ${url}`);
+    } catch { /* página pode estar carregando */ }
   }, 2000);
+
+  // Timeout de 10 minutos para login
+  setTimeout(() => clearInterval(t), 10 * 60 * 1000);
 }
+
+// ── Callbacks para o Railway ──────────────────────────────────────────────────
 
 async function enviarCallback(url, apiKey, body) {
   try {
@@ -157,9 +211,7 @@ async function enviarCallback(url, apiKey, body) {
       headers: { "Content-Type": "application/json", "x-api-key": apiKey },
       body: JSON.stringify(body),
     });
-    if (!resp.ok) {
-      console.warn(`[MAG] Callback ${url} retornou ${resp.status}`);
-    }
+    if (!resp.ok) console.warn(`[MAG] Callback ${url} → ${resp.status}`);
   } catch (err) {
     console.warn("[MAG] Falha no callback:", err.message);
   }
@@ -169,214 +221,379 @@ async function enviarProgresso(callbackUrl, apiKey, dados) {
   return enviarCallback(`${callbackUrl}/progresso`, apiKey, dados);
 }
 
+// ── Loop de processamento ─────────────────────────────────────────────────────
+
 async function processarBoletos(jobId, clientes, callbackUrl, apiKey) {
+  console.log(`\n[MAG] Iniciando job ${jobId} — ${clientes.length} cliente(s)`);
+
   for (let i = 0; i < clientes.length; i++) {
     const { cpf, nome } = clientes[i];
+    console.log(`\n[MAG] ${i+1}/${clientes.length} — ${nome || cpf}`);
 
     await enviarProgresso(callbackUrl, apiKey, {
       jobId, atual: i + 1, total: clientes.length, cpf, tipo: "progresso",
-      mensagem: `Processando ${i + 1}/${clientes.length} — ${nome || cpf}`,
+      mensagem: `Processando ${i+1}/${clientes.length} — ${nome || cpf}`,
     });
 
     try {
       const res = await buscarBoletoPorCpf(cpf, nome);
 
       if (res.sucesso) {
-        await enviarCallback(`${callbackUrl}/boleto`, apiKey, {
-          jobId, cpf, base64: res.base64, nomeArquivo: res.nomeArquivo,
-        });
+        for (const boleto of res.boletos) {
+          await enviarCallback(`${callbackUrl}/boleto`, apiKey, {
+            jobId, cpf, base64: boleto.base64, nomeArquivo: boleto.nomeArquivo,
+          });
+        }
         await enviarProgresso(callbackUrl, apiKey, {
           jobId, atual: i + 1, total: clientes.length, cpf, tipo: "progresso",
-          mensagem: `✓ ${i + 1}/${clientes.length} — ${nome || cpf} — boleto baixado`,
+          mensagem: `✓ ${i+1}/${clientes.length} — ${nome || cpf} — ${res.boletos.length} boleto(s) salvo(s)`,
         });
-        console.log(`[MAG] ✓ ${nome || cpf} — boleto enviado`);
+        console.log(`[MAG] ✓ ${res.boletos.length} boleto(s) enviados para ${nome || cpf}`);
       } else {
         await enviarProgresso(callbackUrl, apiKey, {
           jobId, atual: i + 1, total: clientes.length, cpf, tipo: "falha",
-          motivo: res.erro, mensagem: `✗ ${i + 1}/${clientes.length} — ${nome || cpf} — ${res.erro}`,
+          motivo: res.erro,
+          mensagem: `✗ ${i+1}/${clientes.length} — ${nome || cpf} — ${res.erro}`,
         });
-        console.log(`[MAG] ✗ ${nome || cpf} — ${res.erro}`);
+        console.log(`[MAG] ✗ Falha: ${res.erro}`);
       }
     } catch (err) {
+      console.error(`[MAG] Exceção em ${nome || cpf}:`, err.message);
       await enviarProgresso(callbackUrl, apiKey, {
         jobId, atual: i + 1, total: clientes.length, cpf, tipo: "falha",
-        motivo: err.message, mensagem: `✗ ${i + 1}/${clientes.length} — ${nome || cpf} — ${err.message}`,
+        motivo: err.message,
+        mensagem: `✗ ${i+1}/${clientes.length} — ${nome || cpf} — ${err.message}`,
       });
-      console.log(`[MAG] ✗ ${nome || cpf} — ${err.message}`);
 
+      // Fecha abas extras e volta para a aba principal
       try {
         for (const p of context.pages()) {
           if (p !== mainPage) await p.close().catch(() => {});
         }
+        // Tenta navegar de volta para a página principal
+        await mainPage.goto(MAG_URL, { waitUntil: "domcontentloaded", timeout: 20000 }).catch(() => {});
       } catch {}
     }
 
-    if (i < clientes.length - 1) await sleep(1500);
+    if (i < clientes.length - 1) await sleep(2000);
   }
 
-  // Sinaliza conclusão
   await enviarProgresso(callbackUrl, apiKey, {
     jobId, tipo: "concluido",
     atual: clientes.length, total: clientes.length,
     mensagem: "Processamento concluído",
   });
-  console.log(`[MAG] Job ${jobId} concluído`);
+  console.log(`\n[MAG] ✓ Job ${jobId} concluído`);
 }
 
-async function buscarBoletoPorCpf(cpf, nome) {
-  const cpfLimpo = cpf.replace(/\D/g, "");
-  const cpfFormatado = cpfLimpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
-  const page = mainPage;
+// ── Automação no portal MAG ───────────────────────────────────────────────────
 
-  // ── 1. Navega para página de inadimplências ───────────────────────────────
-  const base = page.url().split("/s/")[0] + "/s/";
-  const urlInad = base + "inadimplencias";
-  if (!page.url().includes("inadimplencia")) {
-    await page.goto(urlInad, { waitUntil: "domcontentloaded", timeout: 20000 });
-    await sleep(2000);
+async function buscarBoletoPorCpf(cpf, nome) {
+  const cpfLimpo     = cpf.replace(/\D/g, "");
+  const cpfFormatado = cpfLimpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+  const page         = mainPage;
+
+  console.log(`  CPF: ${cpfFormatado}`);
+
+  // ── 1. Navega para inadimplências ─────────────────────────────────────────
+  const urlAtual = page.url();
+  if (!urlAtual.includes("inadimplencia")) {
+    const base    = urlAtual.split("/s/")[0];
+    const urlInad = (base || MAG_URL.split("/s/")[0]) + "/s/inadimplencias";
+    console.log(`  Navegando para: ${urlInad}`);
+    await page.goto(urlInad, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await sleep(3000);
+  }
+  await screenshot(page, `1-inadimplencias-${cpfLimpo}`);
+
+  // ── 2. Busca pelo cliente ─────────────────────────────────────────────────
+  const campoBusca = await esperarQualquer(page, [
+    'input[placeholder*="nome" i]',
+    'input[placeholder*="buscar" i]',
+    'input[placeholder*="pesquisar" i]',
+    'input[placeholder*="Digite" i]',
+    'input[placeholder*="search" i]',
+    'input[type="search"]',
+    '.searchInput input',
+    'lightning-input input',
+  ], 15000);
+
+  if (!campoBusca) {
+    await screenshot(page, `erro-campo-busca-${cpfLimpo}`);
+    return { sucesso: false, erro: "Campo de busca não encontrado" };
   }
 
-  // ── 2. Busca pelo nome no campo de pesquisa ───────────────────────────────
-  const campoBusca = await page.waitForSelector(
-    'input[placeholder*="nome"], input[placeholder*="Nome"], input[placeholder*="Digite"]',
-    { timeout: 10000 }
-  );
-  await campoBusca.fill("");
-  await sleep(300);
+  const termos = [];
+  if (nome?.trim()) termos.push(nome.trim().split(" ")[0]);
+  termos.push(cpfFormatado, cpfLimpo);
 
-  // Usa nome se disponível, senão CPF formatado
-  const termoBusca = nome && nome.trim() ? nome.trim().split(" ")[0] : cpfFormatado;
-  await campoBusca.fill(termoBusca);
-  await sleep(1500);
-  await page.keyboard.press("Enter");
-  await sleep(2000);
+  let linhaCliente = null;
+  const urlLista = page.url();
 
-  // ── 3. Acha a linha pelo CPF na tabela ───────────────────────────────────
-  let linhaCliente = await page.$(`tr:has-text("${cpfFormatado}"), tr:has-text("${cpfLimpo}")`);
-
-  if (!linhaCliente && nome) {
-    // Tenta buscar com nome completo
-    await campoBusca.fill("");
-    await sleep(300);
-    await campoBusca.fill(nome.trim());
-    await sleep(1500);
+  for (const termo of termos) {
+    console.log(`  Buscando por: "${termo}"`);
+    await campoBusca.click({ clickCount: 3 });
+    await campoBusca.fill(termo);
+    await sleep(400);
     await page.keyboard.press("Enter");
-    await sleep(2000);
-    linhaCliente = await page.$(`tr:has-text("${cpfFormatado}"), tr:has-text("${cpfLimpo}")`);
+    await sleep(3000);
+    try {
+      await page.waitForFunction(
+        () => document.querySelectorAll("table tr, [role='row']").length > 1,
+        { timeout: 5000 }
+      );
+    } catch {}
+
+    await screenshot(page, `2-resultado-busca-${cpfLimpo}`);
+
+    linhaCliente = await page.$(`tr:has-text("${cpfFormatado}")`);
+    if (!linhaCliente) linhaCliente = await page.$(`[role="row"]:has-text("${cpfFormatado}")`);
+    if (!linhaCliente) linhaCliente = await page.$(`tr:has-text("${cpfLimpo}")`);
+    if (!linhaCliente) linhaCliente = await page.$(`[role="row"]:has-text("${cpfLimpo}")`);
+
+    if (linhaCliente) { console.log(`  ✓ Cliente encontrado com "${termo}"`); break; }
   }
 
   if (!linhaCliente) {
-    const ss = path.join(os.homedir(), "Desktop", `mag-sem-resultado-${Date.now()}.png`);
-    await page.screenshot({ path: ss });
-    console.log(`[MAG] Cliente não encontrado (${nome} / ${cpfFormatado}). Screenshot: ${ss}`);
-    return { sucesso: false, erro: "Cliente não encontrado na listagem de inadimplentes" };
+    await screenshot(page, `erro-cliente-nao-encontrado-${cpfLimpo}`);
+    return { sucesso: false, erro: `Cliente não encontrado (CPF: ${cpfFormatado})` };
   }
 
-  // ── 4. Clica na seta ">" para abrir o detalhe ────────────────────────────
-  const seta = await linhaCliente.$('td:last-child button, td:last-child a');
-  if (seta) {
-    await seta.click();
+  // ── 3. Clica no NOME do cliente (não no ">") → vai para página de competências
+  // Clicar em ">" vai para ficha social do Salesforce (errado).
+  // Clicar no nome vai para a página com a lista de parcelas/competências (correto).
+  const celulas = await linhaCliente.$$("td, [role='gridcell']");
+  // Segunda coluna = nome do cliente (link)
+  const celulaCliente = celulas.length > 1 ? celulas[1] : celulas[0];
+  const linkNome = await celulaCliente.$('a').catch(() => null);
+
+  console.log("  Abrindo página de competências...");
+  if (linkNome) {
+    await linkNome.click();
+  } else if (celulaCliente) {
+    await celulaCliente.click();
   } else {
     await linhaCliente.click();
   }
-  await page.waitForLoadState("load", { timeout: 15000 });
-  await sleep(2000);
 
-  // Screenshot do detalhe do cliente
-  const ssDetalhe = path.join(os.homedir(), "Desktop", `mag-detalhe-${Date.now()}.png`);
-  await page.screenshot({ path: ssDetalhe, fullPage: true });
-  console.log(`[MAG] Screenshot detalhe cliente: ${ssDetalhe}`);
+  await page.waitForLoadState("networkidle", { timeout: 25000 }).catch(() =>
+    page.waitForLoadState("domcontentloaded", { timeout: 20000 })
+  );
+  await sleep(3000);
+  await screenshot(page, `3-competencias-${cpfLimpo}`);
 
-  // ── 5. Seleciona todos os checkboxes de parcelas ──────────────────────────
-  const checkboxes = await page.$$('input[type="checkbox"]');
-  for (const cb of checkboxes) {
-    try {
-      const checked = await cb.isChecked({ timeout: 2000 }).catch(() => true);
-      if (!checked) {
-        await cb.check({ timeout: 3000 }).catch(() => {});
+  // ── 4-N. Processa cada competência individualmente ────────────────────────
+  // Garante aba "Não trabalhadas" ativa
+  const abaNT = await esperarQualquer(page, [
+    'a:has-text("Não trabalhadas")',
+    'button:has-text("Não trabalhadas")',
+    '[role="tab"]:has-text("Não trabalhadas")',
+  ], 5000);
+  if (abaNT) { await abaNT.click().catch(() => {}); await sleep(1500); }
+
+  const nomeLimpo = nome
+    ? nome.replace(/[^a-zA-ZÀ-ÿ0-9\s]/g, "").trim().substring(0, 40).replace(/\s+/g, "_")
+    : cpfLimpo;
+
+  const boletos = [];
+
+  for (let rodada = 0; rodada < 10; rodada++) {
+    // Pega a primeira linha da tabela (cada ciclo a anterior some após o boleto)
+    const primeiraLinha = await page.$('table tbody tr:first-child').catch(() => null);
+    if (!primeiraLinha) { console.log("  Sem mais linhas — concluído"); break; }
+
+    // Lê a competência da linha para nomear o arquivo
+    const competencia = await primeiraLinha.evaluate(tr => {
+      for (const td of tr.querySelectorAll("td")) {
+        const t = td.textContent?.trim() || "";
+        if (/[A-Za-záéíóúãõ]+ - \d{4}/i.test(t)) return t.replace(" - ", "-");
+        if (/\d{2}\/\d{4}/.test(t)) return t.replace("/", "-");
       }
-    } catch {}
+      return "";
+    }).catch(() => "");
+    console.log(`  Rodada ${rodada + 1}: competência "${competencia || "?"}"`);
+
+    // Busca shadow DOM recursivo — mesmo padrão do script INVISTO (LWC não expõe checkbox no DOM normal)
+    const checkCoords = await primeiraLinha.evaluate(tr => {
+      function findCheckbox(root) {
+        for (const el of root.querySelectorAll('*')) {
+          const tag = el.tagName?.toLowerCase() || '';
+          if (tag === 'input' && el.type === 'checkbox') {
+            el.scrollIntoView({ block: 'center', behavior: 'instant' });
+            const r = el.getBoundingClientRect();
+            if (r.width > 0 && r.height > 0) return { x: r.x + r.width / 2, y: r.y + r.height / 2, via: 'input' };
+          }
+          // LWC checkbox wrapper (lightning-primitive-cell-checkbox, c-checkbox, etc.)
+          if (tag.includes('checkbox') && el.shadowRoot) {
+            const r = findCheckbox(el.shadowRoot);
+            if (r) return r;
+          }
+          if (el.shadowRoot) {
+            const r = findCheckbox(el.shadowRoot);
+            if (r) return r;
+          }
+        }
+        return null;
+      }
+      return findCheckbox(tr);
+    }).catch(() => null);
+
+    if (checkCoords) {
+      console.log(`  Checkbox via shadow DOM em (${Math.round(checkCoords.x)}, ${Math.round(checkCoords.y)}) [${checkCoords.via}]`);
+      await page.mouse.click(checkCoords.x, checkCoords.y);
+      await sleep(1200);
+    } else {
+      // Fallback: clique por coordenada na célula (abordagem anterior)
+      console.log("  Checkbox não encontrado no shadow DOM — usando fallback por coordenada");
+      const celulaCheck = await primeiraLinha.$("td:first-child").catch(() => null);
+      if (celulaCheck) {
+        const bb = await celulaCheck.boundingBox().catch(() => null);
+        if (bb) {
+          await page.mouse.click(bb.x + bb.width / 2, bb.y + bb.height / 2);
+          await sleep(1200);
+        }
+      }
+    }
+    await screenshot(page, `4-cb-${cpfLimpo}-${rodada}`);
+
+    // Confirma que o botão habilitou
+    const btnCobrar = await esperarQualquer(page, [
+      'button:has-text("Cobrar inadimplência")',
+      'button:has-text("Cobrar Inadimplência")',
+      'button:has-text("Cobrar")',
+    ], 10000);
+
+    if (!btnCobrar) {
+      console.log("  Botão Cobrar não encontrado"); break;
+    }
+    let habilitado = await btnCobrar.isEnabled().catch(() => false);
+
+    // Fallback: dispatchEvent direto no input se botão ainda desabilitado
+    if (!habilitado) {
+      console.log("  Botão desabilitado — tentando dispatchEvent no checkbox...");
+      await primeiraLinha.evaluate(tr => {
+        function triggerCheckbox(root) {
+          for (const el of root.querySelectorAll('input[type="checkbox"]')) {
+            if (!el.checked) {
+              el.checked = true;
+              el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+              el.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true }));
+              return true;
+            }
+          }
+          for (const el of root.querySelectorAll('*')) {
+            if (el.shadowRoot && triggerCheckbox(el.shadowRoot)) return true;
+          }
+          return false;
+        }
+        triggerCheckbox(tr);
+      }).catch(() => {});
+      await sleep(1000);
+      habilitado = await btnCobrar.isEnabled().catch(() => false);
+    }
+
+    if (!habilitado) {
+      console.log("  Botão desabilitado — checkbox não registrou (ver screenshots)"); break;
+    }
+
+    // Clica "Cobrar inadimplência"
+    console.log("  Clicando Cobrar inadimplência...");
+    await btnCobrar.click();
+    await sleep(2000);
+    await screenshot(page, `5-cobrar-${cpfLimpo}-${rodada}`);
+
+    // Aguarda modal
+    const modal = await esperarQualquer(page, [
+      '[role="dialog"]', '.slds-modal', 'div[aria-modal="true"]',
+      'div:has-text("Gerar link de pagamento")',
+      'div:has-text("Cobrança de inadimplência")',
+    ], 20000);
+
+    if (!modal) {
+      console.log("  Modal não apareceu"); break;
+    }
+    await sleep(1500);
+    await screenshot(page, `6-modal-${cpfLimpo}-${rodada}`);
+
+    // Verifica se modal tem itens
+    const vazio = await page.$('text="Nenhum resultado encontrado"').catch(() => null);
+    if (vazio) {
+      await page.click('button:has-text("Cancelar")').catch(() => {});
+      console.log("  Modal vazio — sem itens selecionados"); break;
+    }
+
+    // Clica "Gerar link de pagamento"
+    const btnGerar = await esperarQualquer(page, [
+      'button:has-text("Gerar link de pagamento")',
+      'button:has-text("Gerar Link de Pagamento")',
+      'button:has-text("Gerar link")',
+      'button:has-text("Gerar")',
+    ], 10000);
+
+    if (!btnGerar) {
+      console.log("  Botão Gerar link não encontrado"); break;
+    }
+
+    const compTag = competencia.replace(/[^a-zA-Z0-9\-]/g, "_") || `rodada${rodada}`;
+    const nomeArquivo = `${nomeLimpo}-${cpfLimpo}-${compTag}.pdf`;
+
+    console.log("  Gerando link de pagamento...");
+    await screenshot(page, `7-gerar-${cpfLimpo}-${rodada}`);
+
+    // Aguarda nova aba
+    try {
+      const [novaAba] = await Promise.all([
+        context.waitForEvent("page", { timeout: 30000 }),
+        btnGerar.click(),
+      ]);
+      await novaAba.waitForLoadState("domcontentloaded", { timeout: 30000 }).catch(() => {});
+      await sleep(3000);
+      await screenshot(novaAba, `8-pagamento-${cpfLimpo}-${rodada}`);
+
+      // Seleciona Boleto se houver opção
+      const optBoleto = await esperarQualquer(novaAba, [
+        'label:has-text("Boleto")', 'input[value*="BOLETO"]',
+        'button:has-text("Boleto")', 'li:has-text("Boleto")',
+      ], 8000);
+      if (optBoleto) { await optBoleto.click().catch(() => {}); await sleep(800); }
+
+      try {
+        const [dl] = await Promise.all([
+          novaAba.waitForEvent("download", { timeout: 45000 }),
+          novaAba.click(
+            'button:has-text("Gerar boleto"), button:has-text("Gerar"), button:has-text("Baixar")',
+            { timeout: 15000 }
+          ),
+        ]);
+        const filePath = path.join(DOWNLOAD_DIR, nomeArquivo);
+        await dl.saveAs(filePath);
+        await novaAba.close().catch(() => {});
+        const base64 = fs.readFileSync(filePath).toString("base64");
+        fs.unlink(filePath, () => {});
+        boletos.push({ base64, nomeArquivo });
+        console.log(`  ✓ Boleto: ${nomeArquivo}`);
+      } catch {
+        await screenshot(novaAba, `8b-sem-dl-${cpfLimpo}-${rodada}`);
+        await novaAba.close().catch(() => {});
+        break;
+      }
+    } catch {
+      await screenshot(page, `7b-sem-aba-${cpfLimpo}-${rodada}`);
+      break;
+    }
+
+    await sleep(2000); // pausa antes da próxima competência
   }
-  await sleep(800);
 
-  // Captura competências para nomear o arquivo
-  const competencias = await page.evaluate(() => {
-    const tds = Array.from(document.querySelectorAll("td, [class*='competencia'], [class*='parcela']"));
-    return tds
-      .map((el) => el.textContent?.trim())
-      .filter((t) => t && /\d{2}\/\d{4}/.test(t))
-      .slice(0, 4)
-      .join("_")
-      .replace(/\//g, "-");
-  }).catch(() => "boleto");
-
-  // ── 6. Clica em "Cobrar inadimplência" ───────────────────────────────────
-  const ssBefore = path.join(os.homedir(), "Desktop", `mag-antes-cobrar-${Date.now()}.png`);
-  await page.screenshot({ path: ssBefore, fullPage: true });
-  console.log(`[MAG] Screenshot antes de cobrar: ${ssBefore}`);
-
-  await page.click(
-    'button:has-text("Cobrar inadimplência"), button:has-text("Cobrar Inadimplência"), ' +
-    'button:has-text("Cobrança Inadimplentes"), span:has-text("Cobrar inadimplência"), ' +
-    'span:has-text("Cobrança Inadimplentes")',
-    { timeout: 12000 }
-  );
-  await sleep(1500);
-
-  // ── 7. Confirma ──────────────────────────────────────────────────────────
-  const ssConfirm = path.join(os.homedir(), "Desktop", `mag-confirmar-${Date.now()}.png`);
-  await page.screenshot({ path: ssConfirm, fullPage: true });
-  console.log(`[MAG] Screenshot antes de confirmar: ${ssConfirm}`);
-
-  const btnConfirmar = await page.waitForSelector(
-    'button:has-text("Confirmar"), button:has-text("Gerar"), button:has-text("OK"), button:has-text("Próximo"), button:has-text("Sim")',
-    { timeout: 10000 }
-  );
-  await btnConfirmar.click();
-  await sleep(2000);
-
-  // ── 8. Clica no link gerado → nova aba ───────────────────────────────────
-  const [novaAba] = await Promise.all([
-    context.waitForEvent("page", { timeout: 20000 }),
-    page.click(
-      'a[href*="link"], a[href*="boleto"], a:has-text("Acessar"), a:has-text("Visualizar"), a:has-text("Link"), td a',
-      { timeout: 10000 }
-    ),
-  ]);
-  await novaAba.waitForLoadState("domcontentloaded", { timeout: 20000 });
-
-  // ── 9. Escolher pagamento → Boleto → Gerar ───────────────────────────────
-  await novaAba.click(
-    'button:has-text("Escolher pagamento"), button:has-text("Pagamento"), a:has-text("Pagamento")',
-    { timeout: 15000 }
-  );
-  await sleep(1000);
-
-  await novaAba.click('label:has-text("Boleto"), button:has-text("Boleto"), input[value*="BOLETO"]', { timeout: 10000 });
-  await sleep(800);
-
-  const [download] = await Promise.all([
-    novaAba.waitForEvent("download", { timeout: 30000 }),
-    novaAba.click('button:has-text("Gerar boleto"), button:has-text("Gerar Boleto"), button:has-text("Gerar")', { timeout: 10000 }),
-  ]);
-
-  const nomeArquivo = `${cpfLimpo}-${competencias || "boleto"}.pdf`;
-  const filePath = path.join(DOWNLOAD_DIR, nomeArquivo);
-  await download.saveAs(filePath);
-  await novaAba.close().catch(() => {});
-
-  const buffer = fs.readFileSync(filePath);
-  const base64 = buffer.toString("base64");
-  fs.unlink(filePath, () => {});
-
-  return { sucesso: true, base64, nomeArquivo };
+  if (boletos.length === 0) {
+    return { sucesso: false, erro: "Nenhum boleto gerado — veja screenshots para diagnóstico" };
+  }
+  return { sucesso: true, boletos };
 }
 
-function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+// ── Startup ───────────────────────────────────────────────────────────────────
 
-// ── Start ─────────────────────────────────────────────────────────────────────
 const { Tunnel } = require("cloudflared");
-
 let cfTunnel = null;
 
 app.listen(PORT, () => {
@@ -385,7 +602,8 @@ app.listen(PORT, () => {
   console.log("║     Barcellos Seguros — Buscador de Boletos MAG        ║");
   console.log("╚════════════════════════════════════════════════════════╝");
   console.log(`\n✓ Servidor ativo em http://localhost:${PORT}`);
-  console.log("\n⏳ Abrindo túnel público (Cloudflare)...\n");
+  console.log(`\n📁 Screenshots salvas em: ${SS_DIR}`);
+  console.log("\n⏳ Abrindo túnel Cloudflare...\n");
 
   try {
     cfTunnel = new Tunnel(["tunnel", "--url", `http://localhost:${PORT}`]);
@@ -403,7 +621,7 @@ app.listen(PORT, () => {
     });
   } catch (err) {
     console.error("[MAG] Não foi possível abrir túnel:", err.message);
-    console.log(`\n→ Alternativa manual: ngrok http ${PORT}`);
+    console.log(`\n→ Alternativa: ngrok http ${PORT}`);
   }
 });
 

@@ -132,8 +132,11 @@ function EditableCard({ title, icon, value, onChange, placeholder }: {
 
 export default function RelatorioExecutivo() {
   const now = new Date();
-  const [mes, setMes] = useState(now.getMonth() + 1);
-  const [ano, setAno] = useState(now.getFullYear());
+  const prevMonth = now.getMonth(); // 0 = Jan, so getMonth() = current month - 1 (prev month)
+  const defaultMes = prevMonth === 0 ? 12 : prevMonth;
+  const defaultAno = prevMonth === 0 ? now.getFullYear() - 1 : now.getFullYear();
+  const [mes, setMes] = useState(defaultMes);
+  const [ano, setAno] = useState(defaultAno);
   const [exportando, setExportando] = useState(false);
   const relatorioRef = useRef<HTMLDivElement>(null);
 

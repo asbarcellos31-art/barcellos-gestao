@@ -1270,6 +1270,27 @@ export default function Clientes() {
               </SelectContent>
             </Select>
 
+            <Select
+              value={origemFiltro === "sem_origem" ? "sem_origem" : origemFiltro ? String(origemFiltro) : "todos"}
+              onValueChange={(v) => { setOrigemFiltro(v === "todos" ? null : v === "sem_origem" ? "sem_origem" : Number(v)); setPagina(0); }}
+            >
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Origem" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todas as origens</SelectItem>
+                <SelectItem value="sem_origem">Sem origem</SelectItem>
+                {(origensData as any[]).map((o: any) => (
+                  <SelectItem key={o.id} value={String(o.id)}>
+                    <span className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full inline-block" style={{ background: o.cor }} />
+                      {o.nome}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
             {/* Filtro por produto — multi-seleção */}
             <div className="relative" ref={filtroProdutoRef}>
               <button
@@ -1384,9 +1405,9 @@ export default function Clientes() {
             >
               <SlidersHorizontal className="h-3.5 w-3.5" />
               Filtros Avançados
-              {(origemFiltro || idadeMinFiltro || idadeMaxFiltro || valorMinFiltro || valorMaxFiltro || dataNascInicioFiltro || dataNascFimFiltro) && (
+              {(idadeMinFiltro || idadeMaxFiltro || valorMinFiltro || valorMaxFiltro || dataNascInicioFiltro || dataNascFimFiltro) && (
                 <span className="bg-primary text-primary-foreground text-xs rounded-full px-1.5 py-0.5 min-w-[18px] text-center leading-none">
-                  {[origemFiltro, idadeMinFiltro, idadeMaxFiltro, valorMinFiltro, valorMaxFiltro, dataNascInicioFiltro, dataNascFimFiltro].filter(Boolean).length}
+                  {[idadeMinFiltro, idadeMaxFiltro, valorMinFiltro, valorMaxFiltro, dataNascInicioFiltro, dataNascFimFiltro].filter(Boolean).length}
                 </span>
               )}
             </Button>
@@ -1395,31 +1416,6 @@ export default function Clientes() {
           {/* Painel de filtros avançados */}
           {filtrosAvancadosAbertos && (
             <div className="mt-3 pt-3 border-t grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-              {/* Origem */}
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-muted-foreground">Origem</label>
-                <Select
-                  value={origemFiltro === "sem_origem" ? "sem_origem" : origemFiltro ? String(origemFiltro) : "todos"}
-                  onValueChange={(v) => { setOrigemFiltro(v === "todos" ? null : v === "sem_origem" ? "sem_origem" : Number(v)); setPagina(0); }}
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue placeholder="Todas as origens" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="todos">Todas as origens</SelectItem>
-                    <SelectItem value="sem_origem">Sem origem</SelectItem>
-                    {(origensData as any[]).map((o: any) => (
-                      <SelectItem key={o.id} value={String(o.id)}>
-                        <span className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full inline-block" style={{ background: o.cor }} />
-                          {o.nome}
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
               {/* Faixa de Idade */}
               <div className="space-y-1">
                 <label className="text-xs font-medium text-muted-foreground">Idade (anos)</label>

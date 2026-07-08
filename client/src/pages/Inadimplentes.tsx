@@ -129,15 +129,30 @@ export default function Inadimplentes() {
   const [sucessosMag, setSucessosMag] = useState(0);
   const [falhasMag, setFalhasMag] = useState<{ cpf: string; motivo: string }[]>([]);
   const [jobIdMag, setJobIdMag] = useState<string | null>(null);
+  const [clientesMagFila, setClientesMagFila] = useState<{ cpf: string; nome: string }[]>([]);
 
   const fecharModalMag = useCallback(() => {
     setJobIdMag(null);
     setModalMagAberto(false);
     setFaseMag("verificando");
     setProgressoMag({ atual: 0, total: 0, mensagem: "" });
+    setClientesMagFila([]);
   }, []);
 
-  async function abrirModalMag() {
+  async function abrirModalMag(usarTodos = false) {
+    // Define fila: todos do mês ou apenas selecionados
+    if (usarTodos) {
+      const todos = listaFiltrada
+        .filter(i => (i.cpf ?? "").replace(/\D/g, "").length >= 11)
+        .map(i => ({ cpf: i.cpf!, nome: i.nome }));
+      setClientesMagFila(todos);
+    } else {
+      const sel = cpfsMagSelecionados.map(cpf => {
+        const item = listaFiltrada.find(i => (i.cpf ?? String(i.id)) === cpf);
+        return { cpf, nome: item?.nome ?? "" };
+      });
+      setClientesMagFila(sel);
+    }
     setFaseMag("verificando");
     setModalMagAberto(true);
     try {
@@ -185,7 +200,7 @@ export default function Inadimplentes() {
     onSuccess: ({ jobId }) => {
       setJobIdMag(jobId);
       setFaseMag("processando");
-      setProgressoMag({ atual: 0, total: cpfsMagSelecionados.length, mensagem: "Iniciando..." });
+      setProgressoMag({ atual: 0, total: clientesMagFila.length, mensagem: "Iniciando..." });
       setSucessosMag(0);
       setFalhasMag([]);
     },
@@ -193,19 +208,15 @@ export default function Inadimplentes() {
   });
 
   async function iniciarBuscaMag() {
-    if (cpfsMagSelecionados.length === 0) {
-      toast.error("Nenhum cliente com CPF selecionado");
+    if (clientesMagFila.length === 0) {
+      toast.error("Nenhum cliente com CPF na fila");
       return;
     }
     if (!ngrokUrl.trim()) {
       toast.error("Servidor local não retornou URL do túnel — verifique o terminal");
       return;
     }
-    const clientes = cpfsMagSelecionados.map((cpf) => {
-      const item = listaFiltrada.find((i) => (i.cpf ?? String(i.id)) === cpf);
-      return { cpf, nome: item?.nome ?? "" };
-    });
-    iniciarBuscaMagMutation.mutate({ clientes, ngrokUrl: ngrokUrl.trim() });
+    iniciarBuscaMagMutation.mutate({ clientes: clientesMagFila, ngrokUrl: ngrokUrl.trim() });
   }
 
   // Polling do job via tRPC (a cada 2s enquanto jobIdMag estiver definido)
@@ -555,6 +566,12 @@ export default function Inadimplentes() {
           </Button>
           <Button variant="outline" onClick={exportarCSV} className="gap-2">
             <Download className="h-4 w-4" /> Exportar CSV
+          </Button>
+          <Button
+            onClick={() => abrirModalMag(true)}
+            className="gap-2 bg-orange-500 hover:bg-orange-600 text-white"
+          >
+            <FileDown className="w-4 h-4" /> Boletos MAG — {MESES[mesSel - 1]}
           </Button>
           <Button onClick={abrirNovo} className="gap-2">
             <Plus className="w-4 h-4" /> Novo Registro Manual
@@ -1751,8 +1768,9 @@ export default function Inadimplentes() {
                     <div className="rounded-lg bg-muted p-4 space-y-2">
                       <p className="text-xs font-semibold text-muted-foreground uppercase">Setup (uma única vez):</p>
                       <code className="block text-xs bg-black text-green-400 rounded p-2 select-all whitespace-pre">cd scripts && npm install{"\n"}npx playwright install chromium</code>
-                      <p className="text-xs font-semibold text-muted-foreground uppercase mt-2">Toda vez que for usar (2 terminais):</p>
-                      <code className="block text-xs bg-black text-green-400 rounded p-2 select-all whitespace-pre">node scripts/mag-boletos-server.js{"\n"}ngrok http 4040</code>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase mt-2">Toda vez que for usar:</p>
+                      <code className="block text-xs bg-black text-green-400 rounded p-2 select-all">node scripts/mag-boletos-server.js</code>
+                      <p className="text-xs text-muted-foreground">O túnel abre automaticamente. Aguarde a URL aparecer no terminal e volte aqui.</p>
                     </div>
                     <Button size="sm" variant="outline" onClick={abrirModalMag} className="gap-2">
                       <RefreshCw className="w-3 h-3" /> Verificar novamente
@@ -1791,37 +1809,43 @@ export default function Inadimplentes() {
                   <CheckCircle2 className="w-4 h-4" /> Logado no portal MAG
                 </div>
 
-                {/* URL ngrok */}
+                {/* URL do túnel */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase">URL do ngrok</label>
-                  <input
-                    type="url"
-                    value={ngrokUrl}
-                    onChange={(e) => salvarNgrokUrl(e.target.value)}
-                    placeholder="https://xxxx.ngrok-free.app"
-                    className="w-full text-sm border rounded px-3 py-1.5 bg-background focus:outline-none focus:ring-2 focus:ring-orange-400"
-                  />
-                  <p className="text-xs text-muted-foreground">Cole a URL exibida pelo <code>ngrok http 4040</code> — salva automaticamente.</p>
+                  <label className="text-xs font-semibold text-muted-foreground uppercase">URL do túnel</label>
+                  {ngrokUrl ? (
+                    <div className="flex items-center gap-2 rounded bg-green-50 border border-green-200 px-3 py-2">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-green-600 flex-shrink-0" />
+                      <span className="text-xs font-mono text-green-700 break-all">{ngrokUrl}</span>
+                    </div>
+                  ) : (
+                    <input
+                      type="url"
+                      value={ngrokUrl}
+                      onChange={(e) => salvarNgrokUrl(e.target.value)}
+                      placeholder="https://xxxx.trycloudflare.com"
+                      className="w-full text-sm border rounded px-3 py-1.5 bg-background focus:outline-none focus:ring-2 focus:ring-orange-400"
+                    />
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    {ngrokUrl ? "Detectado automaticamente do servidor local." : "Cole a URL do túnel exibida no terminal após iniciar o servidor."}
+                  </p>
                 </div>
 
                 <div className="rounded-lg bg-muted/50 border p-3">
-                  <p className="text-sm font-medium mb-2">{cpfsMagSelecionados.length} cliente{cpfsMagSelecionados.length !== 1 ? "s" : ""} na fila:</p>
+                  <p className="text-sm font-medium mb-2">{clientesMagFila.length} cliente{clientesMagFila.length !== 1 ? "s" : ""} na fila:</p>
                   <div className="max-h-32 overflow-y-auto space-y-1">
-                    {cpfsMagSelecionados.map((cpf) => {
-                      const item = listaFiltrada.find((i) => (i.cpf ?? String(i.id)) === cpf);
-                      return (
-                        <div key={cpf} className="text-xs flex items-center gap-2">
-                          <span className="font-mono text-muted-foreground">{cpf}</span>
-                          {item && <span className="text-foreground">{item.nome}</span>}
-                        </div>
-                      );
-                    })}
+                    {clientesMagFila.map(({ cpf, nome }) => (
+                      <div key={cpf} className="text-xs flex items-center gap-2">
+                        <span className="font-mono text-muted-foreground">{cpf}</span>
+                        <span className="text-foreground">{nome}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
                 <Button
                   onClick={iniciarBuscaMag}
                   className="w-full gap-2 bg-orange-500 hover:bg-orange-600"
-                  disabled={cpfsMagSelecionados.length === 0 || !ngrokUrl.trim() || iniciarBuscaMagMutation.isPending}
+                  disabled={clientesMagFila.length === 0 || !ngrokUrl.trim() || iniciarBuscaMagMutation.isPending}
                 >
                   <FileDown className="w-4 h-4" />
                   {iniciarBuscaMagMutation.isPending ? "Iniciando..." : "Iniciar busca dos boletos"}
