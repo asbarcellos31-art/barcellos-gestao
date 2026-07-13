@@ -644,7 +644,7 @@ export default function CrmLeads() {
     const map: Record<string, string> = {
       "AGUARDANDO": "aguardando", "SEM CONTATO": "semContato",
       "EM CONTATO": "emContato", "AGENDAMENTO": "agendamento",
-      "FECHAMENTO": "fechamento", "RECUSADO": "recusado",
+      "FECHAMENTO": "fechamento", "RECUSADO": "recusado", "ENVIADO": "enviado",
     };
     return Number(m[map[key]] || 0);
   };
@@ -656,7 +656,7 @@ export default function CrmLeads() {
     const map: Record<string, string> = {
       "AGUARDANDO": "aguardando", "SEM CONTATO": "semContato",
       "EM CONTATO": "emContato", "AGENDAMENTO": "agendamento",
-      "FECHAMENTO": "fechamento", "RECUSADO": "recusado",
+      "FECHAMENTO": "fechamento", "RECUSADO": "recusado", "ENVIADO": "enviado",
     };
     return Number(m[map[key]] || 0);
   };

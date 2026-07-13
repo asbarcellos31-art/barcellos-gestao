@@ -852,6 +852,7 @@ export async function metricasLeads(ano?: number, mes?: number, vendedor?: strin
     agendamento: sql<number>`SUM(CASE WHEN status = 'AGENDAMENTO' THEN 1 ELSE 0 END)`,
     fechamento: sql<number>`SUM(CASE WHEN status = 'FECHAMENTO' THEN 1 ELSE 0 END)`,
     recusado: sql<number>`SUM(CASE WHEN status = 'RECUSADO' THEN 1 ELSE 0 END)`,
+    enviado: sql<number>`SUM(CASE WHEN status = 'ENVIADO' THEN 1 ELSE 0 END)`,
     totalValorEstimado: sql<string>`COALESCE(SUM(valorEstimado), 0)`,
   }).from(crmLeads).where(where);
 
@@ -875,6 +876,7 @@ export async function metricasLeads(ano?: number, mes?: number, vendedor?: strin
     agendamento: Number(totais?.agendamento || 0),
     fechamento,
     recusado: Number(totais?.recusado || 0),
+    enviado: Number(totais?.enviado || 0),
     totalValorEstimado: Number(totais?.totalValorEstimado || 0),
     taxaConversao: total > 0 ? Math.round((fechamento / total) * 100) : 0,
     mensal: mensalRows.map(m => ({
