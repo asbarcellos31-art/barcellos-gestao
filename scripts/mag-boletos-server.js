@@ -348,11 +348,25 @@ async function buscarBoletoPorCpf(cpf, nome) {
   let linhaCliente = null;
 
   console.log(`  Buscando por: "${termoBusca}"`);
-  await campoBusca.click({ clickCount: 3 });
-  await page.keyboard.press("Control+a");
-  // type() simula teclas reais — dispara eventos do LWC (fill() não dispara)
-  await page.keyboard.type(termoBusca, { delay: 80 });
-  await sleep(800);
+
+  // Tenta digitar até 3x — após jobs anteriores o LWC pode ignorar os primeiros caracteres
+  for (let tentDigit = 0; tentDigit < 3; tentDigit++) {
+    await campoBusca.click({ clickCount: 3 });
+    await sleep(300);
+    await page.keyboard.press("Control+a");
+    await sleep(200);
+    await page.keyboard.press("Delete");
+    await sleep(300);
+    await page.keyboard.type(termoBusca, { delay: 100 });
+    await sleep(500);
+
+    // Verifica se o campo realmente tem o texto esperado
+    const valorAtual = await campoBusca.evaluate(el => el.value).catch(() => "");
+    console.log(`  Campo busca (tentativa ${tentDigit + 1}): "${valorAtual}"`);
+    if (valorAtual.toLowerCase().includes(termoBusca.toLowerCase().slice(0, 3))) break;
+    await sleep(500);
+  }
+
   await page.keyboard.press("Enter");
 
   // Aguarda linha com o nome aparecer nos resultados filtrados
@@ -406,13 +420,41 @@ async function buscarBoletoPorCpf(cpf, nome) {
   await screenshot(page, `3-competencias-${cpfLimpo}`);
 
   // ── 4. FASE 1: Gera links para todas as competências "Não trabalhadas" ───
+
+  // Busca elemento por texto em shadow DOM recursivo → retorna coordenadas
+  const findByText = async (textos, tags = ['button', 'a', '[role="tab"]', 'li'], timeout = 12000) => {
+    const tagsSel = tags.join(',');
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
+      const coords = await page.evaluate(({ textos, tagsSel }) => {
+        function find(root) {
+          for (const el of root.querySelectorAll(tagsSel)) {
+            const t = (el.textContent || '').trim();
+            if (textos.some(tx => t === tx || t.startsWith(tx))) {
+              el.scrollIntoView({ block: 'center', behavior: 'instant' });
+              const r = el.getBoundingClientRect();
+              if (r.width > 0 && r.height > 0) return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+            }
+          }
+          for (const el of root.querySelectorAll('*')) {
+            if (el.shadowRoot) { const r = find(el.shadowRoot); if (r) return r; }
+          }
+          return null;
+        }
+        return find(document);
+      }, { textos, tagsSel }).catch(() => null);
+      if (coords) return coords;
+      await sleep(500);
+    }
+    return null;
+  };
+
+  // Clica a aba "Não trabalhadas" via shadow DOM recursivo
   const clicarAbaNT = async () => {
-    const abaNT = await esperarQualquer(page, [
-      'a:has-text("Não trabalhadas")',
-      'button:has-text("Não trabalhadas")',
-      '[role="tab"]:has-text("Não trabalhadas")',
-    ], 5000);
-    if (abaNT) { await abaNT.click().catch(() => {}); await sleep(1500); }
+    const coords = await findByText(['Não trabalhadas'], ['a', 'button', '[role="tab"]', 'li'], 8000);
+    if (coords) { await page.mouse.click(coords.x, coords.y); await sleep(2000); return true; }
+    console.log("  ⚠ Aba 'Não trabalhadas' não encontrada");
+    return false;
   };
   await clicarAbaNT();
 
@@ -423,87 +465,229 @@ async function buscarBoletoPorCpf(cpf, nome) {
   const boletos = [];
   let competenciasGeradas = 0;
 
-  for (let rodada = 0; rodada < 10; rodada++) {
-    const primeiraLinha = await page.$('table tbody tr:first-child').catch(() => null);
-    if (!primeiraLinha) { console.log("  Sem mais linhas não-trabalhadas"); break; }
+  // Busca todas as linhas da tabela via shadow DOM recursivo.
+  // Retorna array de { comp, cbCoords } onde cbCoords aponta para o elemento VISÍVEL
+  // (anda para cima a partir do input escondido até encontrar ancestral com área > 8px).
+  const obterLinhasTabela = async () => {
+    return page.evaluate(() => {
+      const rows = [];
+      const seen = new Set();
 
-    const competencia = await primeiraLinha.evaluate(tr => {
-      for (const td of tr.querySelectorAll("td")) {
-        const t = td.textContent?.trim() || "";
-        if (/[A-Za-záéíóúãõ]+ - \d{4}/i.test(t)) return t.replace(" - ", "-");
-        if (/\d{2}\/\d{4}/.test(t)) return t.replace("/", "-");
-      }
-      return "";
-    }).catch(() => "");
-    console.log(`  Rodada ${rodada + 1}: competência "${competencia || "?"}"`);
-
-    // Clica checkbox — shadow DOM recursivo
-    const checkCoords = await primeiraLinha.evaluate(tr => {
-      function findCheckbox(root) {
-        for (const el of root.querySelectorAll('*')) {
-          const tag = el.tagName?.toLowerCase() || '';
-          if (tag === 'input' && el.type === 'checkbox') {
+      function cbCoordsDeInput(input) {
+        // Anda para cima pelo DOM até achar elemento visível (>= 8px)
+        let el = input;
+        for (let i = 0; i < 8 && el; i++) {
+          const r = el.getBoundingClientRect();
+          if (r.width >= 8 && r.height >= 8 && r.top >= -50 && r.top <= window.innerHeight + 50) {
             el.scrollIntoView({ block: 'center', behavior: 'instant' });
-            const r = el.getBoundingClientRect();
-            if (r.width > 0 && r.height > 0) return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+            const r2 = el.getBoundingClientRect();
+            return { x: r2.x + r2.width / 2, y: r2.y + r2.height / 2 };
           }
-          if (el.shadowRoot) { const r = findCheckbox(el.shadowRoot); if (r) return r; }
+          el = el.parentElement;
+        }
+        // Fallback: procura label ou span irmão visível
+        const parent = input.parentElement;
+        if (parent) {
+          for (const sib of parent.querySelectorAll('label, [class*="faux"], [class*="checkbox__label"]')) {
+            const r = sib.getBoundingClientRect();
+            if (r.width >= 8 && r.height >= 8) {
+              sib.scrollIntoView({ block: 'center', behavior: 'instant' });
+              const r2 = sib.getBoundingClientRect();
+              return { x: r2.x + r2.width / 2, y: r2.y + r2.height / 2 };
+            }
+          }
         }
         return null;
       }
-      return findCheckbox(tr);
+
+      function findInputCb(root) {
+        for (const e of root.querySelectorAll('*')) {
+          if (e.tagName?.toLowerCase() === 'input' && e.type === 'checkbox') return e;
+          if (e.shadowRoot) { const f = findInputCb(e.shadowRoot); if (f) return f; }
+        }
+        return null;
+      }
+
+      function scanRows(root) {
+        for (const tbody of root.querySelectorAll('tbody')) {
+          for (const tr of tbody.querySelectorAll('tr')) {
+            const text = (tr.textContent || '').replace(/\s+/g, ' ').trim();
+            if (!text || seen.has(text.slice(0, 40))) continue;
+            seen.add(text.slice(0, 40));
+
+            let comp = '';
+            const m = text.match(/([A-Za-záéíóúãõÉÁÍÓÚÃÕ]+\s*[–\-]\s*\d{4}|\d{2}\/\d{4})/i);
+            if (m) comp = m[0].replace(/\s*[–\-]\s*/, '-').replace('/', '-');
+
+            const inputEl = findInputCb(tr);
+            const cbCoords = inputEl ? cbCoordsDeInput(inputEl) : null;
+            if (cbCoords) rows.push({ comp, cbCoords });
+          }
+        }
+        for (const el of root.querySelectorAll('*')) {
+          if (el.shadowRoot) scanRows(el.shadowRoot);
+        }
+      }
+      scanRows(document);
+      return rows;
+    }).catch(() => []);
+  };
+
+  // Força seleção via propriedade checked + evento change composed (backup)
+  const forcarSelecaoCheckboxes = async (compRef) => {
+    return page.evaluate((compRef) => {
+      let count = 0;
+      function selectInRoot(root) {
+        for (const tbody of root.querySelectorAll('tbody')) {
+          for (const tr of tbody.querySelectorAll('tr')) {
+            const text = (tr.textContent || '').replace(/\s+/g, ' ');
+            const forms = compRef
+              ? [compRef, compRef.replace('-', ' - '), compRef.replace('-', '/')]
+              : [];
+            if (compRef && !forms.some(f => text.includes(f))) continue;
+            function activateCb(r) {
+              for (const e of r.querySelectorAll('*')) {
+                if (e.tagName?.toLowerCase() === 'input' && e.type === 'checkbox') {
+                  if (!e.checked) {
+                    e.checked = true;
+                    e.dispatchEvent(new Event('change', { bubbles: true, cancelable: false, composed: true }));
+                    e.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, composed: true }));
+                  }
+                  return true;
+                }
+                if (e.shadowRoot) { if (activateCb(e.shadowRoot)) return true; }
+              }
+              return false;
+            }
+            if (activateCb(tr)) count++;
+          }
+        }
+        for (const el of root.querySelectorAll('*')) {
+          if (el.shadowRoot) selectInRoot(el.shadowRoot);
+        }
+      }
+      selectInRoot(document);
+      return count;
+    }, compRef).catch(() => 0);
+  };
+
+  // Verifica se botão Cobrar está habilitado via shadow DOM recursivo
+  const cobrarHabilitado = async () => {
+    return page.evaluate(() => {
+      function find(root) {
+        for (const el of root.querySelectorAll('button')) {
+          const t = (el.textContent || '').trim();
+          if (/cobrar/i.test(t)) return !el.disabled && !el.hasAttribute('disabled');
+        }
+        for (const el of root.querySelectorAll('*')) {
+          if (el.shadowRoot) { const r = find(el.shadowRoot); if (r !== undefined) return r; }
+        }
+        return undefined;
+      }
+      return find(document);
+    }).catch(() => false);
+  };
+
+  for (let grupo = 0; grupo < 20; grupo++) {
+    // Garante que está na aba "Não trabalhadas" a cada iteração.
+    // No grupo > 0: faz bounce (clica Trabalhadas → Não trabalhadas) para forçar reload do conteúdo.
+    if (grupo > 0) {
+      const trabCoords = await findByText(['Trabalhadas'], ['a', 'button', '[role="tab"]', 'li'], 5000);
+      if (trabCoords) { await page.mouse.click(trabCoords.x, trabCoords.y); await sleep(1500); }
+      await clicarAbaNT();
+      await sleep(2000);
+    }
+    await sleep(2000);
+
+    const linhas = await obterLinhasTabela();
+    if (linhas.length === 0) { console.log("  Sem mais linhas não-trabalhadas"); break; }
+
+    const compGrupo = linhas[0].comp;
+    const linhasGrupo = compGrupo ? linhas.filter(l => !l.comp || l.comp === compGrupo) : linhas;
+    console.log(`\n  Grupo ${grupo + 1}: competência "${compGrupo}" — ${linhasGrupo.length} linha(s)`);
+
+    // Tenta select-all via checkbox do cabeçalho (encontra visível igual ao das linhas)
+    let selecionadas = 0;
+    const headerCbCoords = await page.evaluate(() => {
+      function cbVisivelDeInput(input) {
+        let el = input;
+        for (let i = 0; i < 8 && el; i++) {
+          const r = el.getBoundingClientRect();
+          if (r.width >= 8 && r.height >= 8) {
+            el.scrollIntoView({ block: 'center', behavior: 'instant' });
+            const r2 = el.getBoundingClientRect();
+            return { x: r2.x + r2.width / 2, y: r2.y + r2.height / 2 };
+          }
+          el = el.parentElement;
+        }
+        return null;
+      }
+      function find(root) {
+        for (const th of root.querySelectorAll('thead th, thead td, [slot="headerCell"]')) {
+          function findInTh(r) {
+            for (const e of r.querySelectorAll('*')) {
+              if (e.tagName?.toLowerCase() === 'input' && e.type === 'checkbox') {
+                return cbVisivelDeInput(e);
+              }
+              if (e.shadowRoot) { const c = findInTh(e.shadowRoot); if (c) return c; }
+            }
+            return null;
+          }
+          const c = findInTh(th) || (th.shadowRoot && findInTh(th.shadowRoot));
+          if (c) return c;
+        }
+        for (const el of root.querySelectorAll('*')) {
+          if (el.shadowRoot) { const r = find(el.shadowRoot); if (r) return r; }
+        }
+        return null;
+      }
+      return find(document);
     }).catch(() => null);
 
-    if (checkCoords) {
-      await page.mouse.click(checkCoords.x, checkCoords.y);
-      await sleep(1200);
+    if (headerCbCoords) {
+      console.log("  Select-all via checkbox cabeçalho...");
+      await page.mouse.click(headerCbCoords.x, headerCbCoords.y);
+      await sleep(1500);
+      selecionadas = linhasGrupo.length;
     } else {
-      const celulaCheck = await primeiraLinha.$("td:first-child").catch(() => null);
-      if (celulaCheck) {
-        const bb = await celulaCheck.boundingBox().catch(() => null);
-        if (bb) { await page.mouse.click(bb.x + bb.width / 2, bb.y + bb.height / 2); await sleep(1200); }
+      // Clica cada checkbox via coordenadas do elemento VISÍVEL
+      console.log(`  Clicando ${linhasGrupo.length} checkbox(es) via coordenadas...`);
+      for (const linha of linhasGrupo) {
+        await page.mouse.click(linha.cbCoords.x, linha.cbCoords.y);
+        await sleep(500);
+        selecionadas++;
       }
-    }
-    await screenshot(page, `4-cb-${cpfLimpo}-${rodada}`);
-
-    const btnCobrar = await esperarQualquer(page, [
-      'button:has-text("Cobrar inadimplência")',
-      'button:has-text("Cobrar Inadimplência")',
-      'button:has-text("Cobrar")',
-    ], 10000);
-    if (!btnCobrar) { console.log("  Botão Cobrar não encontrado"); break; }
-
-    let habilitado = await btnCobrar.isEnabled().catch(() => false);
-    if (!habilitado) {
-      // Fallback dispatchEvent
-      await primeiraLinha.evaluate(tr => {
-        function triggerCheckbox(root) {
-          for (const el of root.querySelectorAll('input[type="checkbox"]')) {
-            if (!el.checked) {
-              el.checked = true;
-              el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-              el.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true }));
-              return true;
-            }
-          }
-          for (const el of root.querySelectorAll('*')) {
-            if (el.shadowRoot && triggerCheckbox(el.shadowRoot)) return true;
-          }
-          return false;
-        }
-        triggerCheckbox(tr);
-      }).catch(() => {});
       await sleep(1000);
-      habilitado = await btnCobrar.isEnabled().catch(() => false);
     }
-    if (!habilitado) { console.log("  Checkbox não registrou"); break; }
+
+    // Backup: força seleção via propriedade + evento composed (para LWC shadow DOM)
+    const forçados = await forcarSelecaoCheckboxes(compGrupo);
+    console.log(`  ${selecionadas} clicado(s) via coords + ${forçados} via JS composed`);
+    await screenshot(page, `4-cb-${cpfLimpo}-g${grupo}`);
+
+    // Aguarda botão Cobrar ficar habilitado
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await sleep(800);
+
+    const habilitado = await cobrarHabilitado();
+    if (!habilitado) {
+      console.log("  ⚠ Botão Cobrar ainda desabilitado após seleção — tentando novamente via force...");
+      // Segunda tentativa: força diretamente e espera mais
+      await forcarSelecaoCheckboxes(compGrupo);
+      await sleep(2000);
+    }
+
+    const cobrarCoords = await findByText(
+      ['Cobrar inadimplência', 'Cobrar Inadimplência', 'Cobrar'],
+      ['button'],
+      10000
+    );
+    if (!cobrarCoords) { console.log("  Botão Cobrar não encontrado"); break; }
 
     console.log("  Clicando Cobrar inadimplência...");
-    { const bb = await btnCobrar.boundingBox().catch(() => null);
-      if (bb) await page.mouse.click(bb.x + bb.width / 2, bb.y + bb.height / 2);
-      else await btnCobrar.click({ force: true }); }
+    await page.mouse.click(cobrarCoords.x, cobrarCoords.y);
     await sleep(2000);
-    await screenshot(page, `5-cobrar-${cpfLimpo}-${rodada}`);
+    await screenshot(page, `5-cobrar-${cpfLimpo}-g${grupo}`);
 
     const modal = await esperarQualquer(page, [
       '[role="dialog"]', '.slds-modal', 'div[aria-modal="true"]',
@@ -512,7 +696,7 @@ async function buscarBoletoPorCpf(cpf, nome) {
     ], 20000);
     if (!modal) { console.log("  Modal não apareceu"); break; }
     await sleep(1500);
-    await screenshot(page, `6-modal-${cpfLimpo}-${rodada}`);
+    await screenshot(page, `6-modal-${cpfLimpo}-g${grupo}`);
 
     const vazio = await page.$('text="Nenhum resultado encontrado"').catch(() => null);
     if (vazio) {
@@ -533,18 +717,14 @@ async function buscarBoletoPorCpf(cpf, nome) {
       if (bb) await page.mouse.click(bb.x + bb.width / 2, bb.y + bb.height / 2);
       else await btnGerar.click({ force: true }); }
 
-    // Aguarda modal fechar (link gerado com sucesso) — sem esperar nova aba
     await page.waitForFunction(
       () => !document.querySelector('[role="dialog"], .slds-modal'),
       { timeout: 15000 }
     ).catch(() => {});
     await sleep(2000);
-    await screenshot(page, `7-pos-gerar-${cpfLimpo}-${rodada}`);
-    console.log(`  ✓ Link gerado para competência "${competencia}"`);
-    competenciasGeradas++;
-    // O modal do MAG gera links para TODAS as competências de uma vez —
-    // sai do loop imediatamente e vai para Fase 2
-    break;
+    await screenshot(page, `7-pos-gerar-${cpfLimpo}-g${grupo}`);
+    console.log(`  ✓ Links gerados para "${compGrupo}"`);
+    competenciasGeradas += selecionadas;
   }
 
   // Mesmo sem gerar novos links, pode haver links já emitidos anteriormente — vai direto para Fase 2

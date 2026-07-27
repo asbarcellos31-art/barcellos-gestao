@@ -1760,13 +1760,9 @@ export default function Inadimplentes() {
                       <WifiOff className="w-4 h-4" /> Servidor local não encontrado (porta 4040)
                     </div>
                     <div className="rounded-lg bg-muted p-4 space-y-2">
-                      <p className="text-xs font-semibold text-muted-foreground uppercase">Setup (uma única vez):</p>
-                      <code className="block text-xs bg-black text-green-400 rounded p-2 select-all whitespace-pre">cd scripts && npm install{"\n"}npx playwright install chromium</code>
-                      <p className="text-xs font-semibold text-muted-foreground uppercase mt-2">Toda vez que for usar:</p>
-                      <code className="block text-xs bg-black text-green-400 rounded p-2 select-all">node scripts/mag-boletos-server.js</code>
-                      <p className="text-xs text-muted-foreground">O túnel abre automaticamente. Aguarde a URL aparecer no terminal e volte aqui.</p>
+                      <p className="text-xs text-muted-foreground">O servidor MAG inicia automaticamente quando o Mac liga. Se acabou de ligar o computador, aguarde alguns segundos e clique em <strong>Verificar novamente</strong>.</p>
                     </div>
-                    <Button size="sm" variant="outline" onClick={abrirModalMag} className="gap-2">
+                    <Button size="sm" variant="outline" onClick={() => abrirModalMag(false)} className="gap-2">
                       <RefreshCw className="w-3 h-3" /> Verificar novamente
                     </Button>
                   </div>
