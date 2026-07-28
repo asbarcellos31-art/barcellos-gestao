@@ -1839,8 +1839,18 @@ export default function Inadimplentes() {
 
                 {/* Preview da mensagem */}
                 <div className="rounded-lg bg-green-50 border border-green-200 p-3">
-                  <p className="text-xs font-semibold text-green-800 mb-1">📱 Preview da mensagem:</p>
-                  <p className="text-xs text-green-800 whitespace-pre-line">{tipoMsgWA === "com_boleto" ? msgComBoleto : msgPadrao}</p>
+                  <p className="text-xs font-semibold text-green-800 mb-2">📱 Preview da mensagem:</p>
+                  <p className="text-xs text-green-800 whitespace-pre-line">
+                    {tipoMsgWA === "com_boleto"
+                      ? msgPadrao + "\n\nSegue em anexo o seu boleto. A senha para abertura é os 5 primeiros dígitos do seu CPF: "
+                      : msgPadrao}
+                  </p>
+                  {tipoMsgWA === "com_boleto" && (
+                    <span className="text-xs text-green-800 font-bold">12345</span>
+                  )}
+                  {tipoMsgWA === "com_boleto" && (
+                    <p className="text-xs text-green-600 mt-1 italic">* Os 5 dígitos serão diferentes para cada cliente.</p>
+                  )}
                 </div>
 
                 {comBoleto > 0 && (
