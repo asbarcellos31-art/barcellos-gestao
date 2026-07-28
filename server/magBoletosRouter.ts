@@ -199,4 +199,16 @@ export const magTrpcRouter = router({
         falhas: job.falhas,
       };
     }),
+
+  obterBoleto: publicProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      const rows = await getPool().execute(
+        `SELECT boleto_pdf, boleto_nome FROM inadimplentes WHERE id = ? LIMIT 1`,
+        [input.id]
+      );
+      const row = (rows[0] as any[])[0];
+      if (!row?.boleto_pdf) return null;
+      return { base64: row.boleto_pdf as string, nome: row.boleto_nome as string };
+    }),
 });

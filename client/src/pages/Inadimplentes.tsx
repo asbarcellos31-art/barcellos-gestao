@@ -1147,17 +1147,23 @@ export default function Inadimplentes() {
                               >
                                 <Paperclip className="w-3.5 h-3.5" />
                               </Button>
-                              {(boletosPorCliente.has(itemKey) || !!(item as any).boleto_pdf) && (
+                              {(boletosPorCliente.has(itemKey) || !!(item as any).boleto_nome) && (
                                 <Button
                                   variant="ghost"
                                   size="sm"
                                   className="h-7 w-7 p-0 text-blue-600 hover:text-blue-800"
                                   title="Visualizar boleto PDF"
-                                  onClick={() => {
-                                    const base64 = boletosPorCliente.get(itemKey)?.base64 || (item as any).boleto_pdf;
-                                    if (!base64) return;
-                                    const url = `data:application/pdf;base64,${base64}`;
-                                    window.open(url, '_blank');
+                                  onClick={async () => {
+                                    const local = boletosPorCliente.get(itemKey);
+                                    if (local) {
+                                      window.open(`data:application/pdf;base64,${local.base64}`, '_blank');
+                                      return;
+                                    }
+                                    try {
+                                      const res = await trpc.mag.obterBoleto.query({ id: item.id });
+                                      if (res?.base64) window.open(`data:application/pdf;base64,${res.base64}`, '_blank');
+                                      else toast.error("PDF não encontrado");
+                                    } catch { toast.error("Erro ao carregar boleto"); }
                                   }}
                                 >
                                   <Eye className="w-3.5 h-3.5" />
