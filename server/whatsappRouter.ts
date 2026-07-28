@@ -627,10 +627,15 @@ export const whatsappRouter = router({
           continue;
         }
         const cpfLimpadoSenha = (item.cpf as string).replace(/\D/g, "").slice(0, 5);
-        const sufixoBoleto = input.tipoMensagem === "com_boleto"
+        const avisBoleto = input.tipoMensagem === "com_boleto"
           ? `\n\nSegue em anexo o seu boleto. A senha para abertura é os 5 primeiros dígitos do seu CPF: *${cpfLimpadoSenha}*`
           : "";
-        const mensagem = mensagemTemplate.replace(/\{\{nome\}\}/g, nome.split(" ")[0]) + sufixoBoleto;
+        // Insere aviso do boleto após a primeira linha (saudação), antes do restante
+        const templateComNome = mensagemTemplate.replace(/\{\{nome\}\}/g, nome.split(" ")[0]);
+        const primeiraQuebraDupla = templateComNome.indexOf("\n\n");
+        const mensagem = primeiraQuebraDupla === -1
+          ? templateComNome + avisBoleto
+          : templateComNome.slice(0, primeiraQuebraDupla) + avisBoleto + templateComNome.slice(primeiraQuebraDupla);
         let boleto = boletoMap.get(item.cpf);
 
         // Fallback: busca boleto no banco se não foi enviado no input

@@ -1795,7 +1795,7 @@ export default function Inadimplentes() {
           {(() => {
             const comBoleto = Array.from(selecionados).filter(k => boletosPorCliente.has(k)).length;
             const msgPadrao = "Olá, [Nome]! Identificamos uma pendência financeira em seu nome junto à Barcellos Seguros.\n\nPor favor, entre em contato para regularizar sua situação:\n📞 (48) 3372-6890\n\nEvite a interrupção dos seus serviços. Estamos à disposição para ajudá-lo(a).\n\nEquipe Barcellos Seguros";
-            const msgComBoleto = msgPadrao + "\n\nSegue em anexo o seu boleto. A senha para abertura é os 5 primeiros dígitos do seu CPF: *XXXXX*";
+            const msgComBoleto = "Olá, [Nome]! Identificamos uma pendência financeira em seu nome junto à Barcellos Seguros.\n\nSegue em anexo o seu boleto. A senha para abertura é os 5 primeiros dígitos do seu CPF: [12345]\n\nPor favor, entre em contato para regularizar sua situação:\n📞 (48) 3372-6890\n\nEvite a interrupção dos seus serviços. Estamos à disposição para ajudá-lo(a).\n\nEquipe Barcellos Seguros";
             return (
               <div className="space-y-3">
                 <p className="text-sm text-muted-foreground">
@@ -1840,16 +1840,9 @@ export default function Inadimplentes() {
                 {/* Preview da mensagem */}
                 <div className="rounded-lg bg-green-50 border border-green-200 p-3">
                   <p className="text-xs font-semibold text-green-800 mb-2">📱 Preview da mensagem:</p>
-                  <p className="text-xs text-green-800 whitespace-pre-line">
-                    {tipoMsgWA === "com_boleto"
-                      ? msgPadrao + "\n\nSegue em anexo o seu boleto. A senha para abertura é os 5 primeiros dígitos do seu CPF: "
-                      : msgPadrao}
-                  </p>
+                  <p className="text-xs text-green-800 whitespace-pre-line">{tipoMsgWA === "com_boleto" ? msgComBoleto : msgPadrao}</p>
                   {tipoMsgWA === "com_boleto" && (
-                    <span className="text-xs text-green-800 font-bold">12345</span>
-                  )}
-                  {tipoMsgWA === "com_boleto" && (
-                    <p className="text-xs text-green-600 mt-1 italic">* Os 5 dígitos serão diferentes para cada cliente.</p>
+                    <p className="text-xs text-green-600 mt-2 italic">* Os dígitos entre [ ] serão os 5 primeiros do CPF de cada cliente.</p>
                   )}
                 </div>
 
