@@ -579,6 +579,7 @@ export const whatsappRouter = router({
         nomeArquivo: z.string(),
       })).optional(),
       instancia: z.string().optional(),
+      tipoMensagem: z.enum(["padrao", "com_boleto"]).optional(),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -625,7 +626,11 @@ export const whatsappRouter = router({
           resultados.push({ nome, telefone: "", status: "ERRO", erro: "Sem telefone cadastrado" });
           continue;
         }
-        const mensagem = mensagemTemplate.replace(/\{\{nome\}\}/g, nome.split(" ")[0]);
+        const cpfLimpadoSenha = (item.cpf as string).replace(/\D/g, "").slice(0, 5);
+        const sufixoBoleto = input.tipoMensagem === "com_boleto"
+          ? `\n\nSegue em anexo o seu boleto. A senha para abertura é os 5 primeiros dígitos do seu CPF: *${cpfLimpadoSenha}*`
+          : "";
+        const mensagem = mensagemTemplate.replace(/\{\{nome\}\}/g, nome.split(" ")[0]) + sufixoBoleto;
         let boleto = boletoMap.get(item.cpf);
 
         // Fallback: busca boleto no banco se não foi enviado no input
