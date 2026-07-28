@@ -1391,7 +1391,7 @@ export default function Inadimplentes() {
                               return;
                             }
                             try {
-                              const res = await utils.client.mag.obterBoleto.query({ id: modalAnexos.id });
+                              const res = await utils.mag.obterBoleto.fetch({ id: modalAnexos.id });
                               if (res?.base64) window.open(`data:application/pdf;base64,${res.base64}`, '_blank');
                               else toast.error("PDF não encontrado");
                             } catch { toast.error("Erro ao carregar arquivo"); }
