@@ -211,4 +211,24 @@ export const magTrpcRouter = router({
       if (!row?.boleto_pdf) return null;
       return { base64: row.boleto_pdf as string, nome: row.boleto_nome as string };
     }),
+
+  deletarBoleto: publicProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await getPool().execute(
+        `UPDATE inadimplentes SET boleto_pdf = NULL, boleto_nome = NULL WHERE id = ?`,
+        [input.id]
+      );
+      return { ok: true };
+    }),
+
+  salvarBoletoManual: publicProcedure
+    .input(z.object({ id: z.number(), base64: z.string(), nomeArquivo: z.string() }))
+    .mutation(async ({ input }) => {
+      await getPool().execute(
+        `UPDATE inadimplentes SET boleto_pdf = ?, boleto_nome = ?, updatedAt = NOW() WHERE id = ?`,
+        [input.base64, input.nomeArquivo, input.id]
+      );
+      return { ok: true };
+    }),
 });

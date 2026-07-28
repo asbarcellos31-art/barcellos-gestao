@@ -282,10 +282,15 @@ export default function Inadimplentes() {
     [selecionados]
   );
 
-  // Boletos por cliente (key = CPF ou ID string)
+  // Boletos por cliente (key = CPF ou ID string) — cache em memória para a sessão
   const [boletosPorCliente, setBoletosPorCliente] = useState<Map<string, { base64: string; nomeArquivo: string }>>(new Map());
   const [clienteSelecionadoParaBoleto, setClienteSelecionadoParaBoleto] = useState<string | null>(null);
   const boletoFileRef = useRef<HTMLInputElement>(null);
+
+  // Modal de gerenciamento de arquivos
+  const [modalAnexos, setModalAnexos] = useState<{ id: number; nome: string; itemKey: string } | null>(null);
+  const modalAnexoFileRef = useRef<HTMLInputElement>(null);
+  const [uploadingAnexo, setUploadingAnexo] = useState(false);
 
   function fileToBase64(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -395,6 +400,47 @@ export default function Inadimplentes() {
       toast.success("Upload removido!");
     },
   });
+
+  const deletarBoleto = trpc.mag.deletarBoleto.useMutation({
+    onSuccess: () => {
+      utils.inadimplentes.listar.invalidate();
+      if (modalAnexos) {
+        setBoletosPorCliente(prev => {
+          const next = new Map(prev);
+          next.delete(modalAnexos.itemKey);
+          return next;
+        });
+      }
+      toast.success("Arquivo removido!");
+    },
+    onError: (e) => toast.error("Erro: " + e.message),
+  });
+
+  const salvarBoletoManual = trpc.mag.salvarBoletoManual.useMutation({
+    onSuccess: () => utils.inadimplentes.listar.invalidate(),
+    onError: (e) => toast.error("Erro ao salvar arquivo: " + e.message),
+  });
+
+  async function handleModalAnexoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !modalAnexos) return;
+    setUploadingAnexo(true);
+    try {
+      const base64 = await fileToBase64(file);
+      setBoletosPorCliente(prev => {
+        const next = new Map(prev);
+        next.set(modalAnexos.itemKey, { base64, nomeArquivo: file.name });
+        return next;
+      });
+      await salvarBoletoManual.mutateAsync({ id: modalAnexos.id, base64, nomeArquivo: file.name });
+      toast.success(`"${file.name}" anexado com sucesso!`);
+    } catch {
+      toast.error("Erro ao anexar arquivo");
+    } finally {
+      setUploadingAnexo(false);
+      if (modalAnexoFileRef.current) modalAnexoFileRef.current.value = "";
+    }
+  }
 
   // Filtro local por busca e forma de pagamento
   const listaFiltrada = useMemo(() => {
@@ -1138,37 +1184,15 @@ export default function Inadimplentes() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className={`h-7 w-7 p-0 ${(boletosPorCliente.has(itemKey) || !!(item as any).boleto_nome) ? "text-green-600 hover:text-green-700" : "text-muted-foreground hover:text-blue-600"}`}
-                                title={boletosPorCliente.has(itemKey) ? `Boleto: ${boletosPorCliente.get(itemKey)!.nomeArquivo} (clique para trocar)` : (item as any).boleto_nome ? `Boleto MAG: ${(item as any).boleto_nome} (clique para substituir)` : "Anexar boleto PDF"}
-                                onClick={() => {
-                                  setClienteSelecionadoParaBoleto(itemKey);
-                                  boletoFileRef.current?.click();
-                                }}
+                                className={`h-7 w-7 p-0 relative ${(boletosPorCliente.has(itemKey) || !!(item as any).boleto_nome) ? "text-green-600 hover:text-green-700" : "text-muted-foreground hover:text-blue-600"}`}
+                                title="Gerenciar arquivos anexados"
+                                onClick={() => setModalAnexos({ id: item.id, nome: item.nome, itemKey })}
                               >
-                                <Paperclip className="w-3.5 h-3.5" />
+                                <Eye className="w-3.5 h-3.5" />
+                                {(boletosPorCliente.has(itemKey) || !!(item as any).boleto_nome) && (
+                                  <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full text-[7px] text-white flex items-center justify-center font-bold leading-none">1</span>
+                                )}
                               </Button>
-                              {(boletosPorCliente.has(itemKey) || !!(item as any).boleto_nome) && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 w-7 p-0 text-blue-600 hover:text-blue-800"
-                                  title="Visualizar boleto PDF"
-                                  onClick={async () => {
-                                    const local = boletosPorCliente.get(itemKey);
-                                    if (local) {
-                                      window.open(`data:application/pdf;base64,${local.base64}`, '_blank');
-                                      return;
-                                    }
-                                    try {
-                                      const res = await trpc.mag.obterBoleto.query({ id: item.id });
-                                      if (res?.base64) window.open(`data:application/pdf;base64,${res.base64}`, '_blank');
-                                      else toast.error("PDF não encontrado");
-                                    } catch { toast.error("Erro ao carregar boleto"); }
-                                  }}
-                                >
-                                  <Eye className="w-3.5 h-3.5" />
-                                </Button>
-                              )}
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -1326,6 +1350,93 @@ export default function Inadimplentes() {
 
       {/* Input oculto para anexar boleto PDF — fora das abas para estar sempre no DOM */}
       <input ref={boletoFileRef} type="file" accept=".pdf" className="hidden" onChange={handleBoletoUpload} />
+      <input ref={modalAnexoFileRef} type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={handleModalAnexoUpload} />
+
+      {/* ─── MODAL: Gerenciar Arquivos Anexados ─────────────────────────────── */}
+      <Dialog open={!!modalAnexos} onOpenChange={(open) => { if (!open) setModalAnexos(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Paperclip className="w-4 h-4 text-muted-foreground" />
+              Arquivos Anexados
+            </DialogTitle>
+          </DialogHeader>
+          {modalAnexos && (() => {
+            const localBoleto = boletosPorCliente.get(modalAnexos.itemKey);
+            const dbBoletoNome = lista.find(i => i.id === modalAnexos.id)?.boleto_nome as string | undefined;
+            const temArquivo = !!(localBoleto || dbBoletoNome);
+            const nomeArquivo = localBoleto?.nomeArquivo ?? dbBoletoNome;
+
+            return (
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground truncate" title={modalAnexos.nome}>{modalAnexos.nome}</p>
+
+                {temArquivo ? (
+                  <div className="rounded-lg border border-green-200 bg-green-50 dark:bg-green-950/20 p-3">
+                    <div className="flex items-center gap-3">
+                      <FileText className="w-8 h-8 text-green-600 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-green-800 dark:text-green-200 truncate" title={nomeArquivo}>{nomeArquivo}</p>
+                        <p className="text-xs text-green-600 dark:text-green-400">1 arquivo anexado</p>
+                      </div>
+                      <div className="flex gap-1 shrink-0">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0 text-blue-600 hover:text-blue-800"
+                          title="Visualizar arquivo"
+                          onClick={async () => {
+                            if (localBoleto) {
+                              window.open(`data:application/pdf;base64,${localBoleto.base64}`, '_blank');
+                              return;
+                            }
+                            try {
+                              const res = await utils.client.mag.obterBoleto.query({ id: modalAnexos.id });
+                              if (res?.base64) window.open(`data:application/pdf;base64,${res.base64}`, '_blank');
+                              else toast.error("PDF não encontrado");
+                            } catch { toast.error("Erro ao carregar arquivo"); }
+                          }}
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
+                          title="Remover arquivo"
+                          disabled={deletarBoleto.isPending}
+                          onClick={() => deletarBoleto.mutate({ id: modalAnexos.id })}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-dashed border-muted-foreground/30 p-6 text-center">
+                    <Paperclip className="w-8 h-8 text-muted-foreground/40 mx-auto mb-2" />
+                    <p className="text-sm text-muted-foreground">Nenhum arquivo anexado</p>
+                  </div>
+                )}
+
+                <Button
+                  variant="outline"
+                  className="w-full gap-2"
+                  disabled={uploadingAnexo}
+                  onClick={() => modalAnexoFileRef.current?.click()}
+                >
+                  {uploadingAnexo ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" /> Anexando...</>
+                  ) : (
+                    <><Upload className="w-4 h-4" /> {temArquivo ? "Substituir arquivo" : "Anexar arquivo"}</>
+                  )}
+                </Button>
+                <p className="text-xs text-muted-foreground text-center">PDF, JPG ou PNG</p>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
 
       {/* ─── MODAL: Editar Status ──────────────────────────────────────────── */}
       <Dialog open={!!editandoStatus} onOpenChange={() => setEditandoStatus(null)}>
