@@ -317,7 +317,15 @@ export async function listarInadimplentes(mes?: number, ano?: number, status?: s
       ) AS telefoneFinal,
       c.celular AS clienteCelular,
       c.telefone AS clienteTelefone,
-      COALESCE(NULLIF(i.emailContato, ''), c.email) AS emailFinal
+      COALESCE(NULLIF(i.emailContato, ''), c.email) AS emailFinal,
+      (SELECT i2.id FROM inadimplentes i2
+       WHERE LPAD(REGEXP_REPLACE(i2.cpf, '[^0-9]', ''), 11, '0') = LPAD(REGEXP_REPLACE(i.cpf, '[^0-9]', ''), 11, '0')
+         AND i2.boleto_pdf IS NOT NULL
+       ORDER BY i2.updatedAt DESC LIMIT 1) AS boleto_row_id,
+      (SELECT i2.boleto_nome FROM inadimplentes i2
+       WHERE LPAD(REGEXP_REPLACE(i2.cpf, '[^0-9]', ''), 11, '0') = LPAD(REGEXP_REPLACE(i.cpf, '[^0-9]', ''), 11, '0')
+         AND i2.boleto_pdf IS NOT NULL
+       ORDER BY i2.updatedAt DESC LIMIT 1) AS boleto_nome_any
     FROM inadimplentes i
     LEFT JOIN clientes c ON LPAD(REGEXP_REPLACE(i.cpf, '[^0-9]', ''), 11, '0') = LPAD(REGEXP_REPLACE(c.cpf, '[^0-9]', ''), 11, '0')
     ${whereSQL}

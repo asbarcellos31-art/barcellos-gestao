@@ -288,7 +288,7 @@ export default function Inadimplentes() {
   const boletoFileRef = useRef<HTMLInputElement>(null);
 
   // Modal de gerenciamento de arquivos
-  const [modalAnexos, setModalAnexos] = useState<{ id: number; nome: string; itemKey: string } | null>(null);
+  const [modalAnexos, setModalAnexos] = useState<{ id: number; boletoRowId?: number; nome: string; itemKey: string } | null>(null);
   const modalAnexoFileRef = useRef<HTMLInputElement>(null);
   const [uploadingAnexo, setUploadingAnexo] = useState(false);
 
@@ -1181,18 +1181,23 @@ export default function Inadimplentes() {
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-1">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className={`h-7 w-7 p-0 relative ${(boletosPorCliente.has(itemKey) || !!(item as any).boleto_nome) ? "text-green-600 hover:text-green-700" : "text-muted-foreground hover:text-blue-600"}`}
-                                title="Gerenciar arquivos anexados"
-                                onClick={() => setModalAnexos({ id: item.id, nome: item.nome, itemKey })}
-                              >
-                                <Eye className="w-3.5 h-3.5" />
-                                {(boletosPorCliente.has(itemKey) || !!(item as any).boleto_nome) && (
-                                  <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full text-[7px] text-white flex items-center justify-center font-bold leading-none">1</span>
-                                )}
-                              </Button>
+                              {(() => {
+                                const temBoleto = boletosPorCliente.has(itemKey) || !!(item as any).boleto_row_id;
+                                return (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className={`h-7 w-7 p-0 relative ${temBoleto ? "text-green-600 hover:text-green-700" : "text-muted-foreground hover:text-blue-600"}`}
+                                    title="Gerenciar arquivos anexados"
+                                    onClick={() => setModalAnexos({ id: item.id, boletoRowId: (item as any).boleto_row_id ?? undefined, nome: item.nome, itemKey })}
+                                  >
+                                    <Eye className="w-3.5 h-3.5" />
+                                    {temBoleto && (
+                                      <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full text-[7px] text-white flex items-center justify-center font-bold leading-none">1</span>
+                                    )}
+                                  </Button>
+                                );
+                              })()}
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -1363,9 +1368,10 @@ export default function Inadimplentes() {
           </DialogHeader>
           {modalAnexos && (() => {
             const localBoleto = boletosPorCliente.get(modalAnexos.itemKey);
-            const dbBoletoNome = lista.find(i => i.id === modalAnexos.id)?.boleto_nome as string | undefined;
-            const temArquivo = !!(localBoleto || dbBoletoNome);
+            const dbBoletoNome = (lista.find(i => i.id === modalAnexos.id) as any)?.boleto_nome_any as string | undefined;
+            const temArquivo = !!(localBoleto || dbBoletoNome || modalAnexos.boletoRowId);
             const nomeArquivo = localBoleto?.nomeArquivo ?? dbBoletoNome;
+            const fetchId = modalAnexos.boletoRowId ?? modalAnexos.id;
 
             return (
               <div className="space-y-4">
@@ -1391,7 +1397,7 @@ export default function Inadimplentes() {
                               return;
                             }
                             try {
-                              const res = await utils.mag.obterBoleto.fetch({ id: modalAnexos.id });
+                              const res = await utils.mag.obterBoleto.fetch({ id: fetchId });
                               if (res?.base64) window.open(`data:application/pdf;base64,${res.base64}`, '_blank');
                               else toast.error("PDF não encontrado");
                             } catch { toast.error("Erro ao carregar arquivo"); }

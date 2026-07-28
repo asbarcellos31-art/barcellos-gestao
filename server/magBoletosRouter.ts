@@ -215,10 +215,24 @@ export const magTrpcRouter = router({
   deletarBoleto: publicProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
-      await getPool().execute(
-        `UPDATE inadimplentes SET boleto_pdf = NULL, boleto_nome = NULL WHERE id = ?`,
+      // Busca o CPF do registro para limpar o boleto em todos os meses do mesmo CPF
+      const rows = await getPool().execute(
+        `SELECT cpf FROM inadimplentes WHERE id = ? LIMIT 1`,
         [input.id]
       );
+      const row = (rows[0] as any[])[0];
+      if (row?.cpf) {
+        await getPool().execute(
+          `UPDATE inadimplentes SET boleto_pdf = NULL, boleto_nome = NULL
+           WHERE LPAD(REGEXP_REPLACE(cpf, '[^0-9]', ''), 11, '0') = LPAD(REGEXP_REPLACE(?, '[^0-9]', ''), 11, '0')`,
+          [row.cpf]
+        );
+      } else {
+        await getPool().execute(
+          `UPDATE inadimplentes SET boleto_pdf = NULL, boleto_nome = NULL WHERE id = ?`,
+          [input.id]
+        );
+      }
       return { ok: true };
     }),
 
