@@ -21,7 +21,7 @@ const os      = require("os");
 
 const PORT         = 4040;
 const DOWNLOAD_DIR = path.join(os.tmpdir(), "mag-boletos");
-const MAG_URL      = "https://plataformadosprodutores.mag.com.br/s/";
+const MAG_URL      = "https://plataformadosprodutores.mag.com.br/s/inadimplencias";
 const SS_DIR       = path.join(os.homedir(), "Desktop", "mag-screenshots");
 
 // ── Estado global ─────────────────────────────────────────────────────────────
@@ -96,6 +96,7 @@ app.get("/status-login", (_req, res) => {
 
 app.post("/iniciar-sessao", async (_req, res) => {
   try {
+    // Reutiliza contexto existente se ainda estiver vivo
     if (context && mainPage) {
       try {
         await mainPage.evaluate(() => document.title);
@@ -107,6 +108,13 @@ app.post("/iniciar-sessao", async (_req, res) => {
         context = null; mainPage = null;
       }
     }
+
+    // Mata qualquer Chrome preso com o mesmo perfil antes de abrir novo
+    try {
+      const { execSync } = require("child_process");
+      execSync(`pkill -f "mag-boletos-session" 2>/dev/null || true`, { stdio: "ignore" });
+      await sleep(1500);
+    } catch {}
 
     const { chromium } = require("playwright");
     context = await chromium.launchPersistentContext(USER_DATA_DIR, {
@@ -302,10 +310,14 @@ async function buscarBoletoPorCpf(cpf, nome) {
   console.log(`  CPF: ${cpfFormatado}`);
 
   // ── 1. Navega para inadimplências e aguarda carregar ─────────────────────
+  // Sempre navega para a página principal de busca (não apenas se não estiver em inadimplencia,
+  // pois a URL pode ser a ficha de um cliente anterior)
   const urlAtual = page.url();
-  if (!urlAtual.includes("inadimplencia")) {
-    const base    = urlAtual.split("/s/")[0];
-    const urlInad = (base || MAG_URL.split("/s/")[0]) + "/s/inadimplencias";
+  const naTelaCorreta = urlAtual.replace(/\?.*/, '').replace(/\/$/, '').endsWith('/s/inadimplencias');
+  if (!naTelaCorreta) {
+    const magBase = "https://plataformadosprodutores.mag.com.br";
+    const base    = urlAtual.includes("plataformadosprodutores") ? urlAtual.split("/s/")[0] : magBase;
+    const urlInad = base + "/s/inadimplencias";
     console.log(`  Navegando para: ${urlInad}`);
     await page.goto(urlInad, { waitUntil: "domcontentloaded", timeout: 30000 });
   }
@@ -344,7 +356,7 @@ async function buscarBoletoPorCpf(cpf, nome) {
     return { sucesso: false, erro: "Campo de busca não encontrado" };
   }
 
-  const termoBusca = nome?.trim().split(" ")[0] || cpfFormatado;
+  const termoBusca = nome?.trim() || cpfFormatado; // nome completo para resultado único
   let linhaCliente = null;
 
   console.log(`  Buscando por: "${termoBusca}"`);
@@ -390,26 +402,26 @@ async function buscarBoletoPorCpf(cpf, nome) {
     return { sucesso: false, erro: `Cliente não encontrado (CPF: ${cpfFormatado})` };
   }
 
-  // ── 3. Clica no NOME do cliente (não no ">") → vai para página de competências
-  // Clicar em ">" vai para ficha social do Salesforce (errado).
-  // Clicar no nome vai para a página com a lista de parcelas/competências (correto).
-  const celulas = await linhaCliente.$$("td, [role='gridcell']");
-  // Segunda coluna = nome do cliente (link)
-  const celulaCliente = celulas.length > 1 ? celulas[1] : celulas[0];
-  const linkNome = await celulaCliente.$('a').catch(() => null);
-
+  // ── 3. Clica no nome do cliente para abrir ficha de inadimplências
   console.log("  Abrindo página de competências...");
-  // Dismiss backdrop/modal antes de clicar — Salesforce LWC mantém overlay que intercepta cliques
   await page.keyboard.press('Escape').catch(() => {});
   await sleep(600);
 
-  // Usa page.mouse com coordenadas para bypassar o backdrop overlay
-  const elClick = linkNome || celulaCliente;
-  const bbClick = elClick ? await elClick.boundingBox().catch(() => null) : null;
-  if (bbClick) {
-    await page.mouse.click(bbClick.x + bbClick.width / 2, bbClick.y + bbClick.height / 2);
-  } else {
-    await linhaCliente.click();
+  // Tenta via locator Playwright (pierça shadow DOM nativamente)
+  let clicou = false;
+  const primeiroNome = (nome || '').trim().split(' ')[0];
+  if (primeiroNome) {
+    try {
+      const el = linhaCliente.locator(`:text("${primeiroNome}")`).first();
+      const bb = await el.boundingBox({ timeout: 3000 }).catch(() => null);
+      if (bb) { await page.mouse.click(bb.x + bb.width / 2, bb.y + bb.height / 2); clicou = true; }
+    } catch {}
+  }
+  if (!clicou) {
+    // Fallback: bounding box da linha — coluna "Cliente" está a ~170px do início da linha
+    const bb = await linhaCliente.boundingBox().catch(() => null);
+    if (!bb) return { sucesso: false, erro: "Linha do cliente sem posição" };
+    await page.mouse.click(bb.x + 170, bb.y + bb.height / 2);
   }
 
   await page.waitForLoadState("networkidle", { timeout: 25000 }).catch(() =>
@@ -449,9 +461,25 @@ async function buscarBoletoPorCpf(cpf, nome) {
     return null;
   };
 
-  // Clica a aba "Não trabalhadas" via shadow DOM recursivo
+  // Clica a aba "Não trabalhadas" via shadow DOM recursivo (regex para tolerar encoding)
   const clicarAbaNT = async () => {
-    const coords = await findByText(['Não trabalhadas'], ['a', 'button', '[role="tab"]', 'li'], 8000);
+    const coords = await page.evaluate(() => {
+      function find(root) {
+        for (const el of root.querySelectorAll('a, button, [role="tab"], li, span, div')) {
+          const t = (el.textContent || '').replace(/\s+/g, ' ').trim();
+          if (t.length < 60 && /N.{0,3}o\s+trabalhadas/i.test(t)) {
+            el.scrollIntoView({ block: 'center', behavior: 'instant' });
+            const r = el.getBoundingClientRect();
+            if (r.width > 0 && r.height > 0) return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+          }
+        }
+        for (const el of root.querySelectorAll('*')) {
+          if (el.shadowRoot) { const r = find(el.shadowRoot); if (r) return r; }
+        }
+        return null;
+      }
+      return find(document);
+    }).catch(() => null);
     if (coords) { await page.mouse.click(coords.x, coords.y); await sleep(2000); return true; }
     console.log("  ⚠ Aba 'Não trabalhadas' não encontrada");
     return false;
@@ -464,6 +492,13 @@ async function buscarBoletoPorCpf(cpf, nome) {
 
   const boletos = [];
   let competenciasGeradas = 0;
+  const processedComps = new Set(); // competências já processadas nesta sessão
+
+  // Garante que começa na aba Não trabalhadas.
+  // Phase 1 quebra sozinha se não houver linhas (cliente só tem Trabalhadas).
+  // Phase 2 (fallback) cuida dos links pré-existentes quando Phase 1 não baixou nada.
+  await clicarAbaNT();
+  await sleep(2000);
 
   // Busca todas as linhas da tabela via shadow DOM recursivo.
   // Retorna array de { comp, cbCoords } onde cbCoords aponta para o elemento VISÍVEL
@@ -535,16 +570,15 @@ async function buscarBoletoPorCpf(cpf, nome) {
 
   // Força seleção via propriedade checked + evento change composed (backup)
   const forcarSelecaoCheckboxes = async (compRef) => {
+    if (!compRef) return 0; // sem competência identificada → não seleciona nada
     return page.evaluate((compRef) => {
       let count = 0;
       function selectInRoot(root) {
         for (const tbody of root.querySelectorAll('tbody')) {
           for (const tr of tbody.querySelectorAll('tr')) {
             const text = (tr.textContent || '').replace(/\s+/g, ' ');
-            const forms = compRef
-              ? [compRef, compRef.replace('-', ' - '), compRef.replace('-', '/')]
-              : [];
-            if (compRef && !forms.some(f => text.includes(f))) continue;
+            const forms = [compRef, compRef.replace('-', ' - '), compRef.replace('-', '/')];
+            if (!forms.some(f => text.includes(f))) continue;
             function activateCb(r) {
               for (const e of r.querySelectorAll('*')) {
                 if (e.tagName?.toLowerCase() === 'input' && e.type === 'checkbox') {
@@ -588,77 +622,182 @@ async function buscarBoletoPorCpf(cpf, nome) {
     }).catch(() => false);
   };
 
-  for (let grupo = 0; grupo < 20; grupo++) {
-    // Garante que está na aba "Não trabalhadas" a cada iteração.
-    // No grupo > 0: faz bounce (clica Trabalhadas → Não trabalhadas) para forçar reload do conteúdo.
-    if (grupo > 0) {
-      const trabCoords = await findByText(['Trabalhadas'], ['a', 'button', '[role="tab"]', 'li'], 5000);
-      if (trabCoords) { await page.mouse.click(trabCoords.x, trabCoords.y); await sleep(1500); }
-      await clicarAbaNT();
-      await sleep(2000);
-    }
-    await sleep(2000);
+  // Clica link emitido → abre nova aba → ESCOLHER PAGAMENTO → Boleto → GERAR BOLETO → BAIXAR
+  const clicarLinkEBaixar = async (link, suffix) => {
+    const nomeArquivoLocal = `${nomeLimpo}-${cpfLimpo}-${suffix}-${link.txt}.pdf`;
+    let pdfBytes = null;
+    let paginaLink = null;
 
-    const linhas = await obterLinhasTabela();
-    if (linhas.length === 0) { console.log("  Sem mais linhas não-trabalhadas"); break; }
-
-    const compGrupo = linhas[0].comp;
-    const linhasGrupo = compGrupo ? linhas.filter(l => !l.comp || l.comp === compGrupo) : linhas;
-    console.log(`\n  Grupo ${grupo + 1}: competência "${compGrupo}" — ${linhasGrupo.length} linha(s)`);
-
-    // Tenta select-all via checkbox do cabeçalho (encontra visível igual ao das linhas)
-    let selecionadas = 0;
-    const headerCbCoords = await page.evaluate(() => {
-      function cbVisivelDeInput(input) {
-        let el = input;
-        for (let i = 0; i < 8 && el; i++) {
-          const r = el.getBoundingClientRect();
-          if (r.width >= 8 && r.height >= 8) {
+    const coordsAtual = await page.evaluate((targetHref) => {
+      function findLink(root) {
+        for (const el of root.querySelectorAll('a')) {
+          const href = el.href || el.getAttribute('href') || '';
+          if (href === targetHref) {
             el.scrollIntoView({ block: 'center', behavior: 'instant' });
-            const r2 = el.getBoundingClientRect();
-            return { x: r2.x + r2.width / 2, y: r2.y + r2.height / 2 };
+            const r = el.getBoundingClientRect();
+            if (r.width > 0 && r.height > 0) return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
           }
-          el = el.parentElement;
-        }
-        return null;
-      }
-      function find(root) {
-        for (const th of root.querySelectorAll('thead th, thead td, [slot="headerCell"]')) {
-          function findInTh(r) {
-            for (const e of r.querySelectorAll('*')) {
-              if (e.tagName?.toLowerCase() === 'input' && e.type === 'checkbox') {
-                return cbVisivelDeInput(e);
-              }
-              if (e.shadowRoot) { const c = findInTh(e.shadowRoot); if (c) return c; }
-            }
-            return null;
-          }
-          const c = findInTh(th) || (th.shadowRoot && findInTh(th.shadowRoot));
-          if (c) return c;
         }
         for (const el of root.querySelectorAll('*')) {
-          if (el.shadowRoot) { const r = find(el.shadowRoot); if (r) return r; }
+          if (el.shadowRoot) { const r = findLink(el.shadowRoot); if (r) return r; }
         }
         return null;
       }
-      return find(document);
-    }).catch(() => null);
+      return findLink(document);
+    }, link.href).catch(() => null);
 
-    if (headerCbCoords) {
-      console.log("  Select-all via checkbox cabeçalho...");
-      await page.mouse.click(headerCbCoords.x, headerCbCoords.y);
-      await sleep(1500);
-      selecionadas = linhasGrupo.length;
-    } else {
-      // Clica cada checkbox via coordenadas do elemento VISÍVEL
-      console.log(`  Clicando ${linhasGrupo.length} checkbox(es) via coordenadas...`);
-      for (const linha of linhasGrupo) {
-        await page.mouse.click(linha.cbCoords.x, linha.cbCoords.y);
-        await sleep(500);
-        selecionadas++;
-      }
-      await sleep(1000);
+    try {
+      const [novaAba] = await Promise.all([
+        context.waitForEvent('page', { timeout: 8000 }),
+        coordsAtual
+          ? page.mouse.click(coordsAtual.x, coordsAtual.y)
+          : page.evaluate((h) => { const a = document.querySelector(`a[href="${h}"]`); if (a) a.click(); }, link.href),
+      ]);
+      paginaLink = novaAba;
+      await paginaLink.waitForLoadState('domcontentloaded', { timeout: 20000 }).catch(() => {});
+    } catch {
+      console.log("  Nenhuma nova aba — navegando via href...");
+      paginaLink = await context.newPage();
+      await paginaLink.goto(link.href, { waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => {});
     }
+
+    paginaLink.on('response', async (resp) => {
+      if ((resp.headers()['content-type'] || '').includes('application/pdf')) {
+        pdfBytes = await resp.body().catch(() => null);
+      }
+    });
+    await sleep(3000);
+    await screenshot(paginaLink, `9-link-${cpfLimpo}-${suffix}`);
+
+    const clicarMagpag = async (el) => {
+      await el.evaluate(e => { e.scrollIntoView({ block: 'center', behavior: 'instant' }); e.click(); }).catch(() => {});
+    };
+
+    const btnEscolher = await esperarQualquer(paginaLink, [
+      'button:has-text("ESCOLHER PAGAMENTO")',
+      'button:has-text("Escolher Pagamento")',
+      'a:has-text("ESCOLHER PAGAMENTO")',
+    ], 8000);
+    if (btnEscolher) {
+      console.log("  → ESCOLHER PAGAMENTO");
+      await clicarMagpag(btnEscolher);
+      await sleep(3000);
+      await screenshot(paginaLink, `9a-escolher-${cpfLimpo}-${suffix}`);
+    }
+
+    const optBoleto = await esperarQualquer(paginaLink, [
+      'button:has-text("Boleto")', 'label:has-text("Boleto")',
+      'input[value*="boleto" i]', 'li:has-text("Boleto")',
+      '[data-method*="boleto" i]', 'button:has-text("Bancário")',
+    ], 8000);
+    if (optBoleto) {
+      console.log("  → Boleto");
+      await clicarMagpag(optBoleto);
+      await sleep(2000);
+    }
+    await screenshot(paginaLink, `9b-boleto-${cpfLimpo}-${suffix}`);
+
+    const btnGerarBoleto = await esperarQualquer(paginaLink, [
+      'button:has-text("GERAR BOLETO")',
+      'button:has-text("Gerar Boleto")',
+      'button:has-text("Gerar boleto")',
+    ], 8000);
+    if (btnGerarBoleto) {
+      console.log("  → GERAR BOLETO");
+      await clicarMagpag(btnGerarBoleto);
+      await sleep(5000);
+      await screenshot(paginaLink, `9b2-gerado-${cpfLimpo}-${suffix}`);
+    }
+
+    let baixou = false;
+    let resultado = null;
+    try {
+      const btnBaixar = await esperarQualquer(paginaLink, [
+        'button:has-text("BAIXAR BOLETO")', 'a:has-text("BAIXAR BOLETO")',
+        'button:has-text("Baixar Boleto")', 'a:has-text("Baixar Boleto")',
+        'button:has-text("Baixar")', 'a:has-text("Baixar")',
+      ], 10000);
+      if (btnBaixar) {
+        console.log("  → BAIXAR BOLETO");
+        const [dl] = await Promise.all([
+          paginaLink.waitForEvent('download', { timeout: 20000 }),
+          clicarMagpag(btnBaixar),
+        ]);
+        const filePath = path.join(DOWNLOAD_DIR, nomeArquivoLocal);
+        await dl.saveAs(filePath);
+        const base64 = fs.readFileSync(filePath).toString('base64');
+        fs.unlink(filePath, () => {});
+        resultado = { base64, nomeArquivo: nomeArquivoLocal };
+        console.log(`  ✓ ${nomeArquivoLocal}`);
+        baixou = true;
+      }
+    } catch (err) {
+      console.log(`  ✗ Download falhou: ${String(err.message || err).slice(0, 80)}`);
+    }
+
+    if (!baixou && pdfBytes) {
+      resultado = { base64: pdfBytes.toString('base64'), nomeArquivo: nomeArquivoLocal };
+      console.log(`  ✓ ${nomeArquivoLocal} (PDF interceptado)`);
+      baixou = true;
+    }
+
+    if (!baixou) {
+      const codigoBarra = await paginaLink.evaluate(() => {
+        const els = document.querySelectorAll('p, span, div');
+        for (const el of els) {
+          const t = (el.textContent || '').trim().replace(/\s/g, '');
+          if (/^\d{47,48}$/.test(t)) return t;
+        }
+        return null;
+      }).catch(() => null);
+      if (codigoBarra) {
+        console.log(`  → Código de barras: ${codigoBarra}`);
+        resultado = { base64: null, codigoBarra, nomeArquivo: nomeArquivoLocal };
+        baixou = true;
+      }
+    }
+
+    if (!baixou) {
+      await screenshot(paginaLink, `9c-sem-dl-${cpfLimpo}-${suffix}`);
+      console.log(`  ✗ Não baixou — ver screenshots`);
+    }
+
+    await paginaLink.close().catch(() => {});
+    return resultado;
+  };
+
+  for (let grupo = 0; grupo < 20; grupo++) {
+    // Grupo > 0: força reload limpo via about:blank para resetar aba ativa no LWC
+    if (grupo > 0) {
+      await page.goto('about:blank', { timeout: 5000 }).catch(() => {});
+      await sleep(500);
+      await page.goto(urlFicha, { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {});
+      await sleep(5000);
+      await clicarAbaNT();
+    }
+    await sleep(1000);
+
+    const linhas = await obterLinhasTabela();
+    // Filtra competências já processadas nesta sessão (a plataforma não remove as linhas)
+    const linhasNaoProc = linhas.filter(l => !l.comp || !processedComps.has(l.comp));
+    if (linhasNaoProc.length === 0) { console.log("  Sem mais competências para processar"); break; }
+
+    const compGrupo = linhasNaoProc[0].comp;
+    // Agrupa todas as linhas da mesma competência. Se não identificou, processa 1 por vez.
+    const linhasGrupo = compGrupo
+      ? linhasNaoProc.filter(l => l.comp === compGrupo)
+      : [linhasNaoProc[0]];
+    console.log(`\n  Grupo ${grupo + 1}: competência "${compGrupo || '?'}" — ${linhasGrupo.length} linha(s)`);
+
+    // Clica SOMENTE os checkboxes das linhas do grupo atual — nunca o header
+    let selecionadas = 0;
+    console.log(`  Clicando ${linhasGrupo.length} checkbox(es) do grupo "${compGrupo || '?'}"...`);
+    for (const linha of linhasGrupo) {
+      await page.mouse.click(linha.cbCoords.x, linha.cbCoords.y);
+      await sleep(600);
+      selecionadas++;
+    }
+    await sleep(1000);
 
     // Backup: força seleção via propriedade + evento composed (para LWC shadow DOM)
     const forçados = await forcarSelecaoCheckboxes(compGrupo);
@@ -725,247 +864,104 @@ async function buscarBoletoPorCpf(cpf, nome) {
     await screenshot(page, `7-pos-gerar-${cpfLimpo}-g${grupo}`);
     console.log(`  ✓ Links gerados para "${compGrupo}"`);
     competenciasGeradas += selecionadas;
-  }
+    if (compGrupo) processedComps.add(compGrupo); // marca como processada para não repetir
 
-  // Mesmo sem gerar novos links, pode haver links já emitidos anteriormente — vai direto para Fase 2
-  if (competenciasGeradas === 0) {
-    console.log("  Sem competências novas para gerar — verificando links já emitidos na aba Trabalhadas...");
-  }
+    // ── Ciclo completo para esta competência: vai para Trabalhadas, clica link, baixa ──
+    const coAbaT = await findByText(['Trabalhadas'], ['a', 'button', '[role="tab"]', 'li'], 8000);
+    if (coAbaT) { await page.mouse.click(coAbaT.x, coAbaT.y); await sleep(2500); }
 
-  // ── 5. FASE 2: Aba "Trabalhadas" — clica em cada link emitido e baixa ────
-  console.log(`\n  ${competenciasGeradas} link(s) gerado(s) — verificando posição...`);
-
-  // Só navega de volta se saímos da ficha do cliente (evita reload desnecessário)
-  const urlAtualFase2 = page.url();
-  const fichaBase = urlFicha.split('?')[0];
-  if (!urlAtualFase2.startsWith(fichaBase)) {
-    console.log(`  Voltando para ficha: ${urlFicha.slice(0, 60)}`);
-    await page.goto(urlFicha, { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {});
-    await sleep(8000);
-  } else {
-    console.log(`  Já na ficha — sem reload`);
-    await sleep(1000);
-  }
-
-  const clicarAbaT = async () => {
-    // Usa evaluate com busca recursiva em shadow DOM — mesmo padrão que funciona no INVISTO
-    const deadline = Date.now() + 20000;
-    while (Date.now() < deadline) {
-      const coords = await page.evaluate(() => {
-        function findTab(root) {
-          for (const el of root.querySelectorAll('a, button, [role="tab"], li')) {
-            const t = (el.textContent || '').trim();
-            if (t === 'Trabalhadas' || (t.startsWith('Trabalhadas') && t.length < 25)) {
-              el.scrollIntoView({ block: 'center', behavior: 'instant' });
-              const r = el.getBoundingClientRect();
-              if (r.width > 0 && r.height > 0) return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-            }
-          }
-          for (const el of root.querySelectorAll('*')) {
-            if (el.shadowRoot) { const r = findTab(el.shadowRoot); if (r) return r; }
-          }
-          return null;
-        }
-        return findTab(document);
-      }).catch(() => null);
-
-      if (coords) {
-        await page.mouse.click(coords.x, coords.y);
-        await sleep(2000);
-        return true;
-      }
-      await sleep(600);
+    const linksComp = await coletarLinksEmitidos();
+    const linkComp = linksComp.length > 0 ? linksComp[0] : null;
+    if (linkComp) {
+      const boletoComp = await clicarLinkEBaixar(linkComp, `g${grupo}`);
+      if (boletoComp) boletos.push(boletoComp);
     }
-    return false;
-  };
-
-  // Tenta coletar links já visíveis antes de clicar na aba
-  await sleep(1500);
-  const linksPrevia = await coletarLinksEmitidos();
-  const jaTemLinks = linksPrevia.filter(l => !['publicar','pesquisa','propostas','campanhas','negociacoes'].includes(l.txt.toLowerCase())).length > 0;
-
-  if (!jaTemLinks) {
-    // Não tem links visíveis — precisa clicar na aba Trabalhadas
-    if (!await clicarAbaT()) {
-      return { sucesso: false, erro: "Aba Trabalhadas não encontrada" };
-    }
-  } else {
-    console.log(`  Já na aba Trabalhadas com links visíveis`);
-  }
-  await screenshot(page, `8-trabalhadas-${cpfLimpo}`);
-
-  // Coleta links curtos da aba Trabalhadas via shadow DOM recursivo — captura href absoluta
-  async function coletarLinksEmitidos() {
-    return page.evaluate(() => {
-      function findLinks(root) {
-        const links = [];
-        for (const el of root.querySelectorAll('a')) {
-          const txt = (el.textContent || '').trim();
-          // Só links curtos lowercase/dígitos (ex: "05daf", "35068") — exclui menu
-          if (txt.length >= 4 && txt.length <= 12 && /^[a-z0-9]+$/.test(txt)) {
-            el.scrollIntoView({ block: 'center', behavior: 'instant' });
-            const r = el.getBoundingClientRect();
-            if (r.width > 0 && r.height > 0) {
-              links.push({ txt, href: el.href || el.getAttribute('href') || '' });
-            }
-          }
-        }
-        for (const el of root.querySelectorAll('*')) {
-          if (el.shadowRoot) links.push(...findLinks(el.shadowRoot));
-        }
-        return links;
-      }
-      return findLinks(document);
-    }).catch(() => []);
-  }
-
-  const todosLinks = await coletarLinksEmitidos();
-  const vistos = new Set();
-  const linksEmitidos = todosLinks.filter(l => {
-    if (vistos.has(l.txt) || !l.href) return false;
-    vistos.add(l.txt); return true;
-  });
-  console.log(`  ${linksEmitidos.length} link(s): ${linksEmitidos.map(l => l.txt).join(', ')}`);
-
-  if (linksEmitidos.length === 0) {
-    await screenshot(page, `8b-sem-links-${cpfLimpo}`);
-    return { sucesso: false, erro: "Nenhum link emitido encontrado na aba Trabalhadas" };
-  }
-
-  // Processa cada link — reusa UMA página para evitar CAPTCHA em nova aba
-  const paginaLink = await context.newPage();
-  let pdfBytes = null;
-  paginaLink.on('response', async (resp) => {
-    if ((resp.headers()['content-type'] || '').includes('application/pdf')) {
-      pdfBytes = await resp.body().catch(() => null);
-    }
-  });
-
-  for (let i = 0; i < linksEmitidos.length; i++) {
-    pdfBytes = null;
-    const link = linksEmitidos[i];
-    const nomeArquivo = `${nomeLimpo}-${cpfLimpo}-link${i + 1}-${link.txt}.pdf`;
-    console.log(`\n  Link ${i + 1}/${linksEmitidos.length}: "${link.txt}" → ${link.href.slice(0, 70)}`);
-
-    await paginaLink.goto(link.href, { waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => {});
-    await sleep(3000);
-    await screenshot(paginaLink, `9-link-${cpfLimpo}-${i}`);
-
-    // magpag.mag.com.br é React normal — scrollIntoView + el.click() via evaluate
-    // (não usa page.mouse.click que falha quando botão está abaixo do viewport)
-    const clicarMagpag = async (el) => {
-      await el.evaluate(e => {
-        e.scrollIntoView({ block: 'center', behavior: 'instant' });
-        e.click();
-      }).catch(() => {});
-    };
-
-    // Passo 1: ESCOLHER PAGAMENTO
-    const btnEscolher = await esperarQualquer(paginaLink, [
-      'button:has-text("ESCOLHER PAGAMENTO")',
-      'button:has-text("Escolher Pagamento")',
-      'a:has-text("ESCOLHER PAGAMENTO")',
-    ], 8000);
-    if (btnEscolher) {
-      console.log("  → ESCOLHER PAGAMENTO");
-      await clicarMagpag(btnEscolher);
-      await sleep(3000);
-      await screenshot(paginaLink, `9a-escolher-${cpfLimpo}-${i}`);
-    }
-
-    // Passo 2: seleciona Boleto (radio)
-    const optBoleto = await esperarQualquer(paginaLink, [
-      'button:has-text("Boleto")', 'label:has-text("Boleto")',
-      'input[value*="boleto" i]',
-      'li:has-text("Boleto")', '[data-method*="boleto" i]',
-      'button:has-text("Bancário")',
-    ], 8000);
-    if (optBoleto) {
-      console.log("  → Boleto");
-      await clicarMagpag(optBoleto);
-      await sleep(2000);
-    }
-    await screenshot(paginaLink, `9b-boleto-${cpfLimpo}-${i}`);
-
-    // Passo 3: GERAR BOLETO (gera na tela, não dispara download ainda)
-    const btnGerarBoleto = await esperarQualquer(paginaLink, [
-      'button:has-text("GERAR BOLETO")',
-      'button:has-text("Gerar Boleto")',
-      'button:has-text("Gerar boleto")',
-    ], 8000);
-    if (btnGerarBoleto) {
-      console.log("  → GERAR BOLETO");
-      await clicarMagpag(btnGerarBoleto);
+    // Volta para a ficha para processar próxima competência
+    const urlAgora = page.url();
+    const fichaBaseInner = urlFicha.split('?')[0];
+    if (!urlAgora.startsWith(fichaBaseInner)) {
+      await page.goto(urlFicha, { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {});
       await sleep(5000);
-      await screenshot(paginaLink, `9b2-gerado-${cpfLimpo}-${i}`);
-    }
-
-    // Passo 4: BAIXAR BOLETO — aqui sim dispara o download
-    let baixou = false;
-    try {
-      const btnBaixar = await esperarQualquer(paginaLink, [
-        'button:has-text("BAIXAR BOLETO")',
-        'a:has-text("BAIXAR BOLETO")',
-        'button:has-text("Baixar Boleto")',
-        'a:has-text("Baixar Boleto")',
-        'button:has-text("Baixar")',
-        'a:has-text("Baixar")',
-      ], 10000);
-
-      if (btnBaixar) {
-        console.log("  → BAIXAR BOLETO");
-        const [dl] = await Promise.all([
-          paginaLink.waitForEvent('download', { timeout: 20000 }),
-          clicarMagpag(btnBaixar),
-        ]);
-        const filePath = path.join(DOWNLOAD_DIR, nomeArquivo);
-        await dl.saveAs(filePath);
-        const base64 = fs.readFileSync(filePath).toString('base64');
-        fs.unlink(filePath, () => {});
-        boletos.push({ base64, nomeArquivo });
-        console.log(`  ✓ ${nomeArquivo}`);
-        baixou = true;
-      }
-    } catch (err) {
-      console.log(`  ✗ Download falhou: ${String(err.message || err).slice(0, 80)}`);
-    }
-
-    // Estratégia 2: PDF interceptado via response
-    if (!baixou && pdfBytes) {
-      boletos.push({ base64: pdfBytes.toString('base64'), nomeArquivo });
-      console.log(`  ✓ ${nomeArquivo} (PDF interceptado)`);
-      baixou = true;
-    }
-
-    // Estratégia 3: extrai código de barras visível na tela
-    if (!baixou) {
-      const codigoBarra = await paginaLink.evaluate(() => {
-        const els = document.querySelectorAll('p, span, div');
-        for (const el of els) {
-          const t = (el.textContent || '').trim().replace(/\s/g, '');
-          if (/^\d{47,48}$/.test(t)) return t;
-        }
-        return null;
-      }).catch(() => null);
-      if (codigoBarra) {
-        console.log(`  → Código de barras: ${codigoBarra}`);
-        boletos.push({ base64: null, codigoBarra, nomeArquivo });
-        baixou = true;
-      }
-    }
-
-    if (!baixou) {
-      await screenshot(paginaLink, `9c-sem-dl-${cpfLimpo}-${i}`);
-      console.log(`  ✗ Não baixou — ver 9b/9c`);
     }
   }
 
-  await paginaLink.close().catch(() => {});
+  // ── 5. FASE 2 (fallback): se Phase 1 não baixou nada, tenta links pré-existentes ──
+  if (boletos.length === 0) {
+    const fichaBase = urlFicha.split('?')[0];
+    const urlAtualFase2 = page.url();
+    if (!urlAtualFase2.startsWith(fichaBase)) {
+      await page.goto(urlFicha, { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {});
+      await sleep(5000);
+    }
+
+    await findByText(['Trabalhadas'], ['a', 'button', '[role="tab"]', 'li'], 8000)
+      .then(c => c && page.mouse.click(c.x, c.y)).catch(() => {});
+    await sleep(2000);
+    await screenshot(page, `8-trabalhadas-${cpfLimpo}`);
+
+    const todosLinks = await coletarLinksEmitidos();
+    const vistos = new Set();
+    const linksEmitidos = todosLinks.filter(l => {
+      if (vistos.has(l.txt)) return false;
+      vistos.add(l.txt); return true;
+    });
+    console.log(`  ${linksEmitidos.length} link(s): ${linksEmitidos.map(l => l.txt).join(', ')}`);
+
+    if (linksEmitidos.length === 0) {
+      await screenshot(page, `8b-sem-links-${cpfLimpo}`);
+      return { sucesso: false, erro: "Nenhum link emitido encontrado na aba Trabalhadas" };
+    }
+
+    for (let i = 0; i < linksEmitidos.length; i++) {
+      const link = linksEmitidos[i];
+      const fichaBase2 = urlFicha.split('?')[0];
+      console.log(`\n  Link ${i + 1}/${linksEmitidos.length}: "${link.txt}"`);
+
+      if (i > 0) {
+        const urlNow = page.url();
+        if (!urlNow.startsWith(fichaBase2)) {
+          await page.goto(urlFicha, { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {});
+          await sleep(4000);
+        }
+        await findByText(['Trabalhadas'], ['a', 'button', '[role="tab"]', 'li'], 8000)
+          .then(c => c && page.mouse.click(c.x, c.y)).catch(() => {});
+        await sleep(2000);
+      }
+
+      const boleto = await clicarLinkEBaixar(link, `link${i + 1}`);
+      if (boleto) boletos.push(boleto);
+    }
+  }
 
   if (boletos.length === 0) {
     return { sucesso: false, erro: "Boletos não baixados — ver screenshots 9b/9c" };
   }
   return { sucesso: true, boletos };
+}
+
+// Coleta links curtos da aba Trabalhadas via shadow DOM recursivo — deduplicado por txt
+async function coletarLinksEmitidos() {
+  const page = mainPage;
+  return page.evaluate(() => {
+    function findLinks(root) {
+      const links = [];
+      for (const el of root.querySelectorAll('a')) {
+        const txt = (el.textContent || '').trim();
+        const href = el.href || el.getAttribute('href') || '';
+        if (txt.length >= 4 && txt.length <= 12 && /^[a-z0-9]+$/i.test(txt) && href) {
+          el.scrollIntoView({ block: 'center', behavior: 'instant' });
+          const r = el.getBoundingClientRect();
+          if (r.width > 0 && r.height > 0)
+            links.push({ txt, href, x: r.x + r.width / 2, y: r.y + r.height / 2 });
+        }
+      }
+      for (const el of root.querySelectorAll('*')) {
+        if (el.shadowRoot) links.push(...findLinks(el.shadowRoot));
+      }
+      return links;
+    }
+    return findLinks(document);
+  }).catch(() => []);
 }
 
 // ── Startup ───────────────────────────────────────────────────────────────────

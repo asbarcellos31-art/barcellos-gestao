@@ -196,6 +196,23 @@ export default function Inadimplentes() {
     }, 2500);
   }
 
+  // Atualiza URL do túnel automaticamente enquanto o modal estiver aberto
+  useEffect(() => {
+    if (!modalMagAberto) return;
+    const poll = setInterval(async () => {
+      try {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 3000);
+        const r = await fetch(`${MAG_LOCAL}/status`, { signal: ctrl.signal });
+        clearTimeout(t);
+        const json = await r.json();
+        if (json.tunnelUrl) setNgrokUrl(json.tunnelUrl);
+        if (json.logado && faseMag === "sem_servidor") setFaseMag("pronto");
+      } catch {}
+    }, 30000);
+    return () => clearInterval(poll);
+  }, [modalMagAberto, faseMag]);
+
   const iniciarBuscaMagMutation = trpc.mag.iniciarBusca.useMutation({
     onSuccess: ({ jobId }) => {
       setJobIdMag(jobId);
@@ -204,7 +221,26 @@ export default function Inadimplentes() {
       setSucessosMag(0);
       setFalhasMag([]);
     },
-    onError: (err) => toast.error("Erro ao iniciar busca: " + err.message),
+    onError: async (err) => {
+      // Se falhou por conexão, tenta buscar URL nova do servidor local e retentar
+      if (err.message.includes("fetch failed") || err.message.includes("connect")) {
+        try {
+          const ctrl = new AbortController();
+          setTimeout(() => ctrl.abort(), 3000);
+          const r = await fetch(`${MAG_LOCAL}/status`, { signal: ctrl.signal });
+          const json = await r.json();
+          if (json.tunnelUrl && json.tunnelUrl !== ngrokUrl) {
+            setNgrokUrl(json.tunnelUrl);
+            toast("URL do servidor atualizada — tentando novamente...", { duration: 3000 });
+            setTimeout(() => {
+              iniciarBuscaMagMutation.mutate({ clientes: clientesMagFila, ngrokUrl: json.tunnelUrl });
+            }, 1500);
+            return;
+          }
+        } catch {}
+      }
+      toast.error("Erro ao iniciar busca: " + err.message);
+    },
   });
 
   async function iniciarBuscaMag() {
