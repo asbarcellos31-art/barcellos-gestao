@@ -22,7 +22,7 @@ import {
   Upload, Trash2, AlertTriangle, CheckCircle2, Clock, DollarSign,
   Users, Phone, Search, Plus, Pencil, X, FileText, TrendingUp,
   CreditCard, Banknote, ChevronDown, ChevronUp, Download, Mail, RefreshCw, MessageSquare, Paperclip,
-  FileDown, Loader2, Wifi, WifiOff,
+  FileDown, Loader2, Wifi, WifiOff, Eye,
 } from "lucide-react";
 
 const MESES = [
@@ -1147,6 +1147,22 @@ export default function Inadimplentes() {
                               >
                                 <Paperclip className="w-3.5 h-3.5" />
                               </Button>
+                              {(boletosPorCliente.has(itemKey) || !!(item as any).boleto_pdf) && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 w-7 p-0 text-blue-600 hover:text-blue-800"
+                                  title="Visualizar boleto PDF"
+                                  onClick={() => {
+                                    const base64 = boletosPorCliente.get(itemKey)?.base64 || (item as any).boleto_pdf;
+                                    if (!base64) return;
+                                    const url = `data:application/pdf;base64,${base64}`;
+                                    window.open(url, '_blank');
+                                  }}
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                </Button>
+                              )}
                               <Button
                                 variant="ghost"
                                 size="sm"
