@@ -48,6 +48,7 @@ export default function ExtratoBancario() {
   const [busca, setBusca] = useState("");
   const [filtroTipo, setFiltroTipo] = useState<"todos" | "Entrada" | "Saída">("todos");
   const [filtroSemCategoria, setFiltroSemCategoria] = useState(false);
+  const [filtroSemVinculo, setFiltroSemVinculo] = useState(false);
   const [expandirResumo, setExpandirResumo] = useState(true);
   const [abaSelecionada, setAbaSelecionada] = useState<"lancamentos" | "resumo" | "historico">("lancamentos");
   const [editandoMes, setEditandoMes] = useState<{ uploadId: number; mes: number; ano: number } | null>(null);
@@ -152,6 +153,7 @@ export default function ExtratoBancario() {
     return lancamentos.filter(l => {
       if (filtroTipo !== "todos" && l.tipo !== filtroTipo) return false;
       if (filtroSemCategoria && l.categoria) return false;
+      if (filtroSemVinculo && l.vinculo) return false;
       if (busca) {
         const b = busca.toLowerCase();
         if (!l.lancamento.toLowerCase().includes(b) && !l.detalhes.toLowerCase().includes(b)) return false;
@@ -165,6 +167,7 @@ export default function ExtratoBancario() {
   const totalSaidas = lancamentos?.filter(l => l.tipo === "Saída").reduce((s, l) => s + l.valor, 0) ?? 0;
   const semCategoria = lancamentos?.filter(l => !l.categoria).length ?? 0;
   const comCategoria = lancamentos?.filter(l => l.categoria).length ?? 0;
+  const semVinculo = lancamentos?.filter(l => !l.vinculo).length ?? 0;
 
   // Upload atual selecionado
   const uploadAtual = uploads?.find(u => u.id === uploadId);
@@ -316,6 +319,15 @@ export default function ExtratoBancario() {
                 >
                   <Filter className="h-3 w-3" />
                   Sem categoria ({semCategoria})
+                </Button>
+                <Button
+                  variant={filtroSemVinculo ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setFiltroSemVinculo(!filtroSemVinculo)}
+                  className="gap-1"
+                >
+                  <Filter className="h-3 w-3" />
+                  Sem vínculo ({semVinculo})
                 </Button>
                 <div className="ml-auto flex gap-2">
                   {!uploadAtual?.confirmado && semCategoria > 0 && (
