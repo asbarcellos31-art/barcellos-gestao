@@ -68,7 +68,10 @@ export default function ExtratoBancario() {
   const { data: vinculos } = trpc.extratoBancario.listarVinculos.useQuery();
 
   const atualizarMut = trpc.extratoBancario.atualizarLancamento.useMutation({
-    onSuccess: () => utils.extratoBancario.listarLancamentos.invalidate(),
+    onSuccess: () => {
+      utils.extratoBancario.listarLancamentos.invalidate();
+      utils.extratoBancario.resumo.invalidate();
+    },
   });
   const atualizarLoteMut = trpc.extratoBancario.atualizarLote.useMutation({
     onSuccess: () => {
