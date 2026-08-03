@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { PDFParse } from "pdf-parse";
 import { parseExtratoBB } from "./parsers/extratoBB";
+import { parseExtratoItau } from "./parsers/extratoItau";
 import multer from "multer";
 import * as XLSX from "xlsx";
 import { storagePut } from "./storage";
@@ -816,20 +817,27 @@ router.post("/upload/extrato-bancario-pdf", upload.single("file"), async (req, r
       return res.status(400).json({ error: "Não foi possível extrair texto do PDF. Verifique se o arquivo não está protegido." });
     }
 
-    // Verificar se é extrato do Banco do Brasil
-    if (!text.includes("Extrato de Conta Corrente") && !text.includes("Banco do Brasil")) {
-      return res.status(400).json({ error: "PDF não reconhecido como extrato do Banco do Brasil" });
+    // Detectar banco e parsear
+    const isBB = text.includes("Extrato de Conta Corrente") || text.includes("Banco do Brasil");
+    const isItau = text.includes("Lançamentos do período:") || text.includes("Agência") && text.includes("Conta") && text.includes("itaú");
+
+    if (!isBB && !isItau) {
+      return res.status(400).json({ error: "PDF não reconhecido. Envie um extrato do Banco do Brasil ou Itaú." });
     }
 
-    // Parsear lançamentos
-    const lancamentosBB = parseExtratoBB(text);
+    let rawLancamentos: { data: string; lancamento: string; valor: number; tipo: "Entrada" | "Saída" }[];
 
-    if (lancamentosBB.length === 0) {
+    if (isItau) {
+      rawLancamentos = parseExtratoItau(text);
+    } else {
+      rawLancamentos = parseExtratoBB(text);
+    }
+
+    if (rawLancamentos.length === 0) {
       return res.status(400).json({ error: "Nenhum lançamento válido encontrado no PDF" });
     }
 
-    // Converter para o formato esperado pelo criarUploadExtrato
-    const lancamentos = lancamentosBB.map((l) => ({
+    const lancamentos = rawLancamentos.map((l) => ({
       data: l.data,
       lancamento: l.lancamento,
       detalhes: "",
