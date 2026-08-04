@@ -116,6 +116,25 @@ export async function listarLancamentosExtrato(uploadId: number): Promise<Lancam
   }));
 }
 
+// Listar lançamentos de TODOS os uploads de um mês/ano
+export async function listarLancamentosPorMes(mes: number, ano: number): Promise<LancamentoExtrato[]> {
+  const [rows] = await getPool().execute(
+    `SELECT el.id, el.uploadId, el.data, el.lancamento, el.detalhes, el.nrDocumento,
+            CAST(el.valor AS DECIMAL(12,2)) as valor, el.tipo, el.categoria, el.vinculo,
+            el.observacao, el.confirmado, el.lancamentoContasId
+     FROM extrato_bancario el
+     JOIN uploads_extrato_bancario u ON u.id = el.uploadId
+     WHERE u.mes = ? AND u.ano = ?
+     ORDER BY el.data, el.id`,
+    [mes, ano]
+  ) as any[];
+  return rows.map((r: any) => ({
+    ...r,
+    valor: parseFloat(r.valor),
+    confirmado: Boolean(r.confirmado),
+  }));
+}
+
 // Listar uploads
 export async function listarUploadsExtrato(): Promise<UploadExtratoBancario[]> {
   const [rows] = await getPool().execute(

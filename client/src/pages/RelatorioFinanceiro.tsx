@@ -236,9 +236,9 @@ export default function RelatorioFinanceiro() {
 
   // ── Extrato do mês ─────────────────────────────────────────────────────────
   const extratoMes = uploadsExtrato?.find((u: any) => u.mes === mes && u.ano === ano);
-  const { data: lancamentosExtrato = [] } = trpc.extratoBancario.listarLancamentos.useQuery(
-    { uploadId: extratoMes?.id ?? 0 },
-    { enabled: !!extratoMes?.id }
+  const { data: lancamentosExtrato = [] } = trpc.extratoBancario.listarLancamentosPorMes.useQuery(
+    { mes, ano },
+    { enabled: mes > 0 && ano > 0 }
   );
 
   // ── Gráfico: receita x despesa mensal (ano) ───────────────────────────────
@@ -309,19 +309,17 @@ export default function RelatorioFinanceiro() {
   const lucroMes = receitaMes - despesaBarcellos;
   const margemMes = receitaMes > 0 ? (lucroMes / receitaMes) * 100 : 0;
 
-  // ── Distribuição por pessoa — vem das Contas a Pagar (cobre todos os extratos do mês) ──
+  // ── Distribuição por pessoa — todos os extratos do mês ──────────────────────
   const distribuicaoPorPessoa = useMemo(() => {
-    if (!contasMes) return [];
     const map: Record<string, number> = {};
-    for (const c of contasMes as any[]) {
-      if (c.tipo === "RECEITA") continue;
-      if (!isDistribuicao(c.categoria)) continue;
-      const pessoa = c.vinculo ?? "SEM VÍNCULO";
-      const v = parseFloat(c.valorPago ?? c.valor ?? "0");
-      map[pessoa] = (map[pessoa] || 0) + v;
+    for (const l of lancamentosExtrato as any[]) {
+      if (!isDistribuicao(l.categoria)) continue;
+      if (l.tipo !== "Saída") continue;
+      const pessoa = l.vinculo ?? "SEM VÍNCULO";
+      map[pessoa] = (map[pessoa] || 0) + parseFloat(l.valor ?? "0");
     }
     return Object.entries(map).map(([pessoa, total]) => ({ pessoa, total })).sort((a, b) => b.total - a.total);
-  }, [contasMes]);
+  }, [lancamentosExtrato]);
 
   // ── Cores do gráfico de pizza ──────────────────────────────────────────────
   const CORES = ["#3b82f6","#8b5cf6","#22c55e","#f59e0b","#ef4444","#06b6d4","#ec4899","#f97316","#84cc16","#a855f7","#14b8a6","#fb923c","#e11d48"];

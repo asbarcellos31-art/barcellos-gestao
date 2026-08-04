@@ -31,6 +31,7 @@ import {
 } from "./configuracoesDb";
 import {
   listarLancamentosExtrato,
+  listarLancamentosPorMes,
   listarUploadsExtrato,
   atualizarLancamentoExtrato,
   atualizarLoteExtrato,
@@ -906,6 +907,9 @@ export const appRouter = router({
     listarLancamentos: publicProcedure
       .input(z.object({ uploadId: z.number() }))
       .query(({ input }) => listarLancamentosExtrato(input.uploadId)),
+    listarLancamentosPorMes: publicProcedure
+      .input(z.object({ mes: z.number(), ano: z.number() }))
+      .query(({ input }) => listarLancamentosPorMes(input.mes, input.ano)),
     atualizarLancamento: publicProcedure
       .input(z.object({
         id: z.number(),
