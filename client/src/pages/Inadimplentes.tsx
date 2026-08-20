@@ -1066,7 +1066,7 @@ export default function Inadimplentes() {
                           className="w-4 h-4 cursor-pointer"
                         />
                       </TableHead>
-                      <TableHead className="font-semibold">Nome</TableHead>
+                      <TableHead className="font-semibold sticky left-0 z-20 bg-muted/30">Nome</TableHead>
                       <TableHead className="font-semibold">Contato</TableHead>
                       <TableHead className="font-semibold">CPF</TableHead>
                       <TableHead className="font-semibold">Mês/Parcela</TableHead>
@@ -1107,7 +1107,7 @@ export default function Inadimplentes() {
                               className="w-4 h-4 cursor-pointer"
                             />
                           </TableCell>
-                          <TableCell className="font-medium max-w-[200px]">
+                          <TableCell className="font-medium max-w-[200px] sticky left-0 z-10 bg-background">
                             <div className="truncate">{item.nome}</div>
                             {item.telefone1 && (
                               <div className="text-xs text-muted-foreground flex items-center gap-1">
