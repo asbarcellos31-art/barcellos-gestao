@@ -1171,9 +1171,11 @@ export default function Inadimplentes() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <span className="text-xs bg-muted px-2 py-0.5 rounded">
-                              {normalizarFormaPgto(item.formaPagamento)}
-                            </span>
+                            {item.formaPagamento?.trim() ? (
+                              <span className="text-xs bg-muted px-2 py-0.5 rounded">
+                                {normalizarFormaPgto(item.formaPagamento)}
+                              </span>
+                            ) : null}
                           </TableCell>
                           <TableCell className="text-right font-semibold text-foreground">
                             {item.valorTotal ? fmt(Number(item.valorTotal)) : "—"}
