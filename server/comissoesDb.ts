@@ -369,7 +369,7 @@ export async function listarInadimplentes(mes?: number, ano?: number, status?: s
   if (status) {
     if (status === 'PENDENTE') {
       // PENDENTE pode estar como NULL no banco (registros antigos) ou como string 'PENDENTE'
-      whereClause.push("(i.status IS NULL OR i.status = '' OR i.status = 'PENDENTE')");
+      whereClause.push("(i.status IS NULL OR i.status = '' OR i.status = 'PENDENTE' OR i.status = 'Não trabalhada' OR i.status = 'Em atraso')");
     } else {
       whereClause.push('i.status = ?');
       params.push(status);

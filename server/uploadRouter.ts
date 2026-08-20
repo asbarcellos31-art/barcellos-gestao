@@ -568,6 +568,18 @@ router.post("/upload/inadimplentes", upload.single("arquivo"), async (req, res) 
       const historico = String(iHistorico >= 0 ? row[iHistorico] ?? "" : "").trim();
       const forma = String(iForma >= 0 ? row[iForma] ?? "" : "").trim();
 
+      const normalizarStatus = (s: string): string => {
+        const u = s.toUpperCase().trim();
+        if (!u || u.includes("NÃO TRABALHADA") || u.includes("NAO TRABALHADA") || u.includes("EM ATRASO")) return "PENDENTE";
+        if (u.includes("TRABALHADA") && !u.includes("NÃO") && !u.includes("NAO")) return "EM CONTATO";
+        if (u === "PAGO" || u === "PAGA") return "PAGO";
+        if (u === "BOLETO") return "BOLETO";
+        if (u === "EM CONTATO") return "EM CONTATO";
+        if (u === "DESISTIU") return "DESISTIU";
+        if (u === "ESPECIAL") return "ESPECIAL";
+        return "PENDENTE";
+      };
+
       if (!mapaGrupos.has(chave)) {
         mapaGrupos.set(chave, {
           nome, cpf,
@@ -575,7 +587,7 @@ router.post("/upload/inadimplentes", upload.single("arquivo"), async (req, res) 
           tel2: String(iTel2 >= 0 ? row[iTel2] ?? "" : "").trim(),
           forma, competencias: [], valores: [],
           somaTotal: 0, produtos: new Set(),
-          status: statusRaw || "PENDENTE", historico,
+          status: normalizarStatus(statusRaw), historico,
         });
       }
 

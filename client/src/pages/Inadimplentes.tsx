@@ -32,7 +32,7 @@ const MESES = [
 
 const STATUS_OPTIONS = ["PAGO", "BOLETO", "EM CONTATO", "DESISTIU", "ESPECIAL", "PENDENTE"];
 
-const FORMAS_PAGAMENTO = ["BOLETO", "DÉBITO EM CONTA", "DESC. EM FOLHA", "CARTÃO DE CRÉDITO"];
+const FORMAS_PAGAMENTO = ["BOLETO", "DÉBITO CONTA", "DESCONTO EM FOLHA", "CARTÃO DE CRÉDITO", "PIX"];
 
 const fmt = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
