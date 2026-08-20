@@ -1144,7 +1144,7 @@ export default function Inadimplentes() {
                           </TableCell>
                           <TableCell>
                             <span className="text-xs bg-muted px-2 py-0.5 rounded">
-                              {item.formaPagamento ?? "—"}
+                              {item.formaPagamento ? (item.formaPagamento.toUpperCase().includes("FOLHA") ? "Desconto em Folha" : item.formaPagamento) : "—"}
                             </span>
                           </TableCell>
                           <TableCell className="text-right font-semibold text-foreground">
