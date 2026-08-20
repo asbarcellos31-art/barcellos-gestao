@@ -32,26 +32,8 @@ const MESES = [
 
 const STATUS_OPTIONS = ["PAGO", "BOLETO", "EM CONTATO", "DESISTIU", "ESPECIAL", "PENDENTE"];
 
-const FORMA_PGTO_LABELS: Record<string, string> = {
-  "BOLETO": "Boleto",
-  "DÉBITO CONTA": "Débito em Conta",
-  "DÉBITO EM CONTA": "Débito em Conta",
-  "DEBITO CONTA": "Débito em Conta",
-  "DEBITO EM CONTA": "Débito em Conta",
-  "DESC. EM FOLHA": "Desconto em Folha",
-  "DESCONTO EM FOLHA": "Desconto em Folha",
-  "DESC EM FOLHA": "Desconto em Folha",
-  "CARTÃO DE CRÉDITO": "Cartão de Crédito",
-  "CARTAO DE CREDITO": "Cartão de Crédito",
-  "PIX": "PIX",
-};
-
-function normalizarFormaPgto(v: string | null | undefined): string {
-  if (v == null) return "—";
-  const clean = v.trim();
-  if (!clean) return "—";
-  return FORMA_PGTO_LABELS[clean.toUpperCase()] ?? FORMA_PGTO_LABELS[clean] ?? clean;
-}
+const FORMA_DISPLAY: Record<string,string> = {"BOLETO":"Boleto","DÉBITO CONTA":"Débito em Conta","DÉBITO EM CONTA":"Débito em Conta","DESC. EM FOLHA":"Desconto em Folha","DESCONTO EM FOLHA":"Desconto em Folha","CARTÃO DE CRÉDITO":"Cartão de Crédito","PIX":"PIX"};
+const exibirFormaPgto = (v: string|null|undefined) => v?.trim() ? (FORMA_DISPLAY[v.trim().toUpperCase()] ?? v.trim()) : "";
 
 const fmt = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -462,16 +444,6 @@ export default function Inadimplentes() {
     }
   }
 
-  // Opções dinâmicas de forma de pagamento — agrupa variações (ex: DESC. EM FOLHA + DESCONTO EM FOLHA → "Desc. em Folha")
-  const formasPgtoDisponiveis = useMemo(() => {
-    const labels = new Set<string>();
-    lista.forEach(i => {
-      const label = normalizarFormaPgto(i.formaPagamento);
-      if (label && label !== "—") labels.add(label);
-    });
-    return Array.from(labels).sort();
-  }, [lista]);
-
   // Filtro local por busca e forma de pagamento
   const listaFiltrada = useMemo(() => {
     let items = lista;
@@ -483,7 +455,7 @@ export default function Inadimplentes() {
       );
     }
     if (formaPgtoFiltro !== "todos") {
-      items = items.filter(i => normalizarFormaPgto(i.formaPagamento) === formaPgtoFiltro);
+      items = items.filter(i => exibirFormaPgto(i.formaPagamento) === formaPgtoFiltro);
     }
     return items;
   }, [lista, busca, formaPgtoFiltro]);
@@ -1017,8 +989,8 @@ export default function Inadimplentes() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="todos">Todas as Formas</SelectItem>
-                {formasPgtoDisponiveis.map(f => (
-                  <SelectItem key={f} value={f}>{normalizarFormaPgto(f)}</SelectItem>
+                {Array.from(new Set(lista.map(i => exibirFormaPgto(i.formaPagamento)).filter(Boolean))).sort().map(f => (
+                  <SelectItem key={f} value={f}>{f}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -1082,10 +1054,11 @@ export default function Inadimplentes() {
           {/* Tabela */}
           <Card>
             <CardContent className="p-0">
-              <Table>
+              <div className="overflow-x-auto">
+                <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/30">
-                      <TableHead className="w-10" style={{ position: "sticky", left: 0, zIndex: 20, background: "var(--muted, #f1f5f9)" }}>
+                      <TableHead className="w-10">
                         <input
                           type="checkbox"
                           checked={todosSelecionados}
@@ -1094,7 +1067,7 @@ export default function Inadimplentes() {
                           className="w-4 h-4 cursor-pointer"
                         />
                       </TableHead>
-                      <TableHead className="font-semibold" style={{ position: "sticky", left: 40, zIndex: 20, background: "var(--muted, #f1f5f9)", boxShadow: "2px 0 4px -1px rgba(0,0,0,0.15)" }}>Nome</TableHead>
+                      <TableHead className="font-semibold">Nome</TableHead>
                       <TableHead className="font-semibold">Contato</TableHead>
                       <TableHead className="font-semibold">CPF</TableHead>
                       <TableHead className="font-semibold">Mês/Parcela</TableHead>
@@ -1127,7 +1100,7 @@ export default function Inadimplentes() {
                           className={`border-l-4 hover:bg-muted/20 transition-colors ${temMultiComp ? "bg-amber-50 dark:bg-amber-950/20" : ""} ${isSelecionado ? "ring-1 ring-inset ring-primary/40 bg-primary/5" : ""}`}
                           style={{ borderLeftColor: item.status === "PAGO" ? "#22c55e" : item.status === "BOLETO" ? "#3b82f6" : item.status === "EM CONTATO" ? "#eab308" : item.status === "DESISTIU" ? "#ef4444" : item.status === "ESPECIAL" ? "#a855f7" : "#9ca3af" }}
                         >
-                          <TableCell className="w-10" style={{ position: "sticky", left: 0, zIndex: 10, background: "white" }}>
+                          <TableCell className="w-10">
                             <input
                               type="checkbox"
                               checked={isSelecionado}
@@ -1135,7 +1108,7 @@ export default function Inadimplentes() {
                               className="w-4 h-4 cursor-pointer"
                             />
                           </TableCell>
-                          <TableCell className="font-medium max-w-[200px]" style={{ position: "sticky", left: 40, zIndex: 10, background: "white", boxShadow: "2px 0 4px -1px rgba(0,0,0,0.15)" }}>
+                          <TableCell className="font-medium max-w-[200px]">
                             <div className="truncate">{item.nome}</div>
                             {item.telefone1 && (
                               <div className="text-xs text-muted-foreground flex items-center gap-1">
@@ -1171,11 +1144,11 @@ export default function Inadimplentes() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            {item.formaPagamento?.trim() ? (
+                            {exibirFormaPgto(item.formaPagamento) && (
                               <span className="text-xs bg-muted px-2 py-0.5 rounded">
-                                {normalizarFormaPgto(item.formaPagamento)}
+                                {exibirFormaPgto(item.formaPagamento)}
                               </span>
-                            ) : null}
+                            )}
                           </TableCell>
                           <TableCell className="text-right font-semibold text-foreground">
                             {item.valorTotal ? fmt(Number(item.valorTotal)) : "—"}
@@ -1258,6 +1231,7 @@ export default function Inadimplentes() {
                     })}
                   </TableBody>
                 </Table>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -1573,9 +1547,7 @@ export default function Inadimplentes() {
                   <SelectValue placeholder="Selecionar..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {(formasPgtoDisponiveis.length > 0 ? formasPgtoDisponiveis : ["Boleto", "Débito em Conta", "Desconto em Folha", "Cartão de Crédito"]).map(f => (
-                    <SelectItem key={f} value={f}>{normalizarFormaPgto(f)}</SelectItem>
-                  ))}
+                  {FORMAS_PAGAMENTO.map(f => <SelectItem key={f} value={f}>{f}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -1816,14 +1788,13 @@ export default function Inadimplentes() {
 
       {/* ─── MODAL: Confirmar Disparo WhatsApp ──────────────────────────────────────────────── */}
       <Dialog open={modalDisparoWA} onOpenChange={setModalDisparoWA}>
-        <DialogContent className="max-w-md max-h-[90vh] flex flex-col overflow-hidden">
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <MessageSquare className="w-5 h-5 text-green-600" />
               Disparar WhatsApp de Cobrança
             </DialogTitle>
           </DialogHeader>
-          <div className="overflow-y-auto flex-1 pr-1">
           {(() => {
             const comBoleto = Array.from(selecionados).filter(k => boletosPorCliente.has(k)).length;
             const msgPadrao = "Olá, [Nome]! Identificamos uma pendência financeira em seu nome junto à Barcellos Seguros.\n\nPor favor, entre em contato para regularizar sua situação:\n📞 (48) 3372-6890\n\nEvite a interrupção dos seus serviços. Estamos à disposição para ajudá-lo(a).\n\nEquipe Barcellos Seguros";
@@ -1890,7 +1861,6 @@ export default function Inadimplentes() {
               </div>
             );
           })()}
-          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalDisparoWA(false)}>Cancelar</Button>
             <Button
