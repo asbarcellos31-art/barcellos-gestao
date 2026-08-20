@@ -380,7 +380,11 @@ export async function listarInadimplentes(mes?: number, ano?: number, status?: s
   const whereSQL = whereClause.length > 0 ? 'WHERE ' + whereClause.join(' AND ') : '';
   const rows = await queryPool<any>(`
     SELECT
-      i.*,
+      i.id, i.uploadId, i.mes, i.ano, i.nome, i.cpf,
+      i.telefone1, i.telefone2, i.mesParcela, i.parcela, i.formaPagamento,
+      i.valorParcelas, i.valorTotal, i.produtos, i.status,
+      i.historicoCobranca, i.observacao, i.createdAt, i.updatedAt,
+      i.emailContato, i.telefoneContato, i.boleto_nome,
       COALESCE(
         NULLIF(i.telefoneContato, ''),
         NULLIF(i.telefone1, ''),
