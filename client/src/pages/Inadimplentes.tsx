@@ -32,8 +32,7 @@ const MESES = [
 
 const STATUS_OPTIONS = ["PAGO", "BOLETO", "EM CONTATO", "DESISTIU", "ESPECIAL", "PENDENTE"];
 
-const FORMA_DISPLAY: Record<string,string> = {"BOLETO":"Boleto","DÉBITO CONTA":"Débito em Conta","DÉBITO EM CONTA":"Débito em Conta","DESC. EM FOLHA":"Desconto em Folha","DESCONTO EM FOLHA":"Desconto em Folha","CARTÃO DE CRÉDITO":"Cartão de Crédito","PIX":"PIX"};
-const exibirFormaPgto = (v: string|null|undefined) => v?.trim() ? (FORMA_DISPLAY[v.trim().toUpperCase()] ?? v.trim()) : "";
+const FORMAS_PAGAMENTO = ["BOLETO", "DÉBITO EM CONTA", "DESC. EM FOLHA", "CARTÃO DE CRÉDITO"];
 
 const fmt = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -455,7 +454,7 @@ export default function Inadimplentes() {
       );
     }
     if (formaPgtoFiltro !== "todos") {
-      items = items.filter(i => exibirFormaPgto(i.formaPagamento) === formaPgtoFiltro);
+      items = items.filter(i => i.formaPagamento === formaPgtoFiltro);
     }
     return items;
   }, [lista, busca, formaPgtoFiltro]);
@@ -989,7 +988,7 @@ export default function Inadimplentes() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="todos">Todas as Formas</SelectItem>
-                {Array.from(new Set(lista.map(i => exibirFormaPgto(i.formaPagamento)).filter(Boolean))).sort().map(f => (
+                {FORMAS_PAGAMENTO.map(f => (
                   <SelectItem key={f} value={f}>{f}</SelectItem>
                 ))}
               </SelectContent>
@@ -1144,11 +1143,9 @@ export default function Inadimplentes() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            {exibirFormaPgto(item.formaPagamento) && (
-                              <span className="text-xs bg-muted px-2 py-0.5 rounded">
-                                {exibirFormaPgto(item.formaPagamento)}
-                              </span>
-                            )}
+                            <span className="text-xs bg-muted px-2 py-0.5 rounded">
+                              {item.formaPagamento ?? "—"}
+                            </span>
                           </TableCell>
                           <TableCell className="text-right font-semibold text-foreground">
                             {item.valorTotal ? fmt(Number(item.valorTotal)) : "—"}
@@ -1547,7 +1544,7 @@ export default function Inadimplentes() {
                   <SelectValue placeholder="Selecionar..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {Object.entries(FORMA_DISPLAY).map(([k,v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
+                  {FORMAS_PAGAMENTO.map(f => <SelectItem key={f} value={f}>{f}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
