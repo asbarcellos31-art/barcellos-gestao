@@ -82,7 +82,7 @@ import {
   custosPorVinculo,
   custosPorCategoria,
   resumoMensalContas,
-  copiarContasMes,
+  atualizarValoresUltimoPago,
 } from "./db";
 import {
   listarClientes,
@@ -325,14 +325,9 @@ export const appRouter = router({
     resumoMensal: publicProcedure
       .input(z.object({ ano: z.number() }))
       .query(({ input }) => resumoMensalContas(input.ano)),
-    copiarMes: publicProcedure
-      .input(z.object({
-        fromMes: z.number().int().min(1).max(12),
-        fromAno: z.number().int(),
-        toMes: z.number().int().min(1).max(12),
-        toAno: z.number().int(),
-      }))
-      .mutation(({ input }) => copiarContasMes(input.fromMes, input.fromAno, input.toMes, input.toAno)),
+    atualizarValores: publicProcedure
+      .input(z.object({ mes: z.number().int().min(1).max(12), ano: z.number().int() }))
+      .mutation(({ input }) => atualizarValoresUltimoPago(input.mes, input.ano)),
   }),
 
   comissoes: router({

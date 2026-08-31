@@ -95,37 +95,39 @@ export async function criarConta(data: InsertConta) {
   return result;
 }
 
-export async function copiarContasMes(
-  fromMes: number, fromAno: number,
-  toMes: number, toAno: number
-) {
+export async function atualizarValoresUltimoPago(mes: number, ano: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const origem = await db.select().from(contas).where(
-    and(eq(contas.mes, fromMes), eq(contas.ano, fromAno))
+
+  // Pega todas as contas PENDENTES do mês alvo
+  const pendentes = await db.select().from(contas).where(
+    and(eq(contas.mes, mes), eq(contas.ano, ano), eq(contas.status, "PENDENTE"))
   );
-  if (origem.length === 0) return { copiadas: 0 };
-  const lastDay = new Date(toAno, toMes, 0).getDate();
-  for (const c of origem) {
-    const diaOrigem = parseInt(String(c.dataVencimento).substring(8, 10) || "1");
-    const dia = String(Math.min(diaOrigem, lastDay)).padStart(2, "0");
-    const novaData = `${String(toAno)}-${String(toMes).padStart(2, "0")}-${dia}`;
-    await db.insert(contas).values({
-      descricao: c.descricao,
-      dataVencimento: novaData as unknown as Date,
-      valor: c.valor,
-      dataPagamento: null,
-      status: "PENDENTE",
-      categoria: c.categoria,
-      vinculo: c.vinculo,
-      valorPago: null,
-      formaPagamento: c.formaPagamento,
-      tipo: c.tipo,
-      mes: toMes,
-      ano: toAno,
-    });
+  if (pendentes.length === 0) return { atualizadas: 0 };
+
+  // Para cada conta pendente, busca o valor do último mês pago com mesma descrição + vínculo + categoria
+  let atualizadas = 0;
+  for (const c of pendentes) {
+    const [rows] = await db.execute(
+      sql`SELECT COALESCE(valorPago, valor) as valorFinal
+          FROM contas
+          WHERE descricao = ${c.descricao}
+            AND vinculo = ${c.vinculo}
+            AND categoria = ${c.categoria}
+            AND tipo = ${c.tipo}
+            AND status = 'PAGO'
+            AND (ano < ${ano} OR (ano = ${ano} AND mes < ${mes}))
+          ORDER BY ano DESC, mes DESC
+          LIMIT 1`
+    ) as any;
+    const ultimo = rows[0];
+    if (!ultimo || ultimo.valorFinal === null) continue;
+    await db.update(contas)
+      .set({ valor: String(parseFloat(ultimo.valorFinal).toFixed(2)) })
+      .where(eq(contas.id, c.id));
+    atualizadas++;
   }
-  return { copiadas: origem.length };
+  return { atualizadas };
 }
 
 export async function atualizarConta(id: number, data: Partial<InsertConta>) {

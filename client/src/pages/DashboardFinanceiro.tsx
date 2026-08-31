@@ -79,34 +79,24 @@ export default function DashboardFinanceiro() {
   const [mesSelecionado, setMesSelecionado] = useState(mesAtual);
   const [modoVisualizacao, setModoVisualizacao] = useState<"mes" | "anual">("mes");
 
-  const copiarMes = trpc.contas.copiarMes.useMutation({
+  const atualizarValores = trpc.contas.atualizarValores.useMutation({
     onSuccess: (result) => {
-      const mesAnteriorNome = MESES_FULL[fromMesRef() - 1];
-      toast.success(`${result.copiadas} conta(s) copiada(s) de ${mesAnteriorNome} para ${MESES_FULL[mesSelecionado - 1]}!`);
+      if (result.atualizadas === 0) {
+        toast.info("Nenhuma conta pendente encontrou um valor pago anterior para puxar.");
+      } else {
+        toast.success(`${result.atualizadas} conta(s) atualizada(s) com o último valor pago!`);
+      }
       utils.contas.metricas.invalidate();
-      utils.contas.alertas.invalidate();
-      utils.contas.vencidas.invalidate();
       utils.contas.resumoMensal.invalidate();
       utils.contas.custosPorVinculo.invalidate();
       utils.contas.custosPorCategoria.invalidate();
       utils.contas.listar.invalidate();
     },
-    onError: () => toast.error("Erro ao copiar contas"),
+    onError: () => toast.error("Erro ao atualizar valores"),
   });
 
-  function fromMesRef() {
-    if (mesSelecionado === 1) return 12;
-    return mesSelecionado - 1;
-  }
-  function fromAnoRef() {
-    if (mesSelecionado === 1) return ano - 1;
-    return ano;
-  }
-
-  function handleCopiarMesAnterior() {
-    const mesAnteriorNome = MESES_FULL[fromMesRef() - 1];
-    if (!confirm(`Copiar todas as contas de ${mesAnteriorNome} para ${MESES_FULL[mesSelecionado - 1]}? As contas serão criadas como PENDENTE.`)) return;
-    copiarMes.mutate({ fromMes: fromMesRef(), fromAno: fromAnoRef(), toMes: mesSelecionado, toAno: ano });
+  function handleAtualizarValores() {
+    atualizarValores.mutate({ mes: mesSelecionado, ano });
   }
 
   // ── CONTAS A PAGAR ──────────────────────────────────────────────────────────
@@ -214,12 +204,12 @@ export default function DashboardFinanceiro() {
                 <Button
                   variant="outline"
                   className="gap-2 h-9 text-sm border-blue-300 text-blue-700 hover:bg-blue-50"
-                  onClick={handleCopiarMesAnterior}
-                  disabled={copiarMes.isPending}
-                  title={`Copiar contas de ${MESES_FULL[fromMesRef() - 1]} para ${MESES_FULL[mesSelecionado - 1]}`}
+                  onClick={handleAtualizarValores}
+                  disabled={atualizarValores.isPending}
+                  title={`Atualizar cada conta de ${MESES_FULL[mesSelecionado - 1]} com o último valor pago`}
                 >
-                  {copiarMes.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                  Replicar mês anterior
+                  {atualizarValores.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                  Atualizar valores
                 </Button>
               </>
             )}
