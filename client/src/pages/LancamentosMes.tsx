@@ -83,12 +83,14 @@ export default function LancamentosMes() {
   const [filtroCategoria, setFiltroCategoria] = useState<string>("TODAS");
   const [filtroVinculo, setFiltroVinculo] = useState<string>("TODOS");
   const [filtroStatus, setFiltroStatus] = useState<string>("TODOS");
+  const [filtroFormaPagamento, setFiltroFormaPagamento] = useState<string>("TODAS");
 
   const receitas = contas.filter(c => (c as any).tipo === "RECEITA");
   const despesas = contas.filter(c => (c as any).tipo !== "RECEITA");
 
   // Categorias disponíveis nas contas do mês
   const categoriasDisponiveis = Array.from(new Set(contas.map(c => c.categoria))).sort();
+  const formasPagamentoDisponiveis = Array.from(new Set(contas.map(c => (c as any).formaPagamento).filter(Boolean))).sort();
 
   const contasFiltradas = contas.filter(c => {
     const tipo = (c as any).tipo ?? "DESPESA";
@@ -96,6 +98,7 @@ export default function LancamentosMes() {
     if (filtroCategoria !== "TODAS" && c.categoria !== filtroCategoria) return false;
     if (filtroVinculo !== "TODOS" && c.vinculo !== filtroVinculo) return false;
     if (filtroStatus !== "TODOS" && c.status !== filtroStatus) return false;
+    if (filtroFormaPagamento !== "TODAS" && (c as any).formaPagamento !== filtroFormaPagamento) return false;
     return true;
   });
 
@@ -121,7 +124,7 @@ export default function LancamentosMes() {
   const pendentes = contas.filter(c => c.status === "PENDENTE").length;
   const atrasadas = contas.filter(c => c.status === "ATRASADO").length;
 
-  const filtroAtivo = filtroTipo !== "TODOS" || filtroCategoria !== "TODAS" || filtroVinculo !== "TODOS";
+  const filtroAtivo = filtroTipo !== "TODOS" || filtroCategoria !== "TODAS" || filtroVinculo !== "TODOS" || filtroFormaPagamento !== "TODAS";
 
   const exportarPDF = () => {
     if (contasFiltradas.length === 0) { toast.error("Nenhum lançamento para exportar"); return; }
@@ -369,7 +372,7 @@ export default function LancamentosMes() {
           </div>
           
           {/* Linha 3: Dropdowns e botão limpar */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Select value={filtroVinculo} onValueChange={setFiltroVinculo}>
               <SelectTrigger className="h-8 text-xs w-40">
                 <SelectValue placeholder="Todos os vínculos" />
@@ -392,9 +395,22 @@ export default function LancamentosMes() {
                 ))}
               </SelectContent>
             </Select>
+            {formasPagamentoDisponiveis.length > 0 && (
+              <Select value={filtroFormaPagamento} onValueChange={setFiltroFormaPagamento}>
+                <SelectTrigger className="h-8 text-xs w-44">
+                  <SelectValue placeholder="Todas as contas" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="TODAS">Todas as contas</SelectItem>
+                  {formasPagamentoDisponiveis.map(f => (
+                    <SelectItem key={f} value={f}>{f}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             {(filtroAtivo || filtroStatus !== "TODOS") && (
               <button
-                onClick={() => { setFiltroTipo("TODOS"); setFiltroCategoria("TODAS"); setFiltroVinculo("TODOS"); setFiltroStatus("TODOS"); }}
+                onClick={() => { setFiltroTipo("TODOS"); setFiltroCategoria("TODAS"); setFiltroVinculo("TODOS"); setFiltroStatus("TODOS"); setFiltroFormaPagamento("TODAS"); }}
                 className="px-2 py-1 rounded text-xs text-gray-500 border border-gray-300 hover:bg-gray-100 transition-colors"
               >
                 Limpar
@@ -429,6 +445,7 @@ export default function LancamentosMes() {
                     <th className="text-left px-4 py-3 font-semibold text-gray-600">Vínculo</th>
                     <th className="text-right px-4 py-3 font-semibold text-gray-600">Valor Pago</th>
                     <th className="text-left px-4 py-3 font-semibold text-gray-600">Pagamento</th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-600">Conta</th>
                     <th className="px-4 py-3"></th>
                   </tr>
                 </thead>
@@ -469,6 +486,7 @@ export default function LancamentosMes() {
                         </td>
                         <td className="px-4 py-3 text-right text-green-600">{conta.valorPago ? formatCurrency(conta.valorPago) : "-"}</td>
                         <td className="px-4 py-3 text-gray-600">{formatDate(conta.dataPagamento)}</td>
+                        <td className="px-4 py-3 text-gray-600">{(conta as any).formaPagamento ?? "-"}</td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1 justify-end">
                             <Button size="sm" variant="ghost" onClick={() => handleEdit(conta.id)} className="h-7 w-7 p-0">

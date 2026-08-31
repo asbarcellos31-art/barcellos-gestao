@@ -82,6 +82,7 @@ import {
   custosPorVinculo,
   custosPorCategoria,
   resumoMensalContas,
+  copiarContasMes,
 } from "./db";
 import {
   listarClientes,
@@ -189,6 +190,7 @@ const contaInput = z.object({
   ]),
   vinculo: z.enum(["ANDERSON", "NAYARA", "ELISIA", "BARCELLOS"]),
   valorPago: z.string().optional().nullable(),
+  formaPagamento: z.string().optional().nullable(),
   mes: z.number().int().min(1).max(12),
   ano: z.number().int().min(2000).max(2100),
   tipo: z.enum(["RECEITA", "DESPESA"]).default("DESPESA"),
@@ -323,6 +325,14 @@ export const appRouter = router({
     resumoMensal: publicProcedure
       .input(z.object({ ano: z.number() }))
       .query(({ input }) => resumoMensalContas(input.ano)),
+    copiarMes: publicProcedure
+      .input(z.object({
+        fromMes: z.number().int().min(1).max(12),
+        fromAno: z.number().int(),
+        toMes: z.number().int().min(1).max(12),
+        toAno: z.number().int(),
+      }))
+      .mutation(({ input }) => copiarContasMes(input.fromMes, input.fromAno, input.toMes, input.toAno)),
   }),
 
   comissoes: router({

@@ -13,10 +13,11 @@ import {
 } from "recharts";
 import {
   DollarSign, TrendingDown, TrendingUp,
-  Clock, CheckCircle, Plus, Calendar, Activity,
+  Clock, CheckCircle, Plus, Calendar, Activity, RefreshCw, Loader2,
 } from "lucide-react";
 import { useAno } from "../contexts/AnoContext";
 import { CATEGORIAS } from "../../../shared/constants";
+import { toast } from "sonner";
 
 const MESES_ABREV = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 const MESES_FULL = [
@@ -77,6 +78,36 @@ export default function DashboardFinanceiro() {
   const mesAtual = new Date().getMonth() + 1;
   const [mesSelecionado, setMesSelecionado] = useState(mesAtual);
   const [modoVisualizacao, setModoVisualizacao] = useState<"mes" | "anual">("mes");
+
+  const copiarMes = trpc.contas.copiarMes.useMutation({
+    onSuccess: (result) => {
+      const mesAnteriorNome = MESES_FULL[fromMesRef() - 1];
+      toast.success(`${result.copiadas} conta(s) copiada(s) de ${mesAnteriorNome} para ${MESES_FULL[mesSelecionado - 1]}!`);
+      utils.contas.metricas.invalidate();
+      utils.contas.alertas.invalidate();
+      utils.contas.vencidas.invalidate();
+      utils.contas.resumoMensal.invalidate();
+      utils.contas.custosPorVinculo.invalidate();
+      utils.contas.custosPorCategoria.invalidate();
+      utils.contas.listar.invalidate();
+    },
+    onError: () => toast.error("Erro ao copiar contas"),
+  });
+
+  function fromMesRef() {
+    if (mesSelecionado === 1) return 12;
+    return mesSelecionado - 1;
+  }
+  function fromAnoRef() {
+    if (mesSelecionado === 1) return ano - 1;
+    return ano;
+  }
+
+  function handleCopiarMesAnterior() {
+    const mesAnteriorNome = MESES_FULL[fromMesRef() - 1];
+    if (!confirm(`Copiar todas as contas de ${mesAnteriorNome} para ${MESES_FULL[mesSelecionado - 1]}? As contas serão criadas como PENDENTE.`)) return;
+    copiarMes.mutate({ fromMes: fromMesRef(), fromAno: fromAnoRef(), toMes: mesSelecionado, toAno: ano });
+  }
 
   // ── CONTAS A PAGAR ──────────────────────────────────────────────────────────
   const { data: metricasAnual } = trpc.contas.metricas.useQuery({ ano });
@@ -169,16 +200,28 @@ export default function DashboardFinanceiro() {
               </button>
             </div>
             {modoVisualizacao === "mes" && (
-              <Select value={String(mesSelecionado)} onValueChange={(v) => setMesSelecionado(Number(v))}>
-                <SelectTrigger className="w-36 h-9 text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {MESES_FULL.map((m, i) => (
-                    <SelectItem key={i + 1} value={String(i + 1)}>{m}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <>
+                <Select value={String(mesSelecionado)} onValueChange={(v) => setMesSelecionado(Number(v))}>
+                  <SelectTrigger className="w-36 h-9 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MESES_FULL.map((m, i) => (
+                      <SelectItem key={i + 1} value={String(i + 1)}>{m}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="outline"
+                  className="gap-2 h-9 text-sm border-blue-300 text-blue-700 hover:bg-blue-50"
+                  onClick={handleCopiarMesAnterior}
+                  disabled={copiarMes.isPending}
+                  title={`Copiar contas de ${MESES_FULL[fromMesRef() - 1]} para ${MESES_FULL[mesSelecionado - 1]}`}
+                >
+                  {copiarMes.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                  Replicar mês anterior
+                </Button>
+              </>
             )}
             <Button onClick={() => setFormOpen(true)} className="gap-2 h-9">
               <Plus className="h-4 w-4" /> Nova Conta

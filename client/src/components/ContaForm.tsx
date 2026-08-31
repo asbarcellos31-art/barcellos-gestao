@@ -51,6 +51,7 @@ export default function ContaForm({ open, onClose, onSuccess, contaId, defaultMe
     categoria: "DIVERSOS" as string,
     vinculo: "ANDERSON" as "ANDERSON" | "NAYARA" | "ELISIA" | "BARCELLOS",
     valorPago: "",
+    formaPagamento: "",
     mes: defaultMes ?? new Date().getMonth() + 1,
     ano: defaultAno ?? new Date().getFullYear(),
     tipo: "DESPESA" as "RECEITA" | "DESPESA",
@@ -82,6 +83,7 @@ export default function ContaForm({ open, onClose, onSuccess, contaId, defaultMe
         categoria: "DIVERSOS",
         vinculo: "ANDERSON",
         valorPago: "",
+        formaPagamento: "",
         mes: defaultMes ?? new Date().getMonth() + 1,
         ano: defaultAno ?? new Date().getFullYear(),
         tipo: "DESPESA",
@@ -101,6 +103,7 @@ export default function ContaForm({ open, onClose, onSuccess, contaId, defaultMe
         categoria: contaExistente.categoria,
         vinculo: contaExistente.vinculo,
         valorPago: contaExistente.valorPago ? String(contaExistente.valorPago) : "",
+        formaPagamento: (contaExistente as any).formaPagamento ?? "",
         mes: contaExistente.mes,
         ano: contaExistente.ano,
         tipo: ((contaExistente as any).tipo ?? "DESPESA") as "RECEITA" | "DESPESA",
@@ -176,6 +179,7 @@ export default function ContaForm({ open, onClose, onSuccess, contaId, defaultMe
       categoria: form.categoria as any,
       vinculo: form.vinculo,
       valorPago: form.valorPago || null,
+      formaPagamento: form.formaPagamento || null,
       mes: form.mes,
       ano: form.ano,
       tipo: form.tipo,
@@ -311,16 +315,30 @@ export default function ContaForm({ open, onClose, onSuccess, contaId, defaultMe
           </div>
 
           {(form.status === "PAGO") && (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Data Pagamento</Label>
-                <Input type="date" value={form.dataPagamento} onChange={e => set("dataPagamento", e.target.value)} />
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Data Pagamento</Label>
+                  <Input type="date" value={form.dataPagamento} onChange={e => set("dataPagamento", e.target.value)} />
+                </div>
+                <div>
+                  <Label>Valor Pago</Label>
+                  <Input type="number" step="0.01" value={form.valorPago} onChange={e => set("valorPago", e.target.value)} placeholder="0,00" />
+                </div>
               </div>
               <div>
-                <Label>Valor Pago</Label>
-                <Input type="number" step="0.01" value={form.valorPago} onChange={e => set("valorPago", e.target.value)} placeholder="0,00" />
+                <Label>Conta Utilizada</Label>
+                <Select value={form.formaPagamento || "_none"} onValueChange={v => set("formaPagamento", v === "_none" ? "" : v)}>
+                  <SelectTrigger><SelectValue placeholder="Selecione a conta..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">— Selecione —</SelectItem>
+                    <SelectItem value="ITAU">ITAU</SelectItem>
+                    <SelectItem value="NUBANK ANDERSON">NUBANK ANDERSON</SelectItem>
+                    <SelectItem value="ITAU NAY">ITAU NAY</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-            </div>
+            </>
           )}
 
           {/* Seção de Parcelado + Recorrente — apenas no cadastro */}

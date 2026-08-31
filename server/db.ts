@@ -95,6 +95,39 @@ export async function criarConta(data: InsertConta) {
   return result;
 }
 
+export async function copiarContasMes(
+  fromMes: number, fromAno: number,
+  toMes: number, toAno: number
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const origem = await db.select().from(contas).where(
+    and(eq(contas.mes, fromMes), eq(contas.ano, fromAno))
+  );
+  if (origem.length === 0) return { copiadas: 0 };
+  const lastDay = new Date(toAno, toMes, 0).getDate();
+  for (const c of origem) {
+    const diaOrigem = parseInt(String(c.dataVencimento).substring(8, 10) || "1");
+    const dia = String(Math.min(diaOrigem, lastDay)).padStart(2, "0");
+    const novaData = `${String(toAno)}-${String(toMes).padStart(2, "0")}-${dia}`;
+    await db.insert(contas).values({
+      descricao: c.descricao,
+      dataVencimento: novaData as unknown as Date,
+      valor: c.valor,
+      dataPagamento: null,
+      status: "PENDENTE",
+      categoria: c.categoria,
+      vinculo: c.vinculo,
+      valorPago: null,
+      formaPagamento: c.formaPagamento,
+      tipo: c.tipo,
+      mes: toMes,
+      ano: toAno,
+    });
+  }
+  return { copiadas: origem.length };
+}
+
 export async function atualizarConta(id: number, data: Partial<InsertConta>) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");

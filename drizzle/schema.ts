@@ -29,6 +29,7 @@ export const contas = mysqlTable("contas", {
   ]).notNull(),
   vinculo: mysqlEnum("vinculo", ["ANDERSON", "NAYARA", "ELISIA", "BARCELLOS"]).notNull(),
   valorPago: decimal("valorPago", { precision: 15, scale: 2 }),
+  formaPagamento: varchar("formaPagamento", { length: 50 }),
   tipo: mysqlEnum("tipo", ["RECEITA", "DESPESA"]).default("DESPESA").notNull(),
   mes: int("mes").notNull(),
   ano: int("ano").notNull(),
