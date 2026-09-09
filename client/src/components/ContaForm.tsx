@@ -181,7 +181,7 @@ export default function ContaForm({ open, onClose, onSuccess, contaId, defaultMe
       status: form.status,
       categoria: form.categoria as any,
       vinculo: form.vinculo,
-      valorPago: form.valorPago || null,
+      valorPago: form.valorPago || form.valor || null,
       formaPagamento: form.formaPagamento || null,
       mes: form.mes,
       ano: form.ano,
