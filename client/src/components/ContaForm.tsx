@@ -29,11 +29,12 @@ interface ContaFormProps {
   contaId?: number;
   defaultMes?: number;
   defaultAno?: number;
+  defaultTipo?: "RECEITA" | "DESPESA";
 }
 
 const CATEGORIAS_LIST = Object.entries(CATEGORIAS).map(([value, label]) => ({ value, label }));
 
-export default function ContaForm({ open, onClose, onSuccess, contaId, defaultMes, defaultAno }: ContaFormProps) {
+export default function ContaForm({ open, onClose, onSuccess, contaId, defaultMes, defaultAno, defaultTipo = "DESPESA" }: ContaFormProps) {
   const isEdit = !!contaId;
   const utils = trpc.useUtils();
 
@@ -54,7 +55,7 @@ export default function ContaForm({ open, onClose, onSuccess, contaId, defaultMe
     formaPagamento: "",
     mes: defaultMes ?? new Date().getMonth() + 1,
     ano: defaultAno ?? new Date().getFullYear(),
-    tipo: "DESPESA" as "RECEITA" | "DESPESA",
+    tipo: defaultTipo,
   });
 
   const [recorrente, setRecorrente] = useState(false);
@@ -62,6 +63,7 @@ export default function ContaForm({ open, onClose, onSuccess, contaId, defaultMe
   const [parcelado, setParcelado] = useState(false);
   const [numParcelas, setNumParcelas] = useState(2);
   const formCarregado = useRef(false);
+  const valorPagoEditado = useRef(false);
 
   const toDateStr = (val: unknown): string => {
     if (!val) return "";
@@ -86,11 +88,12 @@ export default function ContaForm({ open, onClose, onSuccess, contaId, defaultMe
         formaPagamento: "",
         mes: defaultMes ?? new Date().getMonth() + 1,
         ano: defaultAno ?? new Date().getFullYear(),
-        tipo: "DESPESA",
+        tipo: defaultTipo,
       });
       setRecorrente(false);
       setParcelado(false);
       formCarregado.current = false;
+      valorPagoEditado.current = false;
     } else if (open && contaExistente && !formCarregado.current) {
       // Popula apenas uma vez por abertura — evita sobrescrita por refetch em background
       formCarregado.current = true;
@@ -248,7 +251,14 @@ export default function ContaForm({ open, onClose, onSuccess, contaId, defaultMe
             </div>
             <div>
               <Label>Valor *</Label>
-              <Input type="number" step="0.01" value={form.valor} onChange={e => set("valor", e.target.value)} required placeholder="0,00" />
+              <Input type="number" step="0.01" value={form.valor} onChange={e => {
+                const v = e.target.value;
+                setForm(f => ({
+                  ...f,
+                  valor: v,
+                  valorPago: valorPagoEditado.current ? f.valorPago : v,
+                }));
+              }} required placeholder="0,00" />
             </div>
           </div>
 
@@ -323,7 +333,10 @@ export default function ContaForm({ open, onClose, onSuccess, contaId, defaultMe
                 </div>
                 <div>
                   <Label>Valor Pago</Label>
-                  <Input type="number" step="0.01" value={form.valorPago} onChange={e => set("valorPago", e.target.value)} placeholder="0,00" />
+                  <Input type="number" step="0.01" value={form.valorPago} onChange={e => {
+                    valorPagoEditado.current = true;
+                    set("valorPago", e.target.value);
+                  }} placeholder="0,00" />
                 </div>
               </div>
               <div>
