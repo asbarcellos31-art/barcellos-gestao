@@ -284,9 +284,7 @@ export default function Vendas() {
     }
     setCpfBuscando(true);
     try {
-      const resp = await fetch(`/api/trpc/clientes.buscarPorCpf?input=${encodeURIComponent(JSON.stringify({ json: { cpf: cpfLimpo } }))}`);
-      const data = await resp.json();
-      const cliente = data?.result?.data?.json ?? data?.result?.data;
+      const cliente = await utils.clientes.buscarPorCpf.fetch({ cpf: cpfLimpo });
       if (cliente) {
         setClienteEncontrado(true);
         setForm(f => ({
