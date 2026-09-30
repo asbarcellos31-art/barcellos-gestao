@@ -199,6 +199,11 @@ export default function ContaForm({ open, onClose, onSuccess, contaId, defaultMe
   };
 
   const set = (key: string, value: any) => setForm(f => ({ ...f, [key]: value }));
+
+  // Vínculo ELISIA sempre entra como categoria Distribuição
+  const setVinculo = (v: string) => {
+    setForm(f => ({ ...f, vinculo: v as typeof f.vinculo, categoria: v === "ELISIA" ? "DISTRIBUICAO" : f.categoria }));
+  };
   const isPending = criar.isPending || atualizar.isPending || criarRecorrente.isPending || criarParcelado.isPending;
 
   // Calcular preview dos meses que serão criados
@@ -314,7 +319,7 @@ export default function ContaForm({ open, onClose, onSuccess, contaId, defaultMe
 
           <div>
             <Label>Vínculo (Centro de Custo) *</Label>
-            <Select value={form.vinculo} onValueChange={v => set("vinculo", v)}>
+            <Select value={form.vinculo} onValueChange={setVinculo}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 {VINCULOS.map(v => (

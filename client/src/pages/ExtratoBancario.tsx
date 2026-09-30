@@ -421,7 +421,15 @@ export default function ExtratoBancario() {
                             <td className="p-3">
                               <Select
                                 value={l.vinculo || "__none__"}
-                                onValueChange={v => atualizarMut.mutate({ id: l.id, vinculo: v === '__none__' ? null : v || null })}
+                                onValueChange={v => {
+                                  const vinculo = v === '__none__' ? null : v || null;
+                                  // Vínculo ELISIA sempre entra como categoria Distribuição
+                                  atualizarMut.mutate(
+                                    vinculo === "ELISIA"
+                                      ? { id: l.id, vinculo, categoria: "DISTRIBUICAO" }
+                                      : { id: l.id, vinculo }
+                                  );
+                                }}
                                 disabled={l.confirmado}
                               >
                                 <SelectTrigger className="h-7 text-xs w-32">
