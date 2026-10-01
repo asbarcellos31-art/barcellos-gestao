@@ -4,7 +4,7 @@ import { trpc } from "@/lib/trpc";
 import AppLayout from "@/components/AppLayout";
 import ContaForm from "@/components/ContaForm";
 import { Button } from "@/components/ui/button";
-import { Plus, Pencil, Trash2, AlertCircle, TrendingUp, TrendingDown, Filter } from "lucide-react";
+import { Plus, Pencil, Trash2, AlertCircle, TrendingUp, TrendingDown, Filter, RefreshCw, Loader2 } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -47,6 +47,7 @@ export default function LancamentosMes() {
   const utils = trpc.useUtils();
 
   const [formOpen, setFormOpen] = useState(false);
+  const [formTipo, setFormTipo] = useState<"RECEITA" | "DESPESA">("DESPESA");
   const [editId, setEditId] = useState<number | undefined>();
 
   const { data: contas = [], isLoading } = trpc.contas.listar.useQuery({ mes, ano });
@@ -68,10 +69,27 @@ export default function LancamentosMes() {
     setFormOpen(true);
   };
 
-  const handleNew = () => {
+  const handleNew = (tipo: "RECEITA" | "DESPESA" = "DESPESA") => {
     setEditId(undefined);
+    setFormTipo(tipo);
     setFormOpen(true);
   };
+
+  const atualizarValores = trpc.contas.atualizarValores.useMutation({
+    onSuccess: (result) => {
+      if (result.atualizadas === 0) {
+        toast.info("Nenhuma conta pendente encontrou um valor pago anterior para puxar.");
+      } else {
+        toast.success(`${result.atualizadas} conta(s) atualizada(s) com o último valor pago!`);
+      }
+      utils.contas.listar.invalidate();
+      utils.contas.listarTodas.invalidate();
+      utils.contas.metricas.invalidate();
+      utils.contas.custosPorVinculo.invalidate();
+      utils.contas.custosPorCategoria.invalidate();
+    },
+    onError: (e) => toast.error("Erro ao atualizar valores: " + e.message),
+  });
 
   const handleDelete = (id: number) => {
     if (confirm("Deseja excluir esta conta?")) {
@@ -286,7 +304,20 @@ export default function LancamentosMes() {
           </div>
           <div className="flex items-center gap-2">
             <ExportButton mes={mes} ano={ano} filtroTipo={filtroTipo} filtroStatus={filtroStatus} filtroVinculo={filtroVinculo} filtroCategoria={filtroCategoria} onPDF={exportarPDF} />
-            <Button onClick={handleNew} className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => atualizarValores.mutate({ mes, ano })}
+              disabled={atualizarValores.isPending}
+              className="gap-2 border-blue-300 text-blue-700 hover:bg-blue-50"
+              title={`Atualizar cada conta pendente de ${MESES[mes - 1]} com o último valor pago`}
+            >
+              {atualizarValores.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              Atualizar valores
+            </Button>
+            <Button variant="outline" onClick={() => handleNew("RECEITA")} className="gap-2 border-emerald-400 text-emerald-700 hover:bg-emerald-50">
+              <Plus className="w-4 h-4" /> Nova Entrada
+            </Button>
+            <Button onClick={() => handleNew("DESPESA")} className="gap-2">
               <Plus className="w-4 h-4" /> Nova Conta
             </Button>
           </div>
@@ -509,6 +540,7 @@ export default function LancamentosMes() {
 
       <ContaForm
         open={formOpen}
+        defaultTipo={editId ? undefined : formTipo}
         onClose={() => { setFormOpen(false); setEditId(undefined); }}
         onSuccess={() => {}}
         contaId={editId}
