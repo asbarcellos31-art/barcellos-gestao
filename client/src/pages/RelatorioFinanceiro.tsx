@@ -378,7 +378,7 @@ export default function RelatorioFinanceiro() {
             <KpiCard label="Despesas Acumuladas" value={fmt(despesaAno)} color="#ef4444" icon={TrendingDown} onClick={() => navigate("/financeiro")} />
             <KpiCard label="Lucro Acumulado" value={fmt(lucroAno)} sub={receitaAno > 0 ? fmtPct((lucroAno / receitaAno) * 100) + " de margem" : ""} color={lucroAno >= 0 ? "#3b82f6" : "#ef4444"} icon={DollarSign} onClick={() => setModal("lucro-acumulado")} />
 
-            <KpiCard label="Inadimplência" value={metricasInadimpl ? String(metricasInadimpl.total ?? 0) + " clientes" : "—"} sub={metricasInadimpl ? fmt(parseFloat(metricasInadimpl.valorTotal ?? "0")) : ""} color="#f59e0b" icon={AlertTriangle} onClick={() => navigate("/inadimplentes")} />
+            <KpiCard label="Inadimplência" value={metricasInadimpl ? String(metricasInadimpl.total ?? 0) + " clientes" : "—"} sub={metricasInadimpl ? fmt(parseFloat(metricasInadimpl.totalValor ?? "0")) : ""} color="#f59e0b" icon={AlertTriangle} onClick={() => navigate("/inadimplentes")} />
           </div>
         </section>
 
@@ -770,15 +770,33 @@ export default function RelatorioFinanceiro() {
               </div>
               <div className="bg-red-50 rounded-xl p-4 text-center">
                 <div className="text-xs text-red-600 font-semibold mb-1">Valor Total</div>
-                <div className="text-xl font-bold text-red-700">{fmt(parseFloat(metricasInadimpl.valorTotal ?? "0"))}</div>
+                <div className="text-xl font-bold text-red-700">{fmt(parseFloat(metricasInadimpl.totalValor ?? "0"))}</div>
               </div>
               <div className="bg-yellow-50 rounded-xl p-4 text-center">
                 <div className="text-xs text-yellow-600 font-semibold mb-1">Em Negociação</div>
-                <div className="text-xl font-bold text-yellow-700">{metricasInadimpl.emNegociacao ?? 0}</div>
+                <div className="text-xl font-bold text-yellow-700">{metricasInadimpl.emContato ?? 0}</div>
               </div>
               <div className="bg-green-50 rounded-xl p-4 text-center">
                 <div className="text-xs text-green-600 font-semibold mb-1">Resolvidos</div>
-                <div className="text-xl font-bold text-green-700">{metricasInadimpl.resolvidos ?? 0}</div>
+                <div className="text-xl font-bold text-green-700">{metricasInadimpl.pagos ?? 0}</div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
+              <div className="bg-emerald-50 rounded-xl p-4 text-center">
+                <div className="text-xs text-emerald-600 font-semibold mb-1">Valor Recuperado</div>
+                <div className="text-xl font-bold text-emerald-700">{fmt(parseFloat(metricasInadimpl.valorRecuperado ?? "0"))}</div>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-4 text-center">
+                <div className="text-xs text-slate-600 font-semibold mb-1">Boleto Enviado</div>
+                <div className="text-xl font-bold text-slate-700">{metricasInadimpl.boleto ?? 0}</div>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-4 text-center">
+                <div className="text-xs text-gray-600 font-semibold mb-1">Desistiu</div>
+                <div className="text-xl font-bold text-gray-700">{metricasInadimpl.desistiu ?? 0}</div>
+              </div>
+              <div className="bg-amber-50 rounded-xl p-4 text-center">
+                <div className="text-xs text-amber-600 font-semibold mb-1">Sem Contato Ainda</div>
+                <div className="text-xl font-bold text-amber-700">{metricasInadimpl.pendente ?? 0}</div>
               </div>
             </div>
           </section>
