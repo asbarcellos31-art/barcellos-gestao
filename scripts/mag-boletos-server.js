@@ -21,7 +21,8 @@ const os      = require("os");
 
 const PORT         = 4040;
 const DOWNLOAD_DIR = path.join(os.tmpdir(), "mag-boletos");
-const MAG_URL      = "https://plataformadosprodutores.mag.com.br/s/inadimplencias";
+const MAG_BASE     = "https://plataformadosprodutores.mag.com.br";
+const MAG_URL      = `${MAG_BASE}/s/inadimplencias`;
 const SS_DIR       = path.join(os.homedir(), "Desktop", "mag-screenshots");
 
 // ── Estado global ─────────────────────────────────────────────────────────────
@@ -167,6 +168,34 @@ app.post("/buscar-boletos", async (req, res) => {
   });
 });
 
+// ── Varredura de comissões pendentes (chamado pelo Railway via túnel) ────────
+
+app.post("/varrer-comissoes-pendentes", (req, res) => {
+  const { jobId, mes, ano, clientes, callbackUrl, apiKey } = req.body;
+
+  if (!Array.isArray(clientes) || clientes.length === 0)
+    return res.status(400).json({ erro: "Lista de clientes inválida" });
+  if (!jobId || !mes || !ano || !callbackUrl || !apiKey)
+    return res.status(400).json({ erro: "jobId, mes, ano, callbackUrl e apiKey são obrigatórios" });
+  if (loginStatus !== "logado")
+    return res.status(400).json({ erro: "sem_sessao" });
+  if (jobEmExecucao)
+    return res.status(409).json({ erro: "Já há um job em execução. Aguarde." });
+
+  jobEmExecucao = true;
+  res.json({ ok: true, total: clientes.length });
+
+  processarVarreduraComissoes(jobId, mes, ano, clientes, callbackUrl, apiKey).catch(err => {
+    console.error("[MAG] Erro fatal na varredura:", err.message);
+    jobEmExecucao = false;
+    enviarProgressoComissoes(callbackUrl, apiKey, {
+      jobId, tipo: "erro_fatal", motivo: err.message,
+      atual: 0, total: clientes.length,
+      mensagem: "Erro fatal: " + err.message,
+    }).catch(() => {});
+  });
+});
+
 // ── Detecção de login ─────────────────────────────────────────────────────────
 
 function monitorarLogin() {
@@ -232,6 +261,14 @@ async function enviarCallback(url, apiKey, body) {
 
 async function enviarProgresso(callbackUrl, apiKey, dados) {
   return enviarCallback(`${callbackUrl}/progresso`, apiKey, dados);
+}
+
+async function enviarProgressoComissoes(callbackUrl, apiKey, dados) {
+  return enviarCallback(`${callbackUrl}/comissoes-progresso`, apiKey, dados);
+}
+
+async function enviarResultadoComissoes(callbackUrl, apiKey, dados) {
+  return enviarCallback(`${callbackUrl}/comissoes-resultado`, apiKey, dados);
 }
 
 // ── Loop de processamento ─────────────────────────────────────────────────────
@@ -962,6 +999,237 @@ async function coletarLinksEmitidos() {
     }
     return findLinks(document);
   }).catch(() => []);
+}
+
+// ── Varredura de comissões pendentes na MAG ───────────────────────────────────
+// Para cada cliente com parcela em atraso naquele mês: confere Arrecadação (a
+// parcela foi paga?), Comissões > Analítico (a comissão caiu pra Barcellos?) e,
+// se não achou comissão, Inadimplentes/Cancelamentos (onde o cliente está).
+// URLs e formato das tabelas validados manualmente contra a MAG antes de escrever este código.
+
+function limparCpf(v) { return (v || "").replace(/\D/g, ""); }
+
+function parseValorBR(str) {
+  if (!str) return null;
+  const limpo = String(str).replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".");
+  const n = parseFloat(limpo);
+  return isNaN(n) ? null : n;
+}
+
+function ultimoDiaMes(ano, mes) {
+  return new Date(ano, mes, 0).getDate();
+}
+
+// Extração genérica: varre TODAS as linhas de tabela (shadow DOM incluso),
+// retorna texto das células de cada linha unidas por " | ". Robusta a mudanças
+// de classe/estrutura interna do LWC, já que não depende de seletores específicos.
+async function extrairLinhasVarredura(page) {
+  return page.evaluate(() => {
+    const linhas = [];
+    function coleta(root) {
+      for (const row of root.querySelectorAll('tr, [role="row"], [role="gridrow"]')) {
+        const cells = row.querySelectorAll('td, [role="gridcell"], th, [role="columnheader"]');
+        const texts = Array.from(cells).map(c => (c.textContent || "").replace(/\s+/g, " ").trim()).filter(Boolean);
+        if (texts.length > 0) linhas.push(texts.join(" | "));
+      }
+      for (const el of root.querySelectorAll("*")) {
+        if (el.shadowRoot) coleta(el.shadowRoot);
+      }
+    }
+    coleta(document);
+    return [...new Set(linhas)];
+  }).catch(() => []);
+}
+
+async function extrairTextoTotalVarredura(page) {
+  return page.evaluate(() => {
+    let out = "";
+    function coleta(root) {
+      out += (root.textContent || "") + " ";
+      for (const el of root.querySelectorAll("*")) {
+        if (el.shadowRoot) coleta(el.shadowRoot);
+      }
+    }
+    coleta(document.body);
+    return out.replace(/\s+/g, " ");
+  }).catch(() => "");
+}
+
+// Filtra as linhas de uma tabela que pertencem a um CPF específico (ignora o cabeçalho)
+function linhasDoCliente(linhas, cpfLimpo) {
+  return linhas.filter(l => l.replace(/\D/g, "").includes(cpfLimpo));
+}
+
+async function navegarEEsperar(page, url) {
+  await page.goto(url, { waitUntil: "commit", timeout: 30000 }).catch(() => {});
+  await sleep(8000);
+  if (page.url().includes("identidade.mag.com.br") || page.url().includes("secur/login")) {
+    loginStatus = "aguardando";
+    return false;
+  }
+  return true;
+}
+
+async function consultarArrecadacao(page, cpfLimpo, mes, ano) {
+  const mm = String(mes).padStart(2, "0");
+  const fim = ultimoDiaMes(ano, mes);
+  const url = `${MAG_BASE}/s/arrecadacoes?inicio=${ano}-${mm}-01&fim=${ano}-${mm}-${String(fim).padStart(2, "0")}&tab=competencias&buscar=${cpfLimpo}`;
+  const ok = await navegarEEsperar(page, url);
+  if (!ok) return { erro: "sessao_expirada" };
+
+  const linhas = linhasDoCliente(await extrairLinhasVarredura(page), cpfLimpo);
+  if (linhas.length === 0) {
+    return { statusArrecadacao: "Sem registro na Arrecadação", valorPrevisto: null, obsArrecadacao: null };
+  }
+
+  const parsed = linhas.map(l => {
+    const c = l.split(" | ");
+    return { status: c[c.length - 1], valor: parseValorBR(c[c.length - 2]), formaPagamento: c[c.length - 3], bruta: l };
+  });
+
+  const prioridade = ["Paga", "Parcial", "Cancelada", "Em atraso"];
+  let statusFinal = parsed[0].status;
+  for (const p of prioridade) {
+    if (parsed.some(x => (x.status || "").toLowerCase().includes(p.toLowerCase()))) { statusFinal = p; break; }
+  }
+
+  return {
+    statusArrecadacao: statusFinal,
+    valorPrevisto: parsed[0].valor,
+    formaPagamento: parsed[0].formaPagamento,
+    obsArrecadacao: parsed.map(x => x.bruta).join(" ; "),
+  };
+}
+
+async function consultarComissoes(page, cpfLimpo, mes, ano) {
+  const mm = String(mes).padStart(2, "0");
+  const hoje = new Date().toISOString().slice(0, 10);
+  const url = `${MAG_BASE}/s/comissoes?inicio=${ano}-${mm}-01&fim=${hoje}&tab=analitico&tabComissao=movimentacoes_carteira&buscar=${cpfLimpo}`;
+  const ok = await navegarEEsperar(page, url);
+  if (!ok) return { erro: "sessao_expirada" };
+
+  const texto = await extrairTextoTotalVarredura(page);
+  if (texto.includes("Nenhum resultado encontrado")) {
+    return { comissaoValor: 0, comissaoDatas: null, comissaoObs: "Nenhum resultado encontrado no período" };
+  }
+
+  const linhas = linhasDoCliente(await extrairLinhasVarredura(page), cpfLimpo);
+  if (linhas.length === 0) {
+    return { comissaoValor: 0, comissaoDatas: null, comissaoObs: "Nenhuma linha de comissão encontrada para o CPF" };
+  }
+
+  let total = 0;
+  const datas = [];
+  for (const l of linhas) {
+    const c = l.split(" | ");
+    const valor = parseValorBR(c[c.length - 1]);
+    if (valor) total += valor;
+    if (c[5]) datas.push(c[5]);
+  }
+
+  return { comissaoValor: total, comissaoDatas: datas.join(", ") || null, comissaoObs: linhas.join(" ; ") };
+}
+
+async function consultarInadimplentes(page, cpfLimpo, nome) {
+  const url = `${MAG_BASE}/s/inadimplencias?orderBy=Inadimplencia_Data_Vencimento__c&buscar=${encodeURIComponent(nome)}`;
+  const ok = await navegarEEsperar(page, url);
+  if (!ok) return { erro: "sessao_expirada" };
+
+  const linhas = linhasDoCliente(await extrairLinhasVarredura(page), cpfLimpo);
+  if (linhas.length === 0) return null;
+
+  const c = linhas[0].split(" | ");
+  const status = c[c.length - 1];
+  const valor = parseValorBR(c[c.length - 2]);
+  return `Inadimplentes: ${status} (R$ ${valor?.toFixed(2) ?? "?"})`;
+}
+
+async function consultarCancelamentos(page, cpfLimpo) {
+  const url = `${MAG_BASE}/s/cancelamentos?orderBy=dataUltimoCancelamento&typeOrderBy=DESC&buscar=${cpfLimpo}`;
+  const ok = await navegarEEsperar(page, url);
+  if (!ok) return { erro: "sessao_expirada" };
+
+  const linhas = linhasDoCliente(await extrairLinhasVarredura(page), cpfLimpo);
+  if (linhas.length === 0) return null;
+
+  const c = linhas[0].split(" | ");
+  const dataCancelamento = c[c.length - 2];
+  const valor = parseValorBR(c[c.length - 1]);
+  return `Cancelado em ${dataCancelamento} (R$ ${valor?.toFixed(2) ?? "?"})`;
+}
+
+async function processarVarreduraComissoes(jobId, mes, ano, clientes, callbackUrl, apiKey) {
+  console.log(`\n[MAG] Iniciando varredura de comissões ${jobId} — ${clientes.length} cliente(s), ${mes}/${ano}`);
+  const page = mainPage;
+
+  for (let i = 0; i < clientes.length; i++) {
+    const { cpf, nome, formaPagamento: formaPagamentoDb, valorTotal } = clientes[i];
+    const cpfLimpo = limparCpf(cpf);
+    console.log(`\n[MAG] ${i + 1}/${clientes.length} — ${nome || cpfLimpo}`);
+
+    await enviarProgressoComissoes(callbackUrl, apiKey, {
+      jobId, atual: i + 1, total: clientes.length, cpf: cpfLimpo, tipo: "progresso",
+      mensagem: `Processando ${i + 1}/${clientes.length} — ${nome || cpfLimpo}`,
+    });
+
+    try {
+      const arrec = await consultarArrecadacao(page, cpfLimpo, mes, ano);
+      if (arrec.erro === "sessao_expirada") throw new Error("Sessão MAG expirada durante a varredura");
+
+      const com = await consultarComissoes(page, cpfLimpo, mes, ano);
+      if (com.erro === "sessao_expirada") throw new Error("Sessão MAG expirada durante a varredura");
+
+      let ondeEstaMag = null;
+      if (!com.comissaoValor) {
+        ondeEstaMag = await consultarInadimplentes(page, cpfLimpo, nome);
+        if (ondeEstaMag === null) ondeEstaMag = await consultarCancelamentos(page, cpfLimpo);
+        if (ondeEstaMag === null) ondeEstaMag = "Não localizado em Inadimplentes/Cancelamentos — verificar manualmente";
+      }
+
+      await enviarResultadoComissoes(callbackUrl, apiKey, {
+        jobId, mes, ano,
+        resultado: {
+          cpf: cpfLimpo,
+          nome: nome || "",
+          formaPagamento: arrec.formaPagamento || formaPagamentoDb || null,
+          valorPrevisto: arrec.valorPrevisto ?? (parseValorBR(valorTotal) || null),
+          statusArrecadacao: arrec.statusArrecadacao,
+          obsArrecadacao: arrec.obsArrecadacao,
+          comissaoValor: com.comissaoValor,
+          comissaoDatas: com.comissaoDatas,
+          comissaoObs: com.comissaoObs,
+          ondeEstaMag,
+        },
+      });
+
+      await enviarProgressoComissoes(callbackUrl, apiKey, {
+        jobId, atual: i + 1, total: clientes.length, cpf: cpfLimpo, tipo: "processado",
+        mensagem: `✓ ${i + 1}/${clientes.length} — ${nome || cpfLimpo} — ${arrec.statusArrecadacao} / comissão R$ ${com.comissaoValor?.toFixed(2) ?? "0,00"}`,
+      });
+      console.log(`[MAG] ✓ ${nome || cpfLimpo} — ${arrec.statusArrecadacao} / comissão ${com.comissaoValor}`);
+    } catch (err) {
+      console.error(`[MAG] Exceção em ${nome || cpfLimpo}:`, err.message);
+      await screenshot(page, `varredura-erro-${cpfLimpo}`);
+      await enviarProgressoComissoes(callbackUrl, apiKey, {
+        jobId, atual: i + 1, total: clientes.length, cpf: cpfLimpo, tipo: "falha",
+        motivo: err.message,
+        mensagem: `✗ ${i + 1}/${clientes.length} — ${nome || cpfLimpo} — ${err.message}`,
+      });
+      // Recupera navegando para uma tela conhecida antes de seguir pro próximo cliente
+      await page.goto(MAG_URL, { waitUntil: "domcontentloaded", timeout: 20000 }).catch(() => {});
+      await sleep(2000);
+    }
+
+    if (i < clientes.length - 1) await sleep(1500);
+  }
+
+  await enviarProgressoComissoes(callbackUrl, apiKey, {
+    jobId, tipo: "concluido",
+    atual: clientes.length, total: clientes.length,
+    mensagem: "Varredura concluída",
+  });
+  console.log(`\n[MAG] ✓ Varredura ${jobId} concluída`);
+  jobEmExecucao = false;
 }
 
 // ── Startup ───────────────────────────────────────────────────────────────────

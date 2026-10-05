@@ -616,3 +616,36 @@ export async function metricasComissoesPendentes(mes: number, ano: number) {
   `;
   return queryPool<Record<string, unknown>>(query, [mes, ano]);
 }
+
+// ─── VARREDURA MAG: clientes com parcela em atraso naquele mês (base inadimplentes) ─
+// Usa mesParcela (texto livre "MM/AA" ou "MM/AAAA", pode ter várias competências
+// separadas por vírgula), NÃO a coluna mes/ano da tabela (que é só o lote de upload).
+// Um mesmo CPF pode aparecer em mais de um lote — mantém sempre o lote mais recente.
+export async function listarClientesParcelaPendenteMes(mes: number, ano: number) {
+  const mm = String(mes).padStart(2, "0");
+  const aa2 = String(ano).slice(-2);
+  const rows = await queryPool<{
+    id: number; nome: string; cpf: string; mesParcela: string; parcela: string | null;
+    formaPagamento: string | null; valorTotal: string | null; status: string | null;
+    mes: number; ano: number;
+  }>(
+    `SELECT id, nome, cpf, mesParcela, parcela, formaPagamento, valorTotal, status, mes, ano
+     FROM inadimplentes
+     WHERE (mesParcela LIKE ? OR mesParcela LIKE ?)
+       AND COALESCE(status, '') NOT IN ('PAGO', 'DESISTIU')
+       AND cpf IS NOT NULL AND cpf != ''
+     ORDER BY cpf, mes DESC, ano DESC`,
+    [`%${mm}/${aa2}%`, `%${mm}/${ano}%`]
+  );
+
+  const porCpf = new Map<string, (typeof rows)[number]>();
+  for (const r of rows) {
+    const cpfLimpo = (r.cpf || "").replace(/\D/g, "");
+    if (cpfLimpo.length < 11) continue;
+    if (!porCpf.has(cpfLimpo)) porCpf.set(cpfLimpo, r);
+  }
+
+  return Array.from(porCpf.entries())
+    .map(([cpfLimpo, r]) => ({ ...r, cpfLimpo }))
+    .sort((a, b) => a.nome.localeCompare(b.nome));
+}

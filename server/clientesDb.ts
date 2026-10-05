@@ -1091,3 +1091,146 @@ export async function listarAniversariantesMes(mes?: number, statusFiltro?: stri
   );
   return rows;
 }
+
+export async function dashboardBaseClientes() {
+  const [
+    porStatus,
+    porEstado,
+    porVendedor,
+    porCidade,
+    porFaixaEtaria,
+    produtosRaw,
+    novosUltimos12,
+  ] = await Promise.all([
+    // 1. Por status
+    queryPool<{ status: string; total: number }>(
+      `SELECT COALESCE(status, 'Sem status') as status, COUNT(*) as total FROM clientes GROUP BY status ORDER BY total DESC`
+    ),
+    // 2. Por estado — subquery para evitar ONLY_FULL_GROUP_BY
+    queryPool<{ estado: string; total: number }>(
+      `SELECT estado, COUNT(*) as total FROM (
+        SELECT CASE
+          WHEN cidade LIKE '%-SC' THEN 'SC'
+          WHEN cidade LIKE '%-SP' THEN 'SP'
+          WHEN cidade LIKE '%-RS' THEN 'RS'
+          WHEN cidade LIKE '%-PR' THEN 'PR'
+          WHEN cidade LIKE '%-RJ' THEN 'RJ'
+          WHEN cidade LIKE '%-MG' THEN 'MG'
+          WHEN cidade LIKE '%-BA' THEN 'BA'
+          WHEN cidade LIKE '%-GO' THEN 'GO'
+          WHEN cidade LIKE '%-DF' THEN 'DF'
+          WHEN cidade LIKE '%-%' THEN SUBSTRING_INDEX(cidade, '-', -1)
+          ELSE 'Outros'
+        END as estado
+        FROM clientes WHERE status = 'Ativo' AND cidade IS NOT NULL AND cidade != ''
+       ) sub GROUP BY estado ORDER BY total DESC`
+    ),
+    // 3. Por vendedor (ativos)
+    queryPool<{ vendedor: string; total: number }>(
+      `SELECT COALESCE(vendedor, 'Sem vendedor') as vendedor, COUNT(*) as total FROM clientes WHERE status = 'Ativo' GROUP BY vendedor ORDER BY total DESC LIMIT 10`
+    ),
+    // 4. Por cidade (top 12)
+    queryPool<{ cidade: string; total: number }>(
+      `SELECT COALESCE(cidade, 'Nao informada') as cidade, COUNT(*) as total FROM clientes WHERE status = 'Ativo' AND cidade IS NOT NULL AND cidade != '' GROUP BY cidade ORDER BY total DESC LIMIT 12`
+    ),
+    // 5. Por faixa etária — subquery para evitar ONLY_FULL_GROUP_BY
+    queryPool<{ faixa: string; total: number }>(
+      `SELECT faixa, COUNT(*) as total FROM (
+        SELECT CASE
+          WHEN TIMESTAMPDIFF(YEAR, dataNascimento, NOW()) < 30 THEN 'Ate 29'
+          WHEN TIMESTAMPDIFF(YEAR, dataNascimento, NOW()) < 40 THEN '30-39'
+          WHEN TIMESTAMPDIFF(YEAR, dataNascimento, NOW()) < 50 THEN '40-49'
+          WHEN TIMESTAMPDIFF(YEAR, dataNascimento, NOW()) < 60 THEN '50-59'
+          WHEN TIMESTAMPDIFF(YEAR, dataNascimento, NOW()) < 70 THEN '60-69'
+          ELSE '70+'
+        END as faixa
+        FROM clientes WHERE status = 'Ativo' AND dataNascimento IS NOT NULL
+       ) sub GROUP BY faixa ORDER BY FIELD(faixa,'Ate 29','30-39','40-49','50-59','60-69','70+')`
+    ),
+    // 6. Campo produtos texto (pipe-separated) — parsing em JS
+    queryPool<{ produtos: string }>(
+      `SELECT produtos FROM clientes WHERE status = 'Ativo' AND produtos IS NOT NULL AND produtos != ''`
+    ),
+    // 7. Novos clientes por mês (últimos 12 meses)
+    queryPool<{ mes: string; total: number }>(
+      `SELECT DATE_FORMAT(createdAt, '%Y-%m') as mes, COUNT(*) as total
+       FROM clientes
+       WHERE createdAt >= DATE_SUB(NOW(), INTERVAL 12 MONTH)
+       GROUP BY mes ORDER BY mes`
+    ),
+  ]);
+
+  // Parse produtos do campo texto (separados por " | ")
+  const contProduto: Record<string, number> = {};
+  for (const row of produtosRaw) {
+    const partes = row.produtos.split('|').map((s: string) => s.trim()).filter(Boolean);
+    for (const p of partes) {
+      // Normalizar: remover código numérico inicial ("546 VIDA INTEIRA..." → "VIDA INTEIRA...")
+      const nome = p.replace(/^\d+\s+/, '').trim();
+      contProduto[nome] = (contProduto[nome] || 0) + 1;
+    }
+  }
+  const porProduto = Object.entries(contProduto)
+    .map(([produto, total]) => ({ produto, total }))
+    .sort((a, b) => b.total - a.total);
+
+  // Mix: contar quantos produtos por cliente
+  const mixMap: Record<number, number> = {};
+  for (const row of produtosRaw) {
+    const qtd = row.produtos.split('|').filter((s: string) => s.trim()).length;
+    mixMap[qtd] = (mixMap[qtd] || 0) + 1;
+  }
+  const mixProdutos = Object.entries(mixMap)
+    .map(([qtd, total]) => ({ qtd: Number(qtd), total }))
+    .sort((a, b) => a.qtd - b.qtd);
+
+  // Cruzamento produto x faixa: buscar com faixa para top 5 produtos
+  const top5Nomes = porProduto.slice(0, 5).map(r => r.produto);
+  const cruzamentoProdutoFaixa: { produto: string; faixa: string; total: number }[] = [];
+  if (top5Nomes.length > 0) {
+    const rawCruz = await queryPool<{ produtos: string; faixa: string }>(
+      `SELECT produtos, faixa FROM (
+        SELECT produtos, CASE
+          WHEN TIMESTAMPDIFF(YEAR, dataNascimento, NOW()) < 30 THEN 'Ate 29'
+          WHEN TIMESTAMPDIFF(YEAR, dataNascimento, NOW()) < 40 THEN '30-39'
+          WHEN TIMESTAMPDIFF(YEAR, dataNascimento, NOW()) < 50 THEN '40-49'
+          WHEN TIMESTAMPDIFF(YEAR, dataNascimento, NOW()) < 60 THEN '50-59'
+          WHEN TIMESTAMPDIFF(YEAR, dataNascimento, NOW()) < 70 THEN '60-69'
+          ELSE '70+'
+        END as faixa
+        FROM clientes WHERE status = 'Ativo' AND produtos IS NOT NULL AND produtos != '' AND dataNascimento IS NOT NULL
+       ) sub`
+    );
+    const cruzMap: Record<string, Record<string, number>> = {};
+    for (const row of rawCruz) {
+      const partes = row.produtos.split('|').map((s: string) => s.replace(/^\d+\s+/, '').trim()).filter(Boolean);
+      for (const nome of partes) {
+        if (!top5Nomes.includes(nome)) continue;
+        if (!cruzMap[nome]) cruzMap[nome] = {};
+        cruzMap[nome][row.faixa] = (cruzMap[nome][row.faixa] || 0) + 1;
+      }
+    }
+    for (const prod of top5Nomes) {
+      for (const [faixa, total] of Object.entries(cruzMap[prod] || {})) {
+        cruzamentoProdutoFaixa.push({ produto: prod, faixa, total });
+      }
+    }
+  }
+
+  const totalAtivos = porStatus.find(r => r.status.toLowerCase() === 'ativo')?.total ?? 0;
+  const totalGeral = porStatus.reduce((s, r) => s + Number(r.total), 0);
+
+  return {
+    totalAtivos: Number(totalAtivos),
+    totalGeral: Number(totalGeral),
+    porStatus: porStatus.map(r => ({ ...r, total: Number(r.total) })),
+    porEstado: porEstado.map(r => ({ ...r, total: Number(r.total) })),
+    porVendedor: porVendedor.map(r => ({ ...r, total: Number(r.total) })),
+    porCidade: porCidade.map(r => ({ ...r, total: Number(r.total) })),
+    porFaixaEtaria: porFaixaEtaria.map(r => ({ ...r, total: Number(r.total) })),
+    porProduto,
+    mixProdutos,
+    novosUltimos12: novosUltimos12.map(r => ({ ...r, total: Number(r.total) })),
+    cruzamentoProdutoFaixa,
+  };
+}

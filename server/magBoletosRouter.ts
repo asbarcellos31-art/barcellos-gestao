@@ -47,7 +47,7 @@ async function magQuery<T = Record<string, unknown>>(sql: string, params: unknow
 
 const MAG_API_KEY = process.env.MAG_API_KEY || "";
 
-function authMag(req: express.Request, res: express.Response, next: express.NextFunction) {
+export function authMag(req: express.Request, res: express.Response, next: express.NextFunction) {
   const key = (req.headers["x-api-key"] as string) || req.body?.apiKey;
   if (!MAG_API_KEY || key !== MAG_API_KEY) {
     return res.status(401).json({ erro: "Não autorizado" });

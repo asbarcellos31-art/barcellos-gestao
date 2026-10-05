@@ -13,6 +13,8 @@ import emailMarketingRouter from "../emailMarketingRouter";
 import emailAutomacaoRouter from "../emailAutomacaoRouter";
 import inadimplentesEnriquecerRouter from "../inadimplentesEnriquecerRouter";
 import { magBoletosExpressRouter } from "../magBoletosRouter";
+import { magComissoesPendentesExpressRouter } from "../magComissoesPendentesRouter";
+import { ensureVarreduraComissoesTable } from "../varreduraComissoesDb";
 import { garantirAdminPadrao } from "../configuracoesDb";
 import { verificarEDisparar } from "../emailAutomacao";
 import { getDb } from "../db";
@@ -48,6 +50,10 @@ async function startServer() {
 
   await ensureTimerTable().catch(err => {
     console.warn("[Boot] timer_ativo:", err?.message || err);
+  });
+
+  await ensureVarreduraComissoesTable().catch(err => {
+    console.warn("[Boot] varredura_comissoes_pendentes:", err?.message || err);
   });
 
   // Migrações seguras (idempotentes)
@@ -145,6 +151,7 @@ async function startServer() {
   app.use("/api", emailAutomacaoRouter);
   app.use("/api", inadimplentesEnriquecerRouter);
   app.use("/api", magBoletosExpressRouter);
+  app.use("/api", magComissoesPendentesExpressRouter);
 
   // Endpoint temporário: cruza lista de servidores com base de clientes
   app.post("/api/cruzar-servidores", async (req: any, res: any) => {

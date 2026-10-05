@@ -141,6 +141,31 @@ export const inadimplentes = mysqlTable("inadimplentes", {
 export type Inadimplente = typeof inadimplentes.$inferSelect;
 export type InsertInadimplente = typeof inadimplentes.$inferInsert;
 
+// Resultado persistido da varredura MAG (aba Comissões Pendentes → botão "Buscar na MAG")
+// Um registro por CPF/mês/ano, atualizado incrementalmente conforme o script local processa cada cliente
+export const varreduraComissoesPendentes = mysqlTable("varredura_comissoes_pendentes", {
+  id: int("id").autoincrement().primaryKey(),
+  mes: int("mes").notNull(),
+  ano: int("ano").notNull(),
+  cpf: varchar("cpf", { length: 20 }).notNull(),
+  nome: varchar("nome", { length: 255 }).notNull(),
+  formaPagamento: varchar("formaPagamento", { length: 100 }),
+  valorPrevisto: decimal("valorPrevisto", { precision: 15, scale: 2 }),
+  valorPagoArrecadacao: decimal("valorPagoArrecadacao", { precision: 15, scale: 2 }),
+  statusArrecadacao: varchar("statusArrecadacao", { length: 50 }),
+  dataPagamentoArrecadacao: varchar("dataPagamentoArrecadacao", { length: 20 }),
+  obsArrecadacao: text("obsArrecadacao"),
+  comissaoValor: decimal("comissaoValor", { precision: 15, scale: 2 }),
+  comissaoDatas: varchar("comissaoDatas", { length: 255 }),
+  comissaoObs: text("comissaoObs"),
+  ondeEstaMag: text("ondeEstaMag"),
+  jobId: varchar("jobId", { length: 50 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type VarreduraComissaoPendente = typeof varreduraComissoesPendentes.$inferSelect;
+
 // ─── CLIENTES ────────────────────────────────────────────────────────────────
 // ─── ORIGENS DE CLIENTES ────────────────────────────────────────────────────
 export const origensCliente = mysqlTable("origens_cliente", {

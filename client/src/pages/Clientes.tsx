@@ -1,4 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from "react";
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, Legend,
+} from "recharts";
 import { trpc } from "@/lib/trpc";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +21,7 @@ import {
   Users, Search, UserCheck, UserX, Plus, Pencil, Trash2,
   ChevronLeft, ChevronRight, DollarSign, TrendingUp, Percent, Download, Package, X, ChevronDown,
   Cake, Phone, Mail, PartyPopper, Bell, Loader2, Send, MessageSquare, Filter, SlidersHorizontal,
+  BarChart2, PieChart as PieChartIcon,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
@@ -116,7 +121,7 @@ function EnviarAniversarioBtn({ clienteId, nome }: { clienteId: number; nome: st
 const MESES_NOMES = ["","Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 
 export default function Clientes() {
-  const [abaAtiva, setAbaAtiva] = useState<"clientes" | "aniversariantes">("clientes");
+  const [abaAtiva, setAbaAtiva] = useState<"clientes" | "aniversariantes" | "dashboard">("clientes");
   const [mesAniversario, setMesAniversario] = useState<number>(() => new Date().getMonth() + 1);
   const [busca, setBusca] = useState("");
   const [statusFiltro, setStatusFiltro] = useState<string>("todos");
@@ -328,6 +333,7 @@ export default function Clientes() {
 
   const { data: vendedoresData } = trpc.clientes.listarVendedores.useQuery();
   const vendedores = vendedoresData || [];
+  const { data: dashData } = trpc.clientes.dashboard.useQuery(undefined, { enabled: abaAtiva === "dashboard" });
 
   // Produtos cadastrados no banco
   const { data: todosProdutos = [] } = trpc.produtos.listar.useQuery();
@@ -853,6 +859,14 @@ export default function Clientes() {
             </span>
           )}
         </button>
+        <button
+          onClick={() => setAbaAtiva("dashboard")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+            abaAtiva === "dashboard" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <BarChart2 className="h-4 w-4" /> Dashboard
+        </button>
       </div>
 
       {/* Conteúdo da aba Aniversariantes */}
@@ -1109,6 +1123,257 @@ export default function Clientes() {
           </Card>
         </div>
       )}
+
+      {/* ═══ ABA DASHBOARD ═══════════════════════════════════════════════ */}
+      {abaAtiva === "dashboard" && (() => {
+        const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#f97316", "#84cc16"];
+        const d = dashData;
+        if (!d) return <div className="py-16 text-center text-gray-400">Carregando dashboard...</div>;
+
+        const taxaAtivacao = d.totalGeral > 0 ? Math.round(d.totalAtivos / d.totalGeral * 100) : 0;
+        const semCadastro = d.totalGeral - d.totalAtivos - (d.porStatus.find(s => s.status.toLowerCase() === 'inativo')?.total ?? 0);
+
+        // Cruzamento produto x faixa — montar linhas únicas de produto e colunas de faixa
+        const faixasOrder = ['Ate 29', '30-39', '40-49', '50-59', '60-69', '70+'];
+        const faixasLabel: Record<string, string> = { 'Ate 29': 'Até 29', '30-39': '30–39', '40-49': '40–49', '50-59': '50–59', '60-69': '60–69', '70+': '70+' };
+        const produtosCruz = [...new Set(d.cruzamentoProdutoFaixa.map(r => r.produto))];
+        const cruzMap: Record<string, Record<string, number>> = {};
+        d.cruzamentoProdutoFaixa.forEach(r => {
+          if (!cruzMap[r.produto]) cruzMap[r.produto] = {};
+          cruzMap[r.produto][r.faixa] = r.total;
+        });
+
+        // Meses últimos 12
+        const mesesAbrev = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+        const novosFormatado = d.novosUltimos12.map(r => ({
+          mes: mesesAbrev[parseInt(r.mes.split('-')[1]) - 1] + '/' + r.mes.split('-')[0].slice(2),
+          total: r.total,
+        }));
+
+        return (
+          <div className="space-y-6">
+            {/* KPIs */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-blue-500">
+                <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Total na Base</div>
+                <div className="text-3xl font-black text-blue-600">{d.totalGeral.toLocaleString()}</div>
+              </div>
+              <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-green-500">
+                <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Ativos</div>
+                <div className="text-3xl font-black text-green-600">{d.totalAtivos.toLocaleString()}</div>
+              </div>
+              <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-amber-500">
+                <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Taxa de Ativação</div>
+                <div className="text-3xl font-black text-amber-600">{taxaAtivacao}%</div>
+              </div>
+              <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-purple-500">
+                <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Produtos Cadastrados</div>
+                <div className="text-3xl font-black text-purple-600">{d.porProduto.length}</div>
+              </div>
+            </div>
+
+            {/* Status + Por Estado */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-white rounded-xl shadow-sm p-5">
+                <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><PieChartIcon size={16} className="text-blue-500" /> Por Status</h3>
+                <ResponsiveContainer width="100%" height={200}>
+                  <PieChart>
+                    <Pie data={d.porStatus} dataKey="total" nameKey="status" cx="50%" cy="50%" outerRadius={75}
+                      label={({ status, percent }: any) => `${status} ${Math.round(percent * 100)}%`} labelLine={false}>
+                      {d.porStatus.map((_: any, i: number) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                    </Pie>
+                    <Tooltip formatter={(v: number) => [v.toLocaleString(), 'Clientes']} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="bg-white rounded-xl shadow-sm p-5">
+                <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><PieChartIcon size={16} className="text-purple-500" /> Por Estado (Ativos)</h3>
+                <div className="space-y-2">
+                  {d.porEstado.map((r: any, i: number) => {
+                    const totalEstados = d.porEstado.reduce((s: number, x: any) => s + x.total, 0);
+                    const pct = totalEstados > 0 ? Math.round(r.total / totalEstados * 100) : 0;
+                    return (
+                      <div key={i}>
+                        <div className="flex justify-between text-sm mb-0.5">
+                          <span className="text-gray-700 font-medium">{r.estado}</span>
+                          <span className="font-bold" style={{ color: COLORS[i % COLORS.length] }}>{r.total} <span className="text-gray-400 font-normal text-xs">({pct}%)</span></span>
+                        </div>
+                        <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: COLORS[i % COLORS.length] }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Faixa etária */}
+            <div className="bg-white rounded-xl shadow-sm p-5">
+              <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><BarChart2 size={16} className="text-blue-500" /> Faixa Etária (Ativos)</h3>
+              {(() => {
+                const totalFaixa = d.porFaixaEtaria.reduce((s: number, r: any) => s + r.total, 0);
+                return (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={d.porFaixaEtaria.map((r: any) => ({ ...r, faixaLabel: faixasLabel[r.faixa] ?? r.faixa, pct: totalFaixa > 0 ? Math.round(r.total / totalFaixa * 100) : 0 }))} margin={{ top: 24, right: 16, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                      <XAxis dataKey="faixaLabel" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} width={40} />
+                      <Tooltip formatter={(v: number, _: any, props: any) => [`${v.toLocaleString()} (${props.payload.pct}%)`, 'Clientes']} />
+                      <Bar dataKey="total" radius={[4, 4, 0, 0]} label={{ position: 'top', fontSize: 11, fontWeight: 'bold', formatter: (v: number) => { const pct = totalFaixa > 0 ? Math.round(v / totalFaixa * 100) : 0; return `${v}\n${pct}%`; } }}>
+                        {d.porFaixaEtaria.map((_: any, i: number) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                );
+              })()}
+            </div>
+
+            {/* Produtos */}
+            <div className="bg-white rounded-xl shadow-sm p-5">
+              <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><BarChart2 size={16} className="text-green-500" /> Por Produto (Ativos)</h3>
+              {d.porProduto.length === 0 ? (
+                <div className="text-sm text-gray-400 py-4 text-center">Nenhum produto no campo produtos dos clientes</div>
+              ) : (
+                <div className="space-y-2">
+                  {(() => {
+                    const totalProd = d.porProduto.reduce((s: number, r: any) => s + r.total, 0);
+                    const maxProd = d.porProduto[0]?.total ?? 1;
+                    return d.porProduto.map((r: any, i: number) => {
+                      const pct = totalProd > 0 ? Math.round(r.total / totalProd * 100) : 0;
+                      return (
+                        <div key={i}>
+                          <div className="flex justify-between text-sm mb-0.5">
+                            <span className="text-gray-700 font-medium truncate max-w-[70%]" title={r.produto}>{r.produto}</span>
+                            <span className="font-bold whitespace-nowrap" style={{ color: COLORS[i % COLORS.length] }}>{r.total} <span className="text-gray-400 font-normal text-xs">({pct}%)</span></span>
+                          </div>
+                          <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                            <div className="h-full rounded-full" style={{ width: `${Math.round(r.total / maxProd * 100)}%`, background: COLORS[i % COLORS.length] }} />
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              )}
+            </div>
+
+            {/* Vendedor + Cidade */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-white rounded-xl shadow-sm p-5">
+                <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><BarChart2 size={16} className="text-amber-500" /> Por Vendedor (Ativos)</h3>
+                <div className="space-y-2">
+                  {d.porVendedor.map((r: any, i: number) => {
+                    const pct = d.totalAtivos > 0 ? Math.round(r.total / d.totalAtivos * 100) : 0;
+                    return (
+                      <div key={i}>
+                        <div className="flex justify-between text-sm mb-0.5">
+                          <span className="text-gray-700 font-medium">{r.vendedor}</span>
+                          <span className="font-bold" style={{ color: COLORS[i % COLORS.length] }}>{r.total} <span className="text-gray-400 font-normal text-xs">({pct}%)</span></span>
+                        </div>
+                        <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: COLORS[i % COLORS.length] }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="bg-white rounded-xl shadow-sm p-5">
+                <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><BarChart2 size={16} className="text-cyan-500" /> Top Cidades (Ativos)</h3>
+                <div className="space-y-2">
+                  {d.porCidade.map((r: any, i: number) => {
+                    const pct = d.totalAtivos > 0 ? Math.round(r.total / d.totalAtivos * 100) : 0;
+                    return (
+                      <div key={i}>
+                        <div className="flex justify-between text-sm mb-0.5">
+                          <span className="text-gray-700 font-medium">{r.cidade}</span>
+                          <span className="font-bold" style={{ color: COLORS[i % COLORS.length] }}>{r.total} <span className="text-gray-400 font-normal text-xs">({pct}%)</span></span>
+                        </div>
+                        <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: COLORS[i % COLORS.length] }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Mix de produtos */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-white rounded-xl shadow-sm p-5">
+                <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><BarChart2 size={16} className="text-indigo-500" /> Mix de Produtos por Cliente</h3>
+                <ResponsiveContainer width="100%" height={180}>
+                  <BarChart data={d.mixProdutos.map((r: any) => ({ label: r.qtd === 1 ? '1 produto' : `${r.qtd} produtos`, total: r.total }))} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                    <XAxis dataKey="label" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} width={40} />
+                    <Tooltip formatter={(v: number) => [v.toLocaleString(), 'Clientes']} />
+                    <Bar dataKey="total" fill="#8b5cf6" radius={[4, 4, 0, 0]} label={{ position: 'top', fontSize: 12, fontWeight: 'bold' }} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="bg-white rounded-xl shadow-sm p-5">
+                <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><BarChart2 size={16} className="text-rose-500" /> Novos Clientes — Últimos 12 Meses</h3>
+                <ResponsiveContainer width="100%" height={180}>
+                  <BarChart data={novosFormatado} margin={{ top: 16, right: 8, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                    <XAxis dataKey="mes" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} width={30} />
+                    <Tooltip formatter={(v: number) => [v.toLocaleString(), 'Novos']} />
+                    <Bar dataKey="total" fill="#f43f5e" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Cruzamento Produto × Faixa Etária */}
+            {produtosCruz.length > 0 && (
+              <div className="bg-white rounded-xl shadow-sm p-5">
+                <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><BarChart2 size={16} className="text-orange-500" /> Cruzamento: Produto × Faixa Etária</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-100">
+                        <th className="text-left px-4 py-2.5 font-semibold text-gray-600">Produto</th>
+                        {faixasOrder.map(f => <th key={f} className="text-center px-3 py-2.5 font-semibold text-gray-600">{faixasLabel[f] ?? f}</th>)}
+                        <th className="text-center px-3 py-2.5 font-semibold text-gray-600">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {produtosCruz.map((prod, i) => {
+                        const row = cruzMap[prod] || {};
+                        const total = Object.values(row).reduce((s, v) => s + v, 0);
+                        const maxVal = Math.max(...faixasOrder.map(f => row[f] || 0));
+                        return (
+                          <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50">
+                            <td className="px-4 py-2.5 font-medium text-gray-700">{prod}</td>
+                            {faixasOrder.map(f => {
+                              const v = row[f] || 0;
+                              const intensity = maxVal > 0 ? v / maxVal : 0;
+                              return (
+                                <td key={f} className="text-center px-3 py-2.5" style={{
+                                  background: v > 0 ? `rgba(59,130,246,${0.1 + intensity * 0.5})` : undefined,
+                                  fontWeight: v > 0 ? 600 : undefined,
+                                  color: v > 0 ? '#1e40af' : '#d1d5db',
+                                }}>
+                                  {v > 0 ? v : '—'}
+                                </td>
+                              );
+                            })}
+                            <td className="text-center px-3 py-2.5 font-bold text-gray-700">{total}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Conteúdo da aba Clientes (oculto quando aniversariantes está ativo) */}
       {abaAtiva === "clientes" && (

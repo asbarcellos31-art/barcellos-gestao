@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAno } from "@/contexts/AnoContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Upload, Trash2, TrendingUp, Users, FileText, DollarSign, Filter, Search, AlertCircle, ChevronDown, ChevronRight, Target, Download, Settings2 } from "lucide-react";
+import { Upload, Trash2, TrendingUp, Users, FileText, DollarSign, Filter, Search, AlertCircle, ChevronDown, ChevronRight, Target, Download, Settings2, Radar, Loader2, Wifi, WifiOff, CheckCircle2, RefreshCw } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
 import AppLayout from "@/components/AppLayout";
 import * as XLSX from "xlsx";
@@ -25,6 +25,9 @@ const MESES_CURTOS = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out
 const CORES = ["#1e40af","#10b981","#f59e0b","#ef4444","#8b5cf6","#06b6d4","#f97316","#84cc16","#ec4899","#6366f1"];
 
 const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+type FaseMagComissoes = "verificando" | "sem_servidor" | "aguardando_login" | "pronto" | "processando" | "concluido";
+const MAG_LOCAL = "http://localhost:4040";
 
 type ResumoCorretor = {
   corretor: string;
@@ -50,6 +53,15 @@ export default function Comissoes() {
   const [vendedorPendentes, setVendedorPendentes] = useState<string>("todos");
   const [mesPendentes, setMesPendentes] = useState(new Date().getMonth() + 1);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // ── Varredura MAG (Comissões Pendentes) ───────────────────────────────────
+  const [ngrokUrlComissoes, setNgrokUrlComissoes] = useState("");
+  const [modalMagComissoesAberto, setModalMagComissoesAberto] = useState(false);
+  const [faseMagComissoes, setFaseMagComissoes] = useState<FaseMagComissoes>("verificando");
+  const [progressoMagComissoes, setProgressoMagComissoes] = useState({ atual: 0, total: 0, mensagem: "" });
+  const [processadosMagComissoes, setProcessadosMagComissoes] = useState(0);
+  const [falhasMagComissoes, setFalhasMagComissoes] = useState<{ cpf: string; motivo: string }[]>([]);
+  const [jobIdMagComissoes, setJobIdMagComissoes] = useState<string | null>(null);
 
   // ── Configuração do PDF ────────────────────────────────────────────────────
   const [pdfConfigOpen, setPdfConfigOpen] = useState(false);
@@ -102,6 +114,9 @@ export default function Comissoes() {
     mes: mesPendentes, ano,
   });
 
+  const { data: resultadoVarredura = [], refetch: refetchResultadoVarredura } =
+    trpc.magComissoesPendentes.varreduraResultado.useQuery({ mes: mesPendentes, ano });
+
   const deletarUpload = trpc.comissoes.deletarUpload.useMutation({
     onSuccess: () => {
       utils.comissoes.uploads.invalidate();
@@ -110,6 +125,186 @@ export default function Comissoes() {
       toast.success("Upload removido");
     },
   });
+
+  // ── Varredura MAG: modal e ciclo de vida (mesmo padrão de Inadimplentes.tsx) ─
+
+  const fecharModalMagComissoes = useCallback(() => {
+    setJobIdMagComissoes(null);
+    setModalMagComissoesAberto(false);
+    setFaseMagComissoes("verificando");
+    setProgressoMagComissoes({ atual: 0, total: 0, mensagem: "" });
+  }, []);
+
+  async function abrirModalMagComissoes() {
+    setFaseMagComissoes("verificando");
+    setModalMagComissoesAberto(true);
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 3000);
+      const r = await fetch(`${MAG_LOCAL}/status`, { signal: ctrl.signal });
+      clearTimeout(t);
+      const json = await r.json();
+      if (json.tunnelUrl) setNgrokUrlComissoes(json.tunnelUrl);
+      if (json.logado) setFaseMagComissoes("pronto");
+      else setFaseMagComissoes("aguardando_login");
+    } catch {
+      setFaseMagComissoes("sem_servidor");
+    }
+  }
+
+  async function abrirPortalMagComissoes() {
+    try {
+      await fetch(`${MAG_LOCAL}/iniciar-sessao`, { method: "POST" });
+      setFaseMagComissoes("aguardando_login");
+      iniciarPollingLoginComissoes();
+    } catch {
+      toast.error("Não foi possível conectar ao servidor local MAG");
+    }
+  }
+
+  function iniciarPollingLoginComissoes() {
+    const t = setInterval(async () => {
+      try {
+        const r = await fetch(`${MAG_LOCAL}/status-login`);
+        const json = await r.json();
+        if (json.status === "logado") {
+          clearInterval(t);
+          const s = await fetch(`${MAG_LOCAL}/status`);
+          const sj = await s.json();
+          if (sj.tunnelUrl) setNgrokUrlComissoes(sj.tunnelUrl);
+          setFaseMagComissoes("pronto");
+        }
+      } catch { clearInterval(t); }
+    }, 2500);
+  }
+
+  useEffect(() => {
+    if (!modalMagComissoesAberto) return;
+    const poll = setInterval(async () => {
+      try {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 3000);
+        const r = await fetch(`${MAG_LOCAL}/status`, { signal: ctrl.signal });
+        clearTimeout(t);
+        const json = await r.json();
+        if (json.tunnelUrl) setNgrokUrlComissoes(json.tunnelUrl);
+        if (json.logado && faseMagComissoes === "sem_servidor") setFaseMagComissoes("pronto");
+      } catch {}
+    }, 30000);
+    return () => clearInterval(poll);
+  }, [modalMagComissoesAberto, faseMagComissoes]);
+
+  const iniciarVarreduraMutation = trpc.magComissoesPendentes.varreduraIniciar.useMutation({
+    onSuccess: ({ jobId, totalClientes }) => {
+      setJobIdMagComissoes(jobId);
+      setFaseMagComissoes("processando");
+      setProgressoMagComissoes({ atual: 0, total: totalClientes, mensagem: "Iniciando..." });
+      setProcessadosMagComissoes(0);
+      setFalhasMagComissoes([]);
+    },
+    onError: async (err) => {
+      if (err.message.includes("fetch failed") || err.message.includes("connect")) {
+        try {
+          const ctrl = new AbortController();
+          setTimeout(() => ctrl.abort(), 3000);
+          const r = await fetch(`${MAG_LOCAL}/status`, { signal: ctrl.signal });
+          const json = await r.json();
+          if (json.tunnelUrl && json.tunnelUrl !== ngrokUrlComissoes) {
+            setNgrokUrlComissoes(json.tunnelUrl);
+            toast("URL do servidor atualizada — tentando novamente...", { duration: 3000 });
+            setTimeout(() => {
+              iniciarVarreduraMutation.mutate({ mes: mesPendentes, ano, ngrokUrl: json.tunnelUrl });
+            }, 1500);
+            return;
+          }
+        } catch {}
+      }
+      toast.error("Erro ao iniciar varredura: " + err.message);
+    },
+  });
+
+  function iniciarVarreduraComissoes() {
+    if (!ngrokUrlComissoes.trim()) {
+      toast.error("Servidor local não retornou URL do túnel — verifique o terminal");
+      return;
+    }
+    iniciarVarreduraMutation.mutate({ mes: mesPendentes, ano, ngrokUrl: ngrokUrlComissoes.trim() });
+  }
+
+  const { data: varreduraJobStatus } = trpc.magComissoesPendentes.varreduraStatus.useQuery(
+    { jobId: jobIdMagComissoes || "" },
+    { enabled: !!jobIdMagComissoes, refetchInterval: !!jobIdMagComissoes ? 2000 : false }
+  );
+
+  useEffect(() => {
+    if (!varreduraJobStatus || !jobIdMagComissoes) return;
+    setProgressoMagComissoes({ atual: varreduraJobStatus.atual, total: varreduraJobStatus.total, mensagem: varreduraJobStatus.mensagem });
+    setProcessadosMagComissoes(varreduraJobStatus.processados);
+    setFalhasMagComissoes(varreduraJobStatus.falhas);
+    if (varreduraJobStatus.status !== "rodando") {
+      setFaseMagComissoes("concluido");
+      setJobIdMagComissoes(null);
+      refetchResultadoVarredura();
+      if (varreduraJobStatus.status === "concluido") {
+        toast.success(`Varredura concluída — ${varreduraJobStatus.processados} cliente${varreduraJobStatus.processados !== 1 ? "s" : ""} processado${varreduraJobStatus.processados !== 1 ? "s" : ""}.`);
+      } else {
+        toast.error(varreduraJobStatus.mensagem || "Erro na varredura");
+      }
+    }
+  }, [varreduraJobStatus]);
+
+  function exportarPDFVarredura() {
+    const mesLabel = MESES[mesPendentes - 1];
+    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    let nextY = addBarcellosHeader(doc, "Varredura MAG — Comissões Pendentes", `${mesLabel} / ${ano}`);
+
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.text(`Resultado da varredura — ${mesLabel}/${ano}`, 14, nextY + 4);
+    nextY += 8;
+
+    autoTable(doc, {
+      startY: nextY + 2,
+      head: [["Nome", "CPF", "Status Arrecadação", "Valor/Data Pagto", "Comissão (R$)", "Data(s) Comissão", "Onde está na MAG"]],
+      body: (resultadoVarredura as any[]).map(r => [
+        String(r.nome ?? ""),
+        String(r.cpf ?? ""),
+        String(r.statusArrecadacao ?? "—"),
+        r.valorPrevisto != null ? fmt(parseFloat(String(r.valorPrevisto))) : "—",
+        r.comissaoValor != null ? fmt(parseFloat(String(r.comissaoValor))) : "—",
+        String(r.comissaoDatas ?? "—"),
+        String(r.ondeEstaMag ?? "—"),
+      ]),
+      styles: { fontSize: 7, cellPadding: 2 },
+      headStyles: { fillColor: [234, 88, 12], textColor: 255, fontStyle: "bold" },
+      margin: { left: 14, right: 14 },
+    });
+
+    addBarcellosFooter(doc);
+    doc.save(`Varredura_MAG_${mesLabel}_${ano}.pdf`);
+    toast.success("PDF exportado!");
+  }
+
+  function exportarExcelVarredura() {
+    const mesLabel = MESES[mesPendentes - 1];
+    const rows = (resultadoVarredura as any[]).map(r => ({
+      Nome: r.nome ?? "",
+      CPF: r.cpf ?? "",
+      "Status Arrecadação": r.statusArrecadacao ?? "",
+      "Valor Previsto": r.valorPrevisto != null ? parseFloat(String(r.valorPrevisto)) : "",
+      "Forma de Pagamento": r.formaPagamento ?? "",
+      "Obs. Arrecadação": r.obsArrecadacao ?? "",
+      "Comissão Recebida (R$)": r.comissaoValor != null ? parseFloat(String(r.comissaoValor)) : "",
+      "Data(s) Comissão": r.comissaoDatas ?? "",
+      "Onde está na MAG": r.ondeEstaMag ?? "",
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Varredura MAG");
+    XLSX.writeFile(wb, `Varredura_MAG_${mesLabel}_${ano}.xlsx`);
+    toast.success("Excel exportado!");
+  }
 
   const resumoTyped: ResumoCorretor[] = (resumoData as any)?.rows ?? [];
   const clientesUnicos: number = (resumoData as any)?.clientesUnicos ?? 0;
@@ -1063,6 +1258,14 @@ export default function Comissoes() {
                 <FileText className="w-4 h-4" />
                 Exportar PDF
               </Button>
+              <Button
+                variant="outline"
+                onClick={abrirModalMagComissoes}
+                className="gap-2 border-orange-500 text-orange-700 hover:bg-orange-50 shrink-0"
+              >
+                <Radar className="w-4 h-4" />
+                Buscar na MAG
+              </Button>
             </div>
 
             {/* KPIs pendentes */}
@@ -1180,9 +1383,226 @@ export default function Comissoes() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Resultado da varredura MAG */}
+            {(resultadoVarredura as any[]).length > 0 && (
+              <Card className="border-orange-200">
+                <CardHeader>
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Radar className="w-4 h-4 text-orange-500" />
+                      Varredura MAG — {MESES[mesPendentes - 1]}/{ano}
+                      <Badge variant="outline">{(resultadoVarredura as any[]).length}</Badge>
+                    </CardTitle>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" onClick={exportarPDFVarredura} className="gap-2">
+                        <FileText className="w-3.5 h-3.5" /> PDF
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={exportarExcelVarredura} className="gap-2">
+                        <Download className="w-3.5 h-3.5" /> Excel
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Nome</TableHead>
+                          <TableHead>CPF</TableHead>
+                          <TableHead>Status Arrecadação</TableHead>
+                          <TableHead className="text-right">Valor Previsto</TableHead>
+                          <TableHead className="text-right">Comissão Recebida</TableHead>
+                          <TableHead>Data(s) Comissão</TableHead>
+                          <TableHead>Onde está na MAG</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(resultadoVarredura as any[]).map((r, i) => (
+                          <TableRow key={i}>
+                            <TableCell className="font-medium text-xs">{String(r.nome ?? "")}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground font-mono">{String(r.cpf ?? "")}</TableCell>
+                            <TableCell className="text-xs">
+                              <Badge variant={String(r.statusArrecadacao ?? "").toLowerCase().includes("paga") ? "default" : "outline"}>
+                                {String(r.statusArrecadacao ?? "—")}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right text-xs">
+                              {r.valorPrevisto != null ? fmt(parseFloat(String(r.valorPrevisto))) : "—"}
+                            </TableCell>
+                            <TableCell className="text-right text-xs">
+                              {r.comissaoValor != null
+                                ? <span className={parseFloat(String(r.comissaoValor)) > 0 ? "text-green-600 font-semibold" : "text-red-600"}>{fmt(parseFloat(String(r.comissaoValor)))}</span>
+                                : "—"}
+                            </TableCell>
+                            <TableCell className="text-xs">{String(r.comissaoDatas ?? "—")}</TableCell>
+                            <TableCell className="text-xs">{String(r.ondeEstaMag ?? "—")}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* ─── MODAL: Varredura MAG — Comissões Pendentes ────────────────────────── */}
+      <Dialog open={modalMagComissoesAberto} onOpenChange={(open) => { if (!open) fecharModalMagComissoes(); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Radar className="w-5 h-5 text-orange-500" />
+              Buscar Comissões Pendentes no Portal MAG
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {(faseMagComissoes === "verificando" || faseMagComissoes === "sem_servidor") && (
+              <div className="space-y-4">
+                {faseMagComissoes === "verificando" && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="w-4 h-4 animate-spin" /> Verificando servidor local...
+                  </div>
+                )}
+                {faseMagComissoes === "sem_servidor" && (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 text-sm text-red-600">
+                      <WifiOff className="w-4 h-4" /> Servidor local não encontrado (porta 4040)
+                    </div>
+                    <div className="rounded-lg bg-muted p-4 space-y-2">
+                      <p className="text-xs text-muted-foreground">O servidor MAG inicia automaticamente quando o Mac liga. Se acabou de ligar o computador, aguarde alguns segundos e clique em <strong>Verificar novamente</strong>.</p>
+                    </div>
+                    <Button size="sm" variant="outline" onClick={abrirModalMagComissoes} className="gap-2">
+                      <RefreshCw className="w-3 h-3" /> Verificar novamente
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {faseMagComissoes === "aguardando_login" && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-sm text-green-600">
+                  <Wifi className="w-4 h-4" /> Servidor local ativo
+                </div>
+                <div className="rounded-lg bg-orange-50 border border-orange-200 p-4 space-y-2">
+                  <p className="text-sm font-semibold text-orange-800">Faça o login no portal MAG</p>
+                  <p className="text-xs text-orange-700">
+                    O Chrome vai abrir automaticamente no portal. Faça o login normalmente
+                    (CAPTCHA incluído). Após entrar, esta tela avança sozinha.
+                  </p>
+                </div>
+                <Button onClick={abrirPortalMagComissoes} className="w-full gap-2 bg-orange-500 hover:bg-orange-600">
+                  <Radar className="w-4 h-4" /> Abrir portal MAG no Chrome
+                </Button>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Aguardando login...
+                </div>
+              </div>
+            )}
+
+            {faseMagComissoes === "pronto" && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-sm text-green-600">
+                  <CheckCircle2 className="w-4 h-4" /> Logado no portal MAG
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase">URL do túnel</label>
+                  {ngrokUrlComissoes ? (
+                    <div className="flex items-center gap-2 rounded bg-green-50 border border-green-200 px-3 py-2">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-green-600 flex-shrink-0" />
+                      <span className="text-xs font-mono text-green-700 break-all">{ngrokUrlComissoes}</span>
+                    </div>
+                  ) : (
+                    <input
+                      type="url"
+                      value={ngrokUrlComissoes}
+                      onChange={(e) => setNgrokUrlComissoes(e.target.value)}
+                      placeholder="https://xxxx.trycloudflare.com"
+                      className="w-full text-sm border rounded px-3 py-1.5 bg-background focus:outline-none focus:ring-2 focus:ring-orange-400"
+                    />
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    {ngrokUrlComissoes ? "Detectado automaticamente do servidor local." : "Cole a URL do túnel exibida no terminal após iniciar o servidor."}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-muted/50 border p-3 text-sm">
+                  Mês selecionado: <strong>{MESES[mesPendentes - 1]}/{ano}</strong> — {pendentesFiltrados.length} cliente{pendentesFiltrados.length !== 1 ? "s" : ""} pendente{pendentesFiltrados.length !== 1 ? "s" : ""} na base.
+                </div>
+                <Button
+                  onClick={iniciarVarreduraComissoes}
+                  className="w-full gap-2 bg-orange-500 hover:bg-orange-600"
+                  disabled={!ngrokUrlComissoes.trim() || iniciarVarreduraMutation.isPending}
+                >
+                  <Radar className="w-4 h-4" />
+                  {iniciarVarreduraMutation.isPending ? "Iniciando..." : "Iniciar busca na MAG"}
+                </Button>
+              </div>
+            )}
+
+            {faseMagComissoes === "processando" && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium">Varrendo comissões...</span>
+                  <span className="text-muted-foreground">{progressoMagComissoes.atual}/{progressoMagComissoes.total}</span>
+                </div>
+                <div className="w-full bg-muted rounded-full h-2">
+                  <div
+                    className="bg-orange-500 h-2 rounded-full transition-all duration-500"
+                    style={{ width: progressoMagComissoes.total > 0 ? `${(progressoMagComissoes.atual / progressoMagComissoes.total) * 100}%` : "0%" }}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground font-mono">{progressoMagComissoes.mensagem}</p>
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-green-600 font-semibold">{processadosMagComissoes} processados</span>
+                  <span className="text-muted-foreground">·</span>
+                  <span className="text-red-500">{falhasMagComissoes.length} falhas</span>
+                </div>
+                <p className="text-xs text-muted-foreground">Pode fechar esta janela — a varredura continua em segundo plano.</p>
+              </div>
+            )}
+
+            {faseMagComissoes === "concluido" && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-center">
+                    <p className="text-2xl font-bold text-green-700">{processadosMagComissoes}</p>
+                    <p className="text-xs text-green-600 mt-1">Processados</p>
+                  </div>
+                  <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-center">
+                    <p className="text-2xl font-bold text-red-700">{falhasMagComissoes.length}</p>
+                    <p className="text-xs text-red-600 mt-1">Falharam</p>
+                  </div>
+                </div>
+                {falhasMagComissoes.length > 0 && (
+                  <div className="space-y-1 max-h-40 overflow-y-auto">
+                    <p className="text-xs font-semibold text-red-600">Falharam (verificar manualmente):</p>
+                    {falhasMagComissoes.map((f, i) => (
+                      <div key={i} className="text-xs flex items-start gap-2 bg-red-50 border border-red-100 rounded px-2 py-1">
+                        <span className="font-mono text-red-700 shrink-0">{f.cpf}</span>
+                        <span className="text-red-600">{f.motivo}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">Resultado disponível na tabela "Varredura MAG" abaixo da lista de pendentes.</p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            {faseMagComissoes !== "processando" && (
+              <Button variant="outline" onClick={fecharModalMagComissoes}>
+                {faseMagComissoes === "concluido" ? "Fechar" : "Cancelar"}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

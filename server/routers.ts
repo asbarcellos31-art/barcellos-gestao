@@ -63,7 +63,8 @@ import { inadimplentesDisparoRouter } from "./inadimplentesDisparoRouter";
 import { enviarAniversarioIndividual } from "./emailAutomacao";
 import { whatsappRouter } from "./whatsappRouter";
 import { magTrpcRouter } from "./magBoletosRouter";
-import { obterRelatorio, salvarRelatorio, obterMetricasMes, listarRelatorios, vendasMensaisPorAno } from "./relatorioExecutivoDb";
+import { magComissoesPendentesTrpcRouter } from "./magComissoesPendentesRouter";
+import { obterRelatorio, salvarRelatorio, obterMetricasMes, listarRelatorios, vendasMensaisPorAno, obterCorretoresAnuais } from "./relatorioExecutivoDb";
 import { buscarDadosMensagemDiaria } from "./mensagemDiariaDb";
 import { listarLembretes, criarLembrete, toggleLembrete, excluirLembrete, atualizarLembrete } from "./lembretesDb";
 import { getSessionCookieOptions } from "./_core/cookies";
@@ -135,6 +136,7 @@ import {
   listarAniversariantesMes,
   enviarVendaParaBase,
   buscarClientePorCpf,
+  dashboardBaseClientes,
 } from "./clientesDb";
 import {
   listarDrePorAno,
@@ -442,6 +444,8 @@ export const appRouter = router({
     exportarTodos: publicProcedure
       .input(z.object({ status: z.string().optional() }))
       .query(({ input }) => listarClientes({ status: input.status, limit: 99999, offset: 0 })),
+    dashboard: publicProcedure
+      .query(() => dashboardBaseClientes()),
   }),
   vendas: router({
     listar: publicProcedure
@@ -995,6 +999,9 @@ export const appRouter = router({
     listar: publicProcedure
       .input(z.object({ ano: z.number() }))
       .query(({ input }) => listarRelatorios(input.ano)),
+    corretoresAnuais: publicProcedure
+      .input(z.object({ ano: z.number() }))
+      .query(({ input }) => obterCorretoresAnuais(input.ano)),
   }),
   gestaoTempo: router({
     listarDia: publicProcedure
@@ -1185,6 +1192,7 @@ export const appRouter = router({
   inadimplentesDisparo: inadimplentesDisparoRouter,
   whatsapp: whatsappRouter,
   mag: magTrpcRouter,
+  magComissoesPendentes: magComissoesPendentesTrpcRouter,
 
   lembretes: router({
     listar: publicProcedure
