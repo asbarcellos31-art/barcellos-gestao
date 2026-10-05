@@ -565,6 +565,41 @@ export async function vendasMensaisPorAno(ano: number) {
   }));
 }
 
+// ─── Corretores consolidados por ano ──────────────────────────────────────
+export async function obterCorretoresAnuais(ano: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const [rows] = await db.execute(
+    sql`SELECT corretor,
+        COUNT(*) as propostas,
+        COALESCE(SUM(CASE WHEN cpfNovo='SIM' THEN 1 ELSE 0 END), 0) as cpfsNovos,
+        COALESCE(SUM(valorPremio), 0) as premio
+        FROM vendas WHERE ano=${ano} AND corretor IS NOT NULL AND corretor != ''
+        GROUP BY corretor ORDER BY premio DESC`
+  ) as any;
+  const totalPremio = rows.reduce((s: number, r: any) => s + parseFloat(r.premio || "0"), 0);
+  const totalProp = rows.reduce((s: number, r: any) => s + parseInt(r.propostas || "0"), 0);
+  const totalCpf = rows.reduce((s: number, r: any) => s + parseInt(r.cpfsNovos || "0"), 0);
+  return rows.map((r: any) => {
+    const val = parseFloat(r.premio || "0");
+    const prop = parseInt(r.propostas || "0");
+    const cpf = parseInt(r.cpfsNovos || "0");
+    const pVal = totalPremio > 0 ? val / totalPremio * 100 : 0;
+    const pProp = totalProp > 0 ? prop / totalProp * 100 : 0;
+    const pCpf = totalCpf > 0 ? cpf / totalCpf * 100 : 0;
+    return {
+      nome: r.corretor,
+      premio: val,
+      propostas: prop,
+      cpfsNovos: cpf,
+      participacao: Math.round((pVal + pProp + pCpf) / 3),
+      pVal: Math.round(pVal),
+      pProp: Math.round(pProp),
+      pCpf: Math.round(pCpf),
+    };
+  });
+}
+
 // ─── Listar relatórios existentes ─────────────────────────────────────────
 export async function listarRelatorios(ano: number) {
   const db = await getDb();
