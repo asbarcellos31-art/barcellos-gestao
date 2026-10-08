@@ -24,19 +24,22 @@ function formatCurrency(value: string | number | null | undefined) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(num);
 }
 
-function formatDate(value: string | Date | null | undefined) {
-  if (!value) return "-";
-  // Se for objeto Date, usa os métodos UTC para evitar conversão de fuso
+function toISODate(value: string | Date | null | undefined): string {
+  if (!value) return "";
   if (value instanceof Date) {
     const dd = String(value.getUTCDate()).padStart(2, "0");
     const mm = String(value.getUTCMonth() + 1).padStart(2, "0");
     const yyyy = value.getUTCFullYear();
-    return `${dd}/${mm}/${yyyy}`;
+    return `${yyyy}-${mm}-${dd}`;
   }
-  // Se for string ISO, extrai YYYY-MM-DD
   const s = String(value).substring(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "-";
-  const [yyyy, mm, dd] = s.split("-");
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
+}
+
+function formatDate(value: string | Date | null | undefined) {
+  const iso = toISODate(value);
+  if (!iso) return "-";
+  const [yyyy, mm, dd] = iso.split("-");
   return `${dd}/${mm}/${yyyy}`;
 }
 
@@ -102,6 +105,8 @@ export default function LancamentosMes() {
   const [filtroVinculo, setFiltroVinculo] = useState<string>("TODOS");
   const [filtroStatus, setFiltroStatus] = useState<string>("TODOS");
   const [filtroFormaPagamento, setFiltroFormaPagamento] = useState<string>("TODAS");
+  const [vencInicio, setVencInicio] = useState<string>("");
+  const [vencFim, setVencFim] = useState<string>("");
 
   const receitas = contas.filter(c => (c as any).tipo === "RECEITA");
   const despesas = contas.filter(c => (c as any).tipo !== "RECEITA");
@@ -117,6 +122,9 @@ export default function LancamentosMes() {
     if (filtroVinculo !== "TODOS" && c.vinculo !== filtroVinculo) return false;
     if (filtroStatus !== "TODOS" && c.status !== filtroStatus) return false;
     if (filtroFormaPagamento !== "TODAS" && (c as any).formaPagamento !== filtroFormaPagamento) return false;
+    const vencISO = toISODate(c.dataVencimento);
+    if (vencInicio && (!vencISO || vencISO < vencInicio)) return false;
+    if (vencFim && (!vencISO || vencISO > vencFim)) return false;
     return true;
   });
 
@@ -142,7 +150,7 @@ export default function LancamentosMes() {
   const pendentes = contas.filter(c => c.status === "PENDENTE").length;
   const atrasadas = contas.filter(c => c.status === "ATRASADO").length;
 
-  const filtroAtivo = filtroTipo !== "TODOS" || filtroCategoria !== "TODAS" || filtroVinculo !== "TODOS" || filtroFormaPagamento !== "TODAS";
+  const filtroAtivo = filtroTipo !== "TODOS" || filtroCategoria !== "TODAS" || filtroVinculo !== "TODOS" || filtroFormaPagamento !== "TODAS" || !!vencInicio || !!vencFim;
 
   const exportarPDF = () => {
     if (contasFiltradas.length === 0) { toast.error("Nenhum lançamento para exportar"); return; }
@@ -439,9 +447,25 @@ export default function LancamentosMes() {
                 </SelectContent>
               </Select>
             )}
+            <div className="flex items-center gap-1.5">
+              <label className="text-xs text-gray-500">Vencimento de</label>
+              <input
+                type="date"
+                value={vencInicio}
+                onChange={e => setVencInicio(e.target.value)}
+                className="h-8 text-xs border rounded px-2 bg-background"
+              />
+              <label className="text-xs text-gray-500">até</label>
+              <input
+                type="date"
+                value={vencFim}
+                onChange={e => setVencFim(e.target.value)}
+                className="h-8 text-xs border rounded px-2 bg-background"
+              />
+            </div>
             {(filtroAtivo || filtroStatus !== "TODOS") && (
               <button
-                onClick={() => { setFiltroTipo("TODOS"); setFiltroCategoria("TODAS"); setFiltroVinculo("TODOS"); setFiltroStatus("TODOS"); setFiltroFormaPagamento("TODAS"); }}
+                onClick={() => { setFiltroTipo("TODOS"); setFiltroCategoria("TODAS"); setFiltroVinculo("TODOS"); setFiltroStatus("TODOS"); setFiltroFormaPagamento("TODAS"); setVencInicio(""); setVencFim(""); }}
                 className="px-2 py-1 rounded text-xs text-gray-500 border border-gray-300 hover:bg-gray-100 transition-colors"
               >
                 Limpar
