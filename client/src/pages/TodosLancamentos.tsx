@@ -23,17 +23,22 @@ function formatCurrency(value: string | number | null | undefined) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(num);
 }
 
-function formatDate(value: string | Date | null | undefined) {
-  if (!value) return "-";
+function toISODate(value: string | Date | null | undefined): string {
+  if (!value) return "";
   if (value instanceof Date) {
     const dd = String(value.getUTCDate()).padStart(2, "0");
     const mm = String(value.getUTCMonth() + 1).padStart(2, "0");
     const yyyy = value.getUTCFullYear();
-    return `${dd}/${mm}/${yyyy}`;
+    return `${yyyy}-${mm}-${dd}`;
   }
   const s = String(value).substring(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "-";
-  const [yyyy, mm, dd] = s.split("-");
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
+}
+
+function formatDate(value: string | Date | null | undefined) {
+  const iso = toISODate(value);
+  if (!iso) return "-";
+  const [yyyy, mm, dd] = iso.split("-");
   return `${dd}/${mm}/${yyyy}`;
 }
 
@@ -47,6 +52,8 @@ export default function TodosLancamentos() {
   const [filtroStatus, setFiltroStatus] = useState<string>("todos");
   const [filtroVinculo, setFiltroVinculo] = useState<string>("todos");
   const [busca, setBusca] = useState("");
+  const [vencInicio, setVencInicio] = useState<string>("");
+  const [vencFim, setVencFim] = useState<string>("");
 
   const statusOpcoes = [
     { value: "todos", label: "Todos", icon: "📊" },
@@ -72,6 +79,9 @@ export default function TodosLancamentos() {
     if (filtroStatus !== "todos" && c.status !== filtroStatus) return false;
     if (filtroVinculo !== "todos" && c.vinculo !== filtroVinculo) return false;
     if (busca && !c.descricao.toLowerCase().includes(busca.toLowerCase())) return false;
+    const vencISO = toISODate(c.dataVencimento);
+    if (vencInicio && (!vencISO || vencISO < vencInicio)) return false;
+    if (vencFim && (!vencISO || vencISO > vencFim)) return false;
     return true;
   });
 
@@ -149,6 +159,29 @@ export default function TodosLancamentos() {
                 {VINCULOS.map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}
               </SelectContent>
             </Select>
+          </div>
+
+          {/* Filtro por período de vencimento */}
+          <div>
+            <p className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1"><Filter size={14} /> Período de Vencimento</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[11px] text-gray-500">De</label>
+                <Input type="date" value={vencInicio} onChange={e => setVencInicio(e.target.value)} className="text-sm" />
+              </div>
+              <div>
+                <label className="text-[11px] text-gray-500">Até</label>
+                <Input type="date" value={vencFim} onChange={e => setVencFim(e.target.value)} className="text-sm" />
+              </div>
+            </div>
+            {(vencInicio || vencFim) && (
+              <button
+                onClick={() => { setVencInicio(""); setVencFim(""); }}
+                className="text-xs text-blue-600 hover:underline mt-1"
+              >
+                Limpar período
+              </button>
+            )}
           </div>
         </div>
 
