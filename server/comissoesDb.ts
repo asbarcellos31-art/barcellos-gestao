@@ -378,6 +378,11 @@ export async function listarInadimplentes(mes?: number, ano?: number, status?: s
   if (busca) { whereClause.push('(i.nome LIKE ? OR i.cpf LIKE ?)'); params.push(`%${busca}%`, `%${busca}%`); }
   if (formaPagamento) { whereClause.push('i.formaPagamento = ?'); params.push(formaPagamento); }
   const whereSQL = whereClause.length > 0 ? 'WHERE ' + whereClause.join(' AND ') : '';
+  // Nota: alguns CPFs existem duplicados na tabela `clientes` (cadastro repetido,
+  // às vezes até com nomes diferentes por erro de digitação do CPF). Por isso o
+  // telefone/email do cliente é buscado via subquery (sempre 1 linha), nunca via
+  // LEFT JOIN direto — um JOIN duplicaria a linha do inadimplente para cada
+  // cliente com o mesmo CPF.
   const rows = await queryPool<any>(`
     SELECT
       i.id, i.uploadId, i.mes, i.ano, i.nome, i.cpf,
@@ -389,12 +394,25 @@ export async function listarInadimplentes(mes?: number, ano?: number, status?: s
         NULLIF(i.telefoneContato, ''),
         NULLIF(i.telefone1, ''),
         NULLIF(i.telefone2, ''),
-        c.celular,
-        c.telefone
+        (SELECT c.celular FROM clientes c
+         WHERE LPAD(REGEXP_REPLACE(c.cpf, '[^0-9]', ''), 11, '0') = LPAD(REGEXP_REPLACE(i.cpf, '[^0-9]', ''), 11, '0')
+         ORDER BY c.id LIMIT 1),
+        (SELECT c.telefone FROM clientes c
+         WHERE LPAD(REGEXP_REPLACE(c.cpf, '[^0-9]', ''), 11, '0') = LPAD(REGEXP_REPLACE(i.cpf, '[^0-9]', ''), 11, '0')
+         ORDER BY c.id LIMIT 1)
       ) AS telefoneFinal,
-      c.celular AS clienteCelular,
-      c.telefone AS clienteTelefone,
-      COALESCE(NULLIF(i.emailContato, ''), c.email) AS emailFinal,
+      (SELECT c.celular FROM clientes c
+       WHERE LPAD(REGEXP_REPLACE(c.cpf, '[^0-9]', ''), 11, '0') = LPAD(REGEXP_REPLACE(i.cpf, '[^0-9]', ''), 11, '0')
+       ORDER BY c.id LIMIT 1) AS clienteCelular,
+      (SELECT c.telefone FROM clientes c
+       WHERE LPAD(REGEXP_REPLACE(c.cpf, '[^0-9]', ''), 11, '0') = LPAD(REGEXP_REPLACE(i.cpf, '[^0-9]', ''), 11, '0')
+       ORDER BY c.id LIMIT 1) AS clienteTelefone,
+      COALESCE(
+        NULLIF(i.emailContato, ''),
+        (SELECT c.email FROM clientes c
+         WHERE LPAD(REGEXP_REPLACE(c.cpf, '[^0-9]', ''), 11, '0') = LPAD(REGEXP_REPLACE(i.cpf, '[^0-9]', ''), 11, '0')
+         ORDER BY c.id LIMIT 1)
+      ) AS emailFinal,
       (SELECT i2.id FROM inadimplentes i2
        WHERE LPAD(REGEXP_REPLACE(i2.cpf, '[^0-9]', ''), 11, '0') = LPAD(REGEXP_REPLACE(i.cpf, '[^0-9]', ''), 11, '0')
          AND i2.boleto_pdf IS NOT NULL
@@ -404,7 +422,6 @@ export async function listarInadimplentes(mes?: number, ano?: number, status?: s
          AND i2.boleto_pdf IS NOT NULL
        ORDER BY i2.updatedAt DESC LIMIT 1) AS boleto_nome_any
     FROM inadimplentes i
-    LEFT JOIN clientes c ON LPAD(REGEXP_REPLACE(i.cpf, '[^0-9]', ''), 11, '0') = LPAD(REGEXP_REPLACE(c.cpf, '[^0-9]', ''), 11, '0')
     ${whereSQL}
     ORDER BY i.nome
     LIMIT 500
