@@ -117,6 +117,33 @@ export default function Comissoes() {
   const { data: resultadoVarredura = [], refetch: refetchResultadoVarredura } =
     trpc.magComissoesPendentes.varreduraResultado.useQuery({ mes: mesPendentes, ano });
 
+  const [varreduraBusca, setVarreduraBusca] = useState("");
+  const [varreduraSituacao, setVarreduraSituacao] = useState<"todos" | "com_comissao" | "sem_comissao_inadimplente" | "sem_comissao_outro">("todos");
+
+  function situacaoVarredura(r: any): "com_comissao" | "sem_comissao_inadimplente" | "sem_comissao_outro" {
+    const temComissao = r.comissaoValor != null && parseFloat(String(r.comissaoValor)) > 0;
+    if (temComissao) return "com_comissao";
+    const onde = String(r.ondeEstaMag ?? "");
+    if (onde.includes("Inadimplentes:") || onde.includes("Cancelado")) return "sem_comissao_inadimplente";
+    return "sem_comissao_outro";
+  }
+
+  const resultadoVarreduraFiltrado = (resultadoVarredura as any[]).filter(r => {
+    if (varreduraSituacao !== "todos" && situacaoVarredura(r) !== varreduraSituacao) return false;
+    if (varreduraBusca) {
+      const q = varreduraBusca.toLowerCase();
+      const nome = String(r.nome ?? "").toLowerCase();
+      const cpf = String(r.cpf ?? "");
+      if (!nome.includes(q) && !cpf.includes(varreduraBusca.replace(/\D/g, "") || q)) return false;
+    }
+    return true;
+  });
+
+  const atualizarObservacaoVarreduraMut = trpc.magComissoesPendentes.atualizarObservacao.useMutation({
+    onSuccess: () => refetchResultadoVarredura(),
+    onError: (e) => toast.error("Erro ao salvar observação: " + e.message),
+  });
+
   const deletarUpload = trpc.comissoes.deletarUpload.useMutation({
     onSuccess: () => {
       utils.comissoes.uploads.invalidate();
@@ -266,8 +293,8 @@ export default function Comissoes() {
 
     autoTable(doc, {
       startY: nextY + 2,
-      head: [["Nome", "CPF", "Status Arrecadação", "Valor/Data Pagto", "Comissão (R$)", "Data(s) Comissão", "Onde está na MAG"]],
-      body: (resultadoVarredura as any[]).map(r => [
+      head: [["Nome", "CPF", "Status Arrecadação", "Valor/Data Pagto", "Comissão (R$)", "Data(s) Comissão", "Onde está na MAG", "Observação"]],
+      body: resultadoVarreduraFiltrado.map(r => [
         String(r.nome ?? ""),
         String(r.cpf ?? ""),
         String(r.statusArrecadacao ?? "—"),
@@ -275,6 +302,7 @@ export default function Comissoes() {
         r.comissaoValor != null ? fmt(parseFloat(String(r.comissaoValor))) : "—",
         String(r.comissaoDatas ?? "—"),
         String(r.ondeEstaMag ?? "—"),
+        String(r.observacao ?? ""),
       ]),
       styles: { fontSize: 7, cellPadding: 2 },
       headStyles: { fillColor: [234, 88, 12], textColor: 255, fontStyle: "bold" },
@@ -288,7 +316,7 @@ export default function Comissoes() {
 
   function exportarExcelVarredura() {
     const mesLabel = MESES[mesPendentes - 1];
-    const rows = (resultadoVarredura as any[]).map(r => ({
+    const rows = resultadoVarreduraFiltrado.map(r => ({
       Nome: r.nome ?? "",
       CPF: r.cpf ?? "",
       "Status Arrecadação": r.statusArrecadacao ?? "",
@@ -298,6 +326,7 @@ export default function Comissoes() {
       "Comissão Recebida (R$)": r.comissaoValor != null ? parseFloat(String(r.comissaoValor)) : "",
       "Data(s) Comissão": r.comissaoDatas ?? "",
       "Onde está na MAG": r.ondeEstaMag ?? "",
+      "Observação": r.observacao ?? "",
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
@@ -1392,7 +1421,7 @@ export default function Comissoes() {
                     <CardTitle className="text-sm flex items-center gap-2">
                       <Radar className="w-4 h-4 text-orange-500" />
                       Varredura MAG — {MESES[mesPendentes - 1]}/{ano}
-                      <Badge variant="outline">{(resultadoVarredura as any[]).length}</Badge>
+                      <Badge variant="outline">{resultadoVarreduraFiltrado.length} de {(resultadoVarredura as any[]).length}</Badge>
                     </CardTitle>
                     <div className="flex gap-2">
                       <Button size="sm" variant="outline" onClick={exportarPDFVarredura} className="gap-2">
@@ -1402,6 +1431,26 @@ export default function Comissoes() {
                         <Download className="w-3.5 h-3.5" /> Excel
                       </Button>
                     </div>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2 mt-2">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                      <Input
+                        className="pl-8 h-8 text-xs"
+                        placeholder="Buscar por nome ou CPF..."
+                        value={varreduraBusca}
+                        onChange={e => setVarreduraBusca(e.target.value)}
+                      />
+                    </div>
+                    <Select value={varreduraSituacao} onValueChange={v => setVarreduraSituacao(v as any)}>
+                      <SelectTrigger className="h-8 text-xs w-full sm:w-64"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="todos">Todas as situações</SelectItem>
+                        <SelectItem value="com_comissao">Com comissão recebida</SelectItem>
+                        <SelectItem value="sem_comissao_inadimplente">Sem comissão — inadimplente</SelectItem>
+                        <SelectItem value="sem_comissao_outro">Sem comissão — outro motivo</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </CardHeader>
                 <CardContent className="p-0">
@@ -1415,31 +1464,62 @@ export default function Comissoes() {
                           <TableHead className="text-right">Valor Previsto</TableHead>
                           <TableHead className="text-right">Comissão Recebida</TableHead>
                           <TableHead>Data(s) Comissão</TableHead>
+                          <TableHead>Em Inadimplentes?</TableHead>
                           <TableHead>Onde está na MAG</TableHead>
+                          <TableHead className="min-w-[220px]">Observação</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {(resultadoVarredura as any[]).map((r, i) => (
-                          <TableRow key={i}>
-                            <TableCell className="font-medium text-xs">{String(r.nome ?? "")}</TableCell>
-                            <TableCell className="text-xs text-muted-foreground font-mono">{String(r.cpf ?? "")}</TableCell>
-                            <TableCell className="text-xs">
-                              <Badge variant={String(r.statusArrecadacao ?? "").toLowerCase().includes("paga") ? "default" : "outline"}>
-                                {String(r.statusArrecadacao ?? "—")}
-                              </Badge>
+                        {resultadoVarreduraFiltrado.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={9} className="text-center text-muted-foreground py-8 text-xs">
+                              Nenhum resultado para esse filtro.
                             </TableCell>
-                            <TableCell className="text-right text-xs">
-                              {r.valorPrevisto != null ? fmt(parseFloat(String(r.valorPrevisto))) : "—"}
-                            </TableCell>
-                            <TableCell className="text-right text-xs">
-                              {r.comissaoValor != null
-                                ? <span className={parseFloat(String(r.comissaoValor)) > 0 ? "text-green-600 font-semibold" : "text-red-600"}>{fmt(parseFloat(String(r.comissaoValor)))}</span>
-                                : "—"}
-                            </TableCell>
-                            <TableCell className="text-xs">{String(r.comissaoDatas ?? "—")}</TableCell>
-                            <TableCell className="text-xs">{String(r.ondeEstaMag ?? "—")}</TableCell>
                           </TableRow>
-                        ))}
+                        ) : resultadoVarreduraFiltrado.map((r) => {
+                          const situacao = situacaoVarredura(r);
+                          return (
+                            <TableRow key={r.id}>
+                              <TableCell className="font-medium text-xs">{String(r.nome ?? "")}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground font-mono">{String(r.cpf ?? "")}</TableCell>
+                              <TableCell className="text-xs">
+                                <Badge variant={String(r.statusArrecadacao ?? "").toLowerCase().includes("paga") ? "default" : "outline"}>
+                                  {String(r.statusArrecadacao ?? "—")}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right text-xs">
+                                {r.valorPrevisto != null ? fmt(parseFloat(String(r.valorPrevisto))) : "—"}
+                              </TableCell>
+                              <TableCell className="text-right text-xs">
+                                {r.comissaoValor != null
+                                  ? <span className={parseFloat(String(r.comissaoValor)) > 0 ? "text-green-600 font-semibold" : "text-red-600"}>{fmt(parseFloat(String(r.comissaoValor)))}</span>
+                                  : "—"}
+                              </TableCell>
+                              <TableCell className="text-xs">{String(r.comissaoDatas ?? "—")}</TableCell>
+                              <TableCell className="text-xs">
+                                {situacao === "sem_comissao_inadimplente" ? (
+                                  <Badge variant="destructive">Sim</Badge>
+                                ) : (
+                                  <Badge variant="outline">Não</Badge>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-xs max-w-[220px]">{String(r.ondeEstaMag ?? "—")}</TableCell>
+                              <TableCell className="text-xs">
+                                <Input
+                                  defaultValue={r.observacao ?? ""}
+                                  placeholder="Anotar..."
+                                  className="h-7 text-xs"
+                                  onBlur={e => {
+                                    const val = e.target.value;
+                                    if (val !== (r.observacao ?? "")) {
+                                      atualizarObservacaoVarreduraMut.mutate({ id: r.id, observacao: val });
+                                    }
+                                  }}
+                                />
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   </div>

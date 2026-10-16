@@ -27,6 +27,7 @@ import {
   salvarResultadoVarredura,
   obterResultadoVarredura,
   limparResultadoVarredura,
+  atualizarObservacaoVarredura,
 } from "./varreduraComissoesDb";
 
 // ── Estado dos jobs em memória (mesmo padrão do job de boletos) ──────────────
@@ -210,4 +211,8 @@ export const magComissoesPendentesTrpcRouter = router({
   varreduraResultado: publicProcedure
     .input(z.object({ mes: z.number(), ano: z.number() }))
     .query(({ input }) => obterResultadoVarredura(input.mes, input.ano)),
+
+  atualizarObservacao: publicProcedure
+    .input(z.object({ id: z.number(), observacao: z.string() }))
+    .mutation(({ input }) => atualizarObservacaoVarredura(input.id, input.observacao)),
 });

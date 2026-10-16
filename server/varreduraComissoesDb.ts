@@ -23,12 +23,19 @@ export async function ensureVarreduraComissoesTable() {
       comissaoDatas VARCHAR(255),
       comissaoObs TEXT,
       ondeEstaMag TEXT,
+      observacao TEXT,
       jobId VARCHAR(50),
       createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       UNIQUE KEY uq_varredura_mes_ano_cpf (mes, ano, cpf)
     )
   `);
+  // Coluna adicionada depois da criação inicial da tabela — ALTER separado
+  // porque CREATE TABLE IF NOT EXISTS não altera tabela já existente. Falha
+  // silenciosamente se a coluna já existir (mesmo padrão das outras migrações).
+  await getPool().execute(
+    `ALTER TABLE varredura_comissoes_pendentes ADD COLUMN observacao TEXT`
+  ).catch(() => {});
 }
 
 export interface VarreduraResultadoInput {
@@ -95,5 +102,13 @@ export async function limparResultadoVarredura(mes: number, ano: number) {
   await getPool().execute(
     `DELETE FROM varredura_comissoes_pendentes WHERE mes = ? AND ano = ?`,
     [mes, ano]
+  );
+}
+
+// Edição manual — usuário anota o motivo/observação de um caso direto na tela
+export async function atualizarObservacaoVarredura(id: number, observacao: string) {
+  await getPool().execute(
+    `UPDATE varredura_comissoes_pendentes SET observacao = ? WHERE id = ?`,
+    [observacao, id]
   );
 }

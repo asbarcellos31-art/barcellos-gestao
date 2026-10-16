@@ -159,6 +159,7 @@ export const varreduraComissoesPendentes = mysqlTable("varredura_comissoes_pende
   comissaoDatas: varchar("comissaoDatas", { length: 255 }),
   comissaoObs: text("comissaoObs"),
   ondeEstaMag: text("ondeEstaMag"),
+  observacao: text("observacao"),
   jobId: varchar("jobId", { length: 50 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
