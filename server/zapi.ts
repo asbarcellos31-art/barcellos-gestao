@@ -172,12 +172,13 @@ export async function enviarVideoEvolution(
         },
         body: JSON.stringify({
           number: numero,
-          // Evolution API v2.x: campos no nível raiz
-          mediatype: "video",
-          mimetype: "video/mp4",
-          media: videoUrl,
-          fileName: "video.mp4",
-          caption: caption,
+          mediaMessage: {
+            mediatype: "video",
+            mimetype: "video/mp4",
+            media: videoUrl,
+            fileName: "video.mp4",
+            caption: caption,
+          },
           delay: 1200,
         }),
         signal: controller.signal,
@@ -254,12 +255,13 @@ export async function enviarMidiaEvolution(
         },
         body: JSON.stringify({
           number: numero,
-          // Evolution API v2.x: campos no nível raiz
-          mediatype: mediaType,
-          mimetype,
-          media: mediaUrl,
-          fileName,
-          caption: caption,
+          mediaMessage: {
+            mediatype: mediaType,
+            mimetype,
+            media: mediaUrl,
+            fileName,
+            caption: caption,
+          },
           delay: 1200,
         }),
         signal: controller.signal,
