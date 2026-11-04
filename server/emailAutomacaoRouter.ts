@@ -119,12 +119,14 @@ router.post("/email-automacoes/reenviar-falhas-aniversario", async (req, res) =>
             `SELECT id FROM clientes WHERE (celular LIKE ? OR telefone LIKE ?) AND LOWER(status) = 'ativo' LIMIT 1`,
             [`%${telSemDDI}`, `%${telSemDDI}`]
           );
-          if (!clienteRows2?.length) { erros++; continue; }
+          if (!clienteRows2?.length) { erros++; console.log(`[ReenvioAniv] ${f.nome} (${f.telefone}): cliente ativo não encontrado`); continue; }
           const resultado = await enviarAniversarioIndividual(clienteRows2[0].id, instancia || undefined);
           resultado.sucesso ? sucessos++ : erros++;
+          console.log(`[ReenvioAniv] ${f.nome} (${f.telefone}): ${resultado.mensagem}`);
         } else {
           const resultado = await enviarAniversarioIndividual(clienteRows[0].id, instancia || undefined);
           resultado.sucesso ? sucessos++ : erros++;
+          console.log(`[ReenvioAniv] ${f.nome} (${f.telefone}): ${resultado.mensagem}`);
         }
         await new Promise(r => setTimeout(r, 3000));
       }
