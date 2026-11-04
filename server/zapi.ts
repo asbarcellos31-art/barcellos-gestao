@@ -142,6 +142,8 @@ export async function enviarMensagemEvolution(
 }
 
 // URL do vídeo de boas-vindas hospedado no CDN
+const MIDIA_TIMEOUT_MS = 120000;
+
 export const VIDEO_BOAS_VINDAS_URL = "https://github.com/asbarcellos31-art/barcellos-gestao/releases/download/v-assets-1/boas-vindas-barcellos.mp4";
 
 /**
@@ -161,7 +163,7 @@ export async function enviarVideoEvolution(
   try {
     const url = `${EVOLUTION_BASE_URL}/message/sendMedia/${instancia}`;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 segundos de timeout
+    const timeoutId = setTimeout(() => controller.abort(), MIDIA_TIMEOUT_MS); // vídeo/mídia: Evolution baixa e sobe o arquivo antes de responder
     
     try {
       const resp = await fetch(url, {
@@ -199,7 +201,7 @@ export async function enviarVideoEvolution(
     } catch (fetchErr: any) {
       clearTimeout(timeoutId);
       if (fetchErr.name === 'AbortError') {
-        return { sucesso: false, erro: `Timeout ao enviar vídeo para ${numero} (30s)` };
+        return { sucesso: false, erro: `Timeout ao enviar vídeo para ${numero} (${MIDIA_TIMEOUT_MS / 1000}s)` };
       }
       throw fetchErr;
     }
@@ -228,7 +230,7 @@ export async function enviarMidiaEvolution(
   try {
     const url = `${EVOLUTION_BASE_URL}/message/sendMedia/${instancia}`;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 segundos de timeout
+    const timeoutId = setTimeout(() => controller.abort(), MIDIA_TIMEOUT_MS); // vídeo/mídia: Evolution baixa e sobe o arquivo antes de responder
     
     try {
       // Determina mimetype e nome do arquivo baseado no tipo
@@ -282,7 +284,7 @@ export async function enviarMidiaEvolution(
     } catch (fetchErr: any) {
       clearTimeout(timeoutId);
       if (fetchErr.name === 'AbortError') {
-        return { sucesso: false, erro: `Timeout ao enviar mídia para ${numero} (30s)` };
+        return { sucesso: false, erro: `Timeout ao enviar mídia para ${numero} (${MIDIA_TIMEOUT_MS / 1000}s)` };
       }
       throw fetchErr;
     }
