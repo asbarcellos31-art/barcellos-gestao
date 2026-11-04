@@ -77,17 +77,24 @@ router.post("/email-automacoes/:id/disparar-agora", async (req, res) => {
 // Reenviar aniversariantes que falharam nos últimos N dias (reprocessa por telefone)
 router.post("/email-automacoes/reenviar-falhas-aniversario", async (req, res) => {
   try {
-    const { dias = 7, instancia } = req.body;
+    const { dias = 7, instancia, hoje } = req.body || {};
     const conn = await getConn();
 
-    // Busca envios de aniversário com erro nos últimos N dias
+    // Busca envios de aniversário com erro — só de hoje (Brasília) ou dos últimos N dias.
+    // Pula quem já recebeu com sucesso depois da falha.
+    const hojeStr = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const [falhas]: any = await conn.execute(
       `SELECT DISTINCT w.telefone, w.nome
        FROM whatsapp_envios w
        WHERE w.tipo = 'ANIVERSARIO'
          AND w.status = 'ERRO'
-         AND w.createdAt >= DATE_SUB(NOW(), INTERVAL ? DAY)`,
-      [dias]
+         AND ${hoje ? "DATE(w.createdAt) = ?" : "w.createdAt >= DATE_SUB(NOW(), INTERVAL ? DAY)"}
+         AND NOT EXISTS (
+           SELECT 1 FROM whatsapp_envios ok
+           WHERE ok.tipo = 'ANIVERSARIO' AND ok.status = 'ENVIADO'
+             AND ok.telefone = w.telefone AND ok.createdAt >= w.createdAt
+         )`,
+      [hoje ? hojeStr : dias]
     );
 
     if (!falhas || falhas.length === 0) {
