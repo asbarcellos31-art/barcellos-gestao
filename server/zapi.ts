@@ -144,6 +144,29 @@ export async function enviarMensagemEvolution(
 // URL do vídeo de boas-vindas hospedado no CDN
 const MIDIA_TIMEOUT_MS = 120000;
 
+/**
+ * O servidor da Evolution não alcança mais o domínio do app (ETIMEDOUT na rede do Railway),
+ * e base64 de vídeo grande quebra a Evolution 1.8. Se a mídia é um arquivo de client/public,
+ * usamos a cópia idêntica do GitHub (mesmo arquivo, mesmo formato).
+ */
+async function prepararMidia(url: string): Promise<string> {
+  try {
+    const u = new URL(url, "https://app.barcellosseguros.com.br");
+    if (!u.hostname.endsWith("barcellosseguros.com.br") || u.hostname.startsWith("evolution.")) return url;
+    const nome = decodeURIComponent(u.pathname).replace(/^\/+/, "");
+    if (!nome || nome.includes("..")) return url;
+    const fs = await import("fs/promises");
+    const path = await import("path");
+    for (const dir of ["dist/public", "client/public"]) {
+      try {
+        await fs.access(path.resolve(process.cwd(), dir, nome));
+        return `https://raw.githubusercontent.com/asbarcellos31-art/barcellos-gestao/main/client/public/${nome.split("/").map(encodeURIComponent).join("/")}`;
+      } catch {}
+    }
+  } catch {}
+  return url;
+}
+
 export const VIDEO_BOAS_VINDAS_URL = "https://github.com/asbarcellos31-art/barcellos-gestao/releases/download/v-assets-1/boas-vindas-barcellos.mp4";
 
 /**
@@ -177,7 +200,7 @@ export async function enviarVideoEvolution(
           mediaMessage: {
             mediatype: "video",
             mimetype: "video/mp4",
-            media: videoUrl,
+            media: await prepararMidia(videoUrl),
             fileName: "video.mp4",
             caption: caption,
           },
@@ -260,7 +283,7 @@ export async function enviarMidiaEvolution(
           mediaMessage: {
             mediatype: mediaType,
             mimetype,
-            media: mediaUrl,
+            media: await prepararMidia(mediaUrl),
             fileName,
             caption: caption,
           },
