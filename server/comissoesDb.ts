@@ -662,6 +662,22 @@ export async function listarClientesParcelaPendenteMes(mes: number, ano: number)
     if (!porCpf.has(cpfLimpo)) porCpf.set(cpfLimpo, r);
   }
 
+  // Inclui também os clientes da aba "Comissões Pendentes" (ativos na Base sem
+  // comissão no extrato do mês). Antes só os inadimplentes entravam e 83 dos 100
+  // pendentes de 10/2026 ficaram sem verificar (16/11/2026).
+  const pendentesBase = await comissoesPendentesDetalhado(mes, ano);
+  for (const p of pendentesBase) {
+    const digitos = String(p.cpf || "").replace(/\D/g, "");
+    if (!digitos) continue;
+    const cpfLimpo = digitos.length <= 11 ? digitos.padStart(11, "0") : digitos.padStart(14, "0");
+    if (porCpf.has(cpfLimpo)) continue;
+    porCpf.set(cpfLimpo, {
+      id: Number(p.id), nome: String(p.nome || ""), cpf: cpfLimpo, mesParcela: "", parcela: null,
+      formaPagamento: null, valorTotal: p.contribuicao != null ? String(p.contribuicao) : null,
+      status: null, mes, ano,
+    });
+  }
+
   return Array.from(porCpf.entries())
     .map(([cpfLimpo, r]) => ({ ...r, cpfLimpo }))
     .sort((a, b) => a.nome.localeCompare(b.nome));
