@@ -82,6 +82,17 @@ export function formatarTelefone(telefone: string): string {
   return `55${digitos}`;
 }
 
+/** Se a instância não está conectada, devolve a mensagem de erro certa (senão null). */
+async function instanciaDesconectada(instancia: string): Promise<string | null> {
+  try {
+    const r = await fetch(`${EVOLUTION_BASE_URL}/instance/connectionState/${instancia}`, { headers: { apikey: EVOLUTION_API_KEY }, signal: AbortSignal.timeout(10000) });
+    const j: any = await r.json();
+    const estado = j?.instance?.state || j?.state;
+    if (estado && estado !== "open") return `O WhatsApp ${instancia} está desconectado. Reconecte em Configurações → WhatsApp (QR Code).`;
+  } catch {}
+  return null;
+}
+
 /**
  * Envia uma mensagem de texto via Evolution API com timeout de 30 segundos
  * @param instancia Nome da instância (whatsapp-1 ou whatsapp-2)
@@ -110,7 +121,9 @@ export async function enviarMensagemEvolution(
         },
         body: JSON.stringify({
           number: numero,
-          // Evolution API v2.x: campos no nível raiz, sem wrapper textMessage
+          // Evolution 1.8 exige textMessage/options; text/delay na raiz ficam p/ compatibilidade com v2
+          textMessage: { text: mensagem },
+          options: { delay: 1200 },
           text: mensagem,
           delay: 1200,
         }),
@@ -123,8 +136,9 @@ export async function enviarMensagemEvolution(
         const body = await resp.text();
         // Detecta número sem WhatsApp (exists: false)
         if (body.includes('"exists":false') || body.includes('"exists": false')) {
-          return { sucesso: false, erro: `Número ${numero} não tem WhatsApp cadastrado. Verifique o número do cliente.` };
+          return { sucesso: false, erro: (await instanciaDesconectada(instancia)) || `Número ${numero} não tem WhatsApp cadastrado. Verifique o número do cliente.` };
         }
+        if (body.includes("Connection Closed")) return { sucesso: false, erro: `O WhatsApp ${instancia} está desconectado. Reconecte em Configurações → WhatsApp (QR Code).` };
         return { sucesso: false, erro: `Evolution API erro ${resp.status}: ${body.substring(0, 200)}` };
       }
 
@@ -215,8 +229,9 @@ export async function enviarVideoEvolution(
         const body = await resp.text();
         // Detecta número sem WhatsApp (exists: false)
         if (body.includes('"exists":false') || body.includes('"exists": false')) {
-          return { sucesso: false, erro: `Número ${numero} não tem WhatsApp cadastrado. Verifique o número do cliente.` };
+          return { sucesso: false, erro: (await instanciaDesconectada(instancia)) || `Número ${numero} não tem WhatsApp cadastrado. Verifique o número do cliente.` };
         }
+        if (body.includes("Connection Closed")) return { sucesso: false, erro: `O WhatsApp ${instancia} está desconectado. Reconecte em Configurações → WhatsApp (QR Code).` };
         return { sucesso: false, erro: `Evolution API erro ${resp.status}: ${body.substring(0, 200)}` };
       }
 
@@ -298,8 +313,9 @@ export async function enviarMidiaEvolution(
         const body = await resp.text();
         // Detecta número sem WhatsApp (exists: false)
         if (body.includes('"exists":false') || body.includes('"exists": false')) {
-          return { sucesso: false, erro: `Número ${numero} não tem WhatsApp cadastrado. Verifique o número do cliente.` };
+          return { sucesso: false, erro: (await instanciaDesconectada(instancia)) || `Número ${numero} não tem WhatsApp cadastrado. Verifique o número do cliente.` };
         }
+        if (body.includes("Connection Closed")) return { sucesso: false, erro: `O WhatsApp ${instancia} está desconectado. Reconecte em Configurações → WhatsApp (QR Code).` };
         return { sucesso: false, erro: `Evolution API erro ${resp.status}: ${body.substring(0, 200)}` };
       }
 
