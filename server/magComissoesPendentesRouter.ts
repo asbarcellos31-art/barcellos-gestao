@@ -22,7 +22,7 @@ import express from "express";
 import { z } from "zod";
 import { router, publicProcedure } from "./_core/trpc";
 import { authMag } from "./magBoletosRouter";
-import { listarClientesParcelaPendenteMes } from "./comissoesDb";
+import { listarClientesParcelaPendenteMes, comissoesPendentesDetalhado } from "./comissoesDb";
 import {
   salvarResultadoVarredura,
   obterResultadoVarredura,
@@ -215,7 +215,16 @@ export const magComissoesPendentesTrpcRouter = router({
     .query(async ({ input }) => {
       // Linhas antigas sem motivo ganham o motivo calculado na primeira leitura
       await recalcularMotivosVarredura(input.mes, input.ano, true).catch(e => console.error("[Varredura] recalcular motivos:", e.message));
-      return obterResultadoVarredura(input.mes, input.ano);
+      const rows: any[] = await obterResultadoVarredura(input.mes, input.ano);
+      // Mostra só quem está na lista de comissões pendentes do mês (a varredura também pode ter
+      // passado por inadimplentes que receberam comissão — esses não são pendentes)
+      try {
+        const pend: any[] = await comissoesPendentesDetalhado(input.mes, input.ano);
+        const norm = (c: any) => String(c || "").replace(/\D/g, "").replace(/^0+/, "");
+        const cpfs = new Set(pend.map(p => norm(p.cpf)));
+        if (cpfs.size > 0) return rows.filter(r => cpfs.has(norm(r.cpf)));
+      } catch (e: any) { console.error("[Varredura] filtro pendentes:", e.message); }
+      return rows;
     }),
 
   atualizarObservacao: publicProcedure
