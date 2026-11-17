@@ -913,18 +913,15 @@ export const whatsappRouter = router({
       const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY;
       if (!EVOLUTION_API_KEY) throw new Error("EVOLUTION_API_KEY não configurada");
 
-      // 1. Desconectar a instância para forçar nova conexão
+      const T = () => AbortSignal.timeout(15000);
+      // 1. Já conectado? Não derruba (antes todo clique/refresh fazia logout e matava o pareamento)
+      let estado = "";
       try {
-        await fetch(`${EVOLUTION_BASE_URL}/instance/logout/${input.instancia}`, {
-          method: "DELETE",
-          headers: { apikey: EVOLUTION_API_KEY },
-        });
-      } catch (_) {
-        // Ignora erro de logout (instância pode já estar desconectada)
-      }
-
-      // 2. Aguardar um momento para a instância processar o logout
-      await new Promise((r) => setTimeout(r, 1500));
+        const r = await fetch(`${EVOLUTION_BASE_URL}/instance/connectionState/${input.instancia}`, { headers: { apikey: EVOLUTION_API_KEY }, signal: T() });
+        const j: any = await r.json();
+        estado = j?.instance?.state || j?.state || "";
+      } catch (_) {}
+      if (estado === "open") return { qr: null as string | null, conectado: true };
 
       // 3. Solicitar QR Code — v2 pode retornar {count:0} no primeiro request
       // se a instância ainda está iniciando. Tentamos até 5 vezes com delay.
@@ -934,7 +931,7 @@ export const whatsappRouter = router({
       for (let tentativa = 1; tentativa <= 5; tentativa++) {
         const resp = await fetch(
           `${EVOLUTION_BASE_URL}/instance/connect/${input.instancia}`,
-          { headers: { apikey: EVOLUTION_API_KEY } }
+          { headers: { apikey: EVOLUTION_API_KEY }, signal: T() }
         );
 
         if (!resp.ok) {
@@ -968,7 +965,7 @@ export const whatsappRouter = router({
         base64 = `data:image/png;base64,${base64}`;
       }
 
-      return { qr: base64 };
+      return { qr: base64 as string | null, conectado: false };
     }),
 
   // Validar numeros WhatsApp em lote (para a pagina de Vendas)

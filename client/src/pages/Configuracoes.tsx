@@ -163,6 +163,12 @@ function CardEvolutionApi() {
 
     try {
       const res = await gerarQrMut.mutateAsync({ instancia });
+      if (res.conectado) {
+        fecharQr();
+        await utils.whatsapp.statusConexao.invalidate();
+        toast.success(`WhatsApp ${INSTANCIAS_INFO[instancia].numero} já está conectado!`);
+        return;
+      }
       setQrBase64(res.qr);
       setQrExpira(30);
 
@@ -178,10 +184,11 @@ function CardEvolutionApi() {
       timerRef.current = setInterval(async () => {
         const inst = qrInstanciaRef.current;
         if (!inst) return;
-        // Verifica se já conectou
-        await utils.whatsapp.statusConexao.invalidate();
-        const status = statusQuery.data?.instancias?.[inst];
+        // Verifica se já conectou (busca o status atual, não o da renderização antiga)
+        const atual = await utils.whatsapp.statusConexao.fetch(undefined, { staleTime: 0 }).catch(() => null);
+        const status = atual?.instancias?.[inst];
         if (status?.conectado) {
+          await utils.whatsapp.statusConexao.invalidate();
           fecharQr();
           toast.success(`WhatsApp ${INSTANCIAS_INFO[inst].numero} conectado com sucesso!`);
           return;
@@ -189,6 +196,12 @@ function CardEvolutionApi() {
         // Gera novo QR
         try {
           const r = await gerarQrMut.mutateAsync({ instancia: inst });
+          if (r.conectado) {
+            fecharQr();
+            await utils.whatsapp.statusConexao.invalidate();
+            toast.success(`WhatsApp ${INSTANCIAS_INFO[inst].numero} conectado com sucesso!`);
+            return;
+          }
           setQrBase64(r.qr);
           setQrExpira(30);
           // Reinicia countdown
