@@ -118,18 +118,28 @@ export default function Comissoes() {
     trpc.magComissoesPendentes.varreduraResultado.useQuery({ mes: mesPendentes, ano });
 
   const [varreduraBusca, setVarreduraBusca] = useState("");
-  const [varreduraSituacao, setVarreduraSituacao] = useState<"todos" | "com_comissao" | "sem_comissao_inadimplente" | "sem_comissao_outro">("todos");
+  const [varreduraSituacao, setVarreduraSituacao] = useState<string>("todos");
 
-  function situacaoVarredura(r: any): "com_comissao" | "sem_comissao_inadimplente" | "sem_comissao_outro" {
-    const temComissao = r.comissaoValor != null && parseFloat(String(r.comissaoValor)) > 0;
-    if (temComissao) return "com_comissao";
-    const onde = String(r.ondeEstaMag ?? "");
-    if (onde.includes("Inadimplentes:") || onde.includes("Cancelado")) return "sem_comissao_inadimplente";
-    return "sem_comissao_outro";
+  // Grupo do motivo (para filtro, cor e ordem). "NÃO PAGOU — EM ATRASO" → "NÃO PAGOU"
+  function grupoMotivo(r: any): string {
+    const m = String(r.motivo ?? "");
+    return m.startsWith("NÃO PAGOU") ? "NÃO PAGOU" : (m || "SEM MOTIVO");
   }
+  const ORDEM_MOTIVO = ["PARCELA PAGA SEM COMISSÃO", "NÃO PAGOU", "SEM COBRANÇA NA MAG", "SEM PARCELA NO MÊS", "CPF ERRADO NO CADASTRO", "CANCELADA", "COMISSÃO RECEBIDA", "SEM MOTIVO"];
+  const COR_MOTIVO: Record<string, string> = {
+    "PARCELA PAGA SEM COMISSÃO": "bg-red-600 text-white",
+    "NÃO PAGOU": "bg-amber-100 text-amber-800 border border-amber-300",
+    "SEM COBRANÇA NA MAG": "bg-purple-100 text-purple-800 border border-purple-300",
+    "SEM PARCELA NO MÊS": "bg-slate-100 text-slate-700 border",
+    "CPF ERRADO NO CADASTRO": "bg-pink-100 text-pink-800 border border-pink-300",
+    "CANCELADA": "bg-gray-200 text-gray-700",
+    "COMISSÃO RECEBIDA": "bg-green-100 text-green-800 border border-green-300",
+    "SEM MOTIVO": "bg-gray-100 text-gray-500",
+  };
+  const contagemMotivos = ORDEM_MOTIVO.map(g => ({ g, n: (resultadoVarredura as any[]).filter(r => grupoMotivo(r) === g).length })).filter(x => x.n > 0);
 
   const resultadoVarreduraFiltrado = (resultadoVarredura as any[]).filter(r => {
-    if (varreduraSituacao !== "todos" && situacaoVarredura(r) !== varreduraSituacao) return false;
+    if (varreduraSituacao !== "todos" && grupoMotivo(r) !== varreduraSituacao) return false;
     if (varreduraBusca) {
       const q = varreduraBusca.toLowerCase();
       const nome = String(r.nome ?? "").toLowerCase();
@@ -137,7 +147,7 @@ export default function Comissoes() {
       if (!nome.includes(q) && !cpf.includes(varreduraBusca.replace(/\D/g, "") || q)) return false;
     }
     return true;
-  });
+  }).sort((a, b) => (ORDEM_MOTIVO.indexOf(grupoMotivo(a)) - ORDEM_MOTIVO.indexOf(grupoMotivo(b))) || String(a.nome).localeCompare(String(b.nome)));
 
   const atualizarObservacaoVarreduraMut = trpc.magComissoesPendentes.atualizarObservacao.useMutation({
     onSuccess: () => refetchResultadoVarredura(),
@@ -293,17 +303,17 @@ export default function Comissoes() {
 
     autoTable(doc, {
       startY: nextY + 2,
-      head: [["Nome", "CPF", "Status Arrecadação", "Valor/Data Pagto", "Comissão (R$)", "Data(s) Comissão", "Onde está na MAG", "Observação"]],
+      head: [["Nome", "CPF", "Motivo", "Detalhe", "Data Pagto", "Valor Fatura", "Observação"]],
       body: resultadoVarreduraFiltrado.map(r => [
         String(r.nome ?? ""),
         String(r.cpf ?? ""),
-        String(r.statusArrecadacao ?? "—"),
+        String(r.motivo ?? "—"),
+        String(r.motivoDetalhe ?? "—"),
+        String(r.dataPagamentoArrecadacao ?? "—"),
         r.valorPrevisto != null ? fmt(parseFloat(String(r.valorPrevisto))) : "—",
-        r.comissaoValor != null ? fmt(parseFloat(String(r.comissaoValor))) : "—",
-        String(r.comissaoDatas ?? "—"),
-        String(r.ondeEstaMag ?? "—"),
         String(r.observacao ?? ""),
       ]),
+      columnStyles: { 3: { cellWidth: 95 } },
       styles: { fontSize: 7, cellPadding: 2 },
       headStyles: { fillColor: [234, 88, 12], textColor: 255, fontStyle: "bold" },
       margin: { left: 14, right: 14 },
@@ -319,9 +329,14 @@ export default function Comissoes() {
     const rows = resultadoVarreduraFiltrado.map(r => ({
       Nome: r.nome ?? "",
       CPF: r.cpf ?? "",
-      "Status Arrecadação": r.statusArrecadacao ?? "",
+      MOTIVO: r.motivo ?? "",
+      Detalhe: r.motivoDetalhe ?? "",
+      "Status Fatura": r.statusFatura ?? r.statusArrecadacao ?? "",
+      "Data Pagamento": r.dataPagamentoArrecadacao ?? "",
+      Vencimento: r.vencimentoFatura ?? "",
       "Valor Previsto": r.valorPrevisto != null ? parseFloat(String(r.valorPrevisto)) : "",
       "Forma de Pagamento": r.formaPagamento ?? "",
+      "Órgão consignante": r.orgaoConsignante ?? "",
       "Obs. Arrecadação": r.obsArrecadacao ?? "",
       "Comissão Recebida (R$)": r.comissaoValor != null ? parseFloat(String(r.comissaoValor)) : "",
       "Data(s) Comissão": r.comissaoDatas ?? "",
@@ -1442,15 +1457,19 @@ export default function Comissoes() {
                         onChange={e => setVarreduraBusca(e.target.value)}
                       />
                     </div>
-                    <Select value={varreduraSituacao} onValueChange={v => setVarreduraSituacao(v as any)}>
-                      <SelectTrigger className="h-8 text-xs w-full sm:w-64"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="todos">Todas as situações</SelectItem>
-                        <SelectItem value="com_comissao">Com comissão recebida</SelectItem>
-                        <SelectItem value="sem_comissao_inadimplente">Sem comissão — inadimplente</SelectItem>
-                        <SelectItem value="sem_comissao_outro">Sem comissão — outro motivo</SelectItem>
-                      </SelectContent>
-                    </Select>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    <button
+                      onClick={() => setVarreduraSituacao("todos")}
+                      className={`px-2.5 py-1 rounded-full text-xs font-medium border ${varreduraSituacao === "todos" ? "bg-slate-800 text-white" : "bg-white text-slate-700"}`}
+                    >Todos ({(resultadoVarredura as any[]).length})</button>
+                    {contagemMotivos.map(({ g, n }) => (
+                      <button
+                        key={g}
+                        onClick={() => setVarreduraSituacao(varreduraSituacao === g ? "todos" : g)}
+                        className={`px-2.5 py-1 rounded-full text-xs font-medium ${COR_MOTIVO[g] ?? ""} ${varreduraSituacao === g ? "ring-2 ring-offset-1 ring-slate-800" : ""}`}
+                      >{g} ({n})</button>
+                    ))}
                   </div>
                 </CardHeader>
                 <CardContent className="p-0">
@@ -1460,33 +1479,34 @@ export default function Comissoes() {
                         <TableRow>
                           <TableHead>Nome</TableHead>
                           <TableHead>CPF</TableHead>
-                          <TableHead>Status Arrecadação</TableHead>
-                          <TableHead className="text-right">Valor Previsto</TableHead>
+                          <TableHead>Motivo</TableHead>
+                          <TableHead className="min-w-[320px]">Detalhe</TableHead>
+                          <TableHead>Data Pagto</TableHead>
+                          <TableHead className="text-right">Valor Fatura</TableHead>
                           <TableHead className="text-right">Comissão Recebida</TableHead>
-                          <TableHead>Data(s) Comissão</TableHead>
-                          <TableHead>Em Inadimplentes?</TableHead>
-                          <TableHead>Onde está na MAG</TableHead>
                           <TableHead className="min-w-[220px]">Observação</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {resultadoVarreduraFiltrado.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={9} className="text-center text-muted-foreground py-8 text-xs">
+                            <TableCell colSpan={8} className="text-center text-muted-foreground py-8 text-xs">
                               Nenhum resultado para esse filtro.
                             </TableCell>
                           </TableRow>
                         ) : resultadoVarreduraFiltrado.map((r) => {
-                          const situacao = situacaoVarredura(r);
+                          const grupo = grupoMotivo(r);
                           return (
                             <TableRow key={r.id}>
                               <TableCell className="font-medium text-xs">{String(r.nome ?? "")}</TableCell>
                               <TableCell className="text-xs text-muted-foreground font-mono">{String(r.cpf ?? "")}</TableCell>
                               <TableCell className="text-xs">
-                                <Badge variant={String(r.statusArrecadacao ?? "").toLowerCase().includes("paga") ? "default" : "outline"}>
-                                  {String(r.statusArrecadacao ?? "—")}
-                                </Badge>
+                                <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold whitespace-nowrap ${COR_MOTIVO[grupo] ?? ""}`}>
+                                  {String(r.motivo ?? "—")}
+                                </span>
                               </TableCell>
+                              <TableCell className="text-xs text-slate-700">{String(r.motivoDetalhe ?? "—")}</TableCell>
+                              <TableCell className="text-xs font-medium whitespace-nowrap">{String(r.dataPagamentoArrecadacao ?? "—")}</TableCell>
                               <TableCell className="text-right text-xs">
                                 {r.valorPrevisto != null ? fmt(parseFloat(String(r.valorPrevisto))) : "—"}
                               </TableCell>
@@ -1495,15 +1515,6 @@ export default function Comissoes() {
                                   ? <span className={parseFloat(String(r.comissaoValor)) > 0 ? "text-green-600 font-semibold" : "text-red-600"}>{fmt(parseFloat(String(r.comissaoValor)))}</span>
                                   : "—"}
                               </TableCell>
-                              <TableCell className="text-xs">{String(r.comissaoDatas ?? "—")}</TableCell>
-                              <TableCell className="text-xs">
-                                {situacao === "sem_comissao_inadimplente" ? (
-                                  <Badge variant="destructive">Sim</Badge>
-                                ) : (
-                                  <Badge variant="outline">Não</Badge>
-                                )}
-                              </TableCell>
-                              <TableCell className="text-xs max-w-[220px]">{String(r.ondeEstaMag ?? "—")}</TableCell>
                               <TableCell className="text-xs">
                                 <Input
                                   defaultValue={r.observacao ?? ""}

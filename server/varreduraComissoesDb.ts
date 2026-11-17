@@ -1,4 +1,5 @@
 import { getPool } from "./sharedPool";
+import { calcularMotivo } from "./motivoComissao";
 
 async function rawQuery<T = any>(sql: string, params?: any[]): Promise<T[]> {
   const [rows] = await getPool().execute(sql, params);
@@ -36,6 +37,13 @@ export async function ensureVarreduraComissoesTable() {
   await getPool().execute(
     `ALTER TABLE varredura_comissoes_pendentes ADD COLUMN observacao TEXT`
   ).catch(() => {});
+  for (const col of [
+    "motivo VARCHAR(80)", "motivoDetalhe TEXT", "statusFatura VARCHAR(50)",
+    "vencimentoFatura VARCHAR(20)", "orgaoConsignante VARCHAR(200)", "nomeMag VARCHAR(255)",
+    "arrecadacaoMesesVizinhos TEXT",
+  ]) {
+    await getPool().execute(`ALTER TABLE varredura_comissoes_pendentes ADD COLUMN ${col}`).catch(() => {});
+  }
 }
 
 export interface VarreduraResultadoInput {
@@ -53,6 +61,11 @@ export interface VarreduraResultadoInput {
   comissaoDatas?: string | null;
   comissaoObs?: string | null;
   ondeEstaMag?: string | null;
+  statusFatura?: string | null;
+  vencimentoFatura?: string | null;
+  orgaoConsignante?: string | null;
+  nomeMag?: string | null;
+  arrecadacaoMesesVizinhos?: string | null;
   jobId: string;
 }
 
@@ -60,12 +73,14 @@ export interface VarreduraResultadoInput {
 // para o resultado sobreviver mesmo se o job em memória (Map) se perder.
 export async function salvarResultadoVarredura(r: VarreduraResultadoInput) {
   const cpfLimpo = (r.cpf || "").replace(/\D/g, "");
+  const m = await calcularMotivo({ ...r, cpf: cpfLimpo }).catch(() => ({ motivo: null as any, motivoDetalhe: null as any }));
   await getPool().execute(
     `INSERT INTO varredura_comissoes_pendentes
        (mes, ano, cpf, nome, formaPagamento, valorPrevisto, valorPagoArrecadacao,
         statusArrecadacao, dataPagamentoArrecadacao, obsArrecadacao,
-        comissaoValor, comissaoDatas, comissaoObs, ondeEstaMag, jobId)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        comissaoValor, comissaoDatas, comissaoObs, ondeEstaMag, jobId,
+        statusFatura, vencimentoFatura, orgaoConsignante, nomeMag, arrecadacaoMesesVizinhos, motivo, motivoDetalhe)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE
        nome = VALUES(nome),
        formaPagamento = VALUES(formaPagamento),
@@ -78,15 +93,37 @@ export async function salvarResultadoVarredura(r: VarreduraResultadoInput) {
        comissaoDatas = VALUES(comissaoDatas),
        comissaoObs = VALUES(comissaoObs),
        ondeEstaMag = VALUES(ondeEstaMag),
-       jobId = VALUES(jobId)`,
+       jobId = VALUES(jobId),
+       statusFatura = VALUES(statusFatura),
+       vencimentoFatura = VALUES(vencimentoFatura),
+       orgaoConsignante = VALUES(orgaoConsignante),
+       nomeMag = VALUES(nomeMag),
+       arrecadacaoMesesVizinhos = VALUES(arrecadacaoMesesVizinhos),
+       motivo = VALUES(motivo),
+       motivoDetalhe = VALUES(motivoDetalhe)`,
     [
       r.mes, r.ano, cpfLimpo, r.nome,
       r.formaPagamento ?? null, r.valorPrevisto ?? null, r.valorPagoArrecadacao ?? null,
       r.statusArrecadacao ?? null, r.dataPagamentoArrecadacao ?? null, r.obsArrecadacao ?? null,
       r.comissaoValor ?? null, r.comissaoDatas ?? null, r.comissaoObs ?? null,
       r.ondeEstaMag ?? null, r.jobId,
+      r.statusFatura ?? null, r.vencimentoFatura ?? null, r.orgaoConsignante ?? null, r.nomeMag ?? null,
+      r.arrecadacaoMesesVizinhos ?? null, m.motivo, m.motivoDetalhe,
     ]
   );
+}
+
+// Recalcula o motivo das linhas já gravadas (ex.: resultados antigos, antes da coluna existir)
+export async function recalcularMotivosVarredura(mes: number, ano: number, somenteVazios = true) {
+  const rows = await rawQuery<any>(
+    `SELECT * FROM varredura_comissoes_pendentes WHERE mes = ? AND ano = ?${somenteVazios ? " AND motivo IS NULL" : ""}`,
+    [mes, ano]
+  );
+  for (const r of rows) {
+    const m = await calcularMotivo({ ...r, mes, ano });
+    await getPool().execute(`UPDATE varredura_comissoes_pendentes SET motivo = ?, motivoDetalhe = ? WHERE id = ?`, [m.motivo, m.motivoDetalhe, r.id]);
+  }
+  return rows.length;
 }
 
 export async function obterResultadoVarredura(mes: number, ano: number) {

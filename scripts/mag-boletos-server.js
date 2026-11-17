@@ -196,6 +196,135 @@ app.post("/varrer-comissoes-pendentes", (req, res) => {
   });
 });
 
+// ── Debug: abre uma tela da MAG e devolve o texto (opcional: clica num texto) ──
+// Só leitura. Serve pra descobrir onde a MAG mostra uma informação sem reiniciar o script.
+app.post("/debug-pagina", async (req, res) => {
+  const { url, clicarTexto, esperarMs } = req.body || {};
+  if (loginStatus !== "logado") return res.status(400).json({ erro: "sem_sessao" });
+  if (jobEmExecucao) return res.status(409).json({ erro: "job_em_execucao" });
+  jobEmExecucao = true;
+  try {
+    const page = mainPage;
+    if (url) {
+      const ok = await navegarEEsperar(page, url.startsWith("http") ? url : `${MAG_BASE}${url}`);
+      if (!ok) return res.status(400).json({ erro: "sessao_expirada" });
+    }
+    await page.waitForTimeout(esperarMs || 4000);
+    if (clicarTexto) {
+      await page.getByText(clicarTexto, { exact: false }).first().click({ timeout: 15000 });
+      await page.waitForTimeout(esperarMs || 5000);
+    }
+    const texto = await page.evaluate(() => {
+      const coletar = (root, acc) => {
+        acc.push(root.innerText || "");
+        root.querySelectorAll("*").forEach(el => { if (el.shadowRoot) coletar(el.shadowRoot, acc); });
+        return acc;
+      };
+      return coletar(document.body, []).join("\n").replace(/\n{3,}/g, "\n\n");
+    }).catch(e => "ERRO: " + e.message);
+    const links = await page.evaluate(() => Array.from(document.querySelectorAll("a[href]")).map(a => (a.innerText || "").trim().slice(0, 60) + " -> " + a.getAttribute("href")).filter(x => !x.startsWith(" ->")).slice(0, 150)).catch(() => []);
+    res.json({ urlAtual: page.url(), texto: texto.slice(0, 60000), links });
+  } catch (e) {
+    res.status(500).json({ erro: e.message, urlAtual: mainPage && mainPage.url() });
+  } finally {
+    jobEmExecucao = false;
+  }
+});
+
+// ── Checagem pontual de Arrecadação num período arbitrário ───────────────────
+// Não persiste no banco — só imprime no log (formato [ARRECAD-CHECK] | ...)
+// pra conferência manual pontual (ex: "essa competência antiga já foi paga?").
+app.post("/consultar-arrecadacao-periodo", (req, res) => {
+  const { clientes, inicio, fim } = req.body;
+
+  if (!Array.isArray(clientes) || clientes.length === 0)
+    return res.status(400).json({ erro: "Lista de clientes inválida" });
+  if (!inicio || !fim)
+    return res.status(400).json({ erro: "inicio e fim são obrigatórios (YYYY-MM-DD)" });
+  if (loginStatus !== "logado")
+    return res.status(400).json({ erro: "sem_sessao" });
+  if (jobEmExecucao)
+    return res.status(409).json({ erro: "Já há um job em execução. Aguarde." });
+
+  jobEmExecucao = true;
+  res.json({ ok: true, total: clientes.length });
+
+  (async () => {
+    const page = mainPage;
+    console.log(`\n[ARRECAD-CHECK] Iniciando — ${clientes.length} cliente(s), período ${inicio} a ${fim}`);
+    for (let i = 0; i < clientes.length; i++) {
+      const { cpf, nome } = clientes[i];
+      const cpfLimpo = limparCpf(cpf);
+      try {
+        const r = await consultarArrecadacaoPeriodo(page, cpfLimpo, inicio, fim);
+        if (r.erro) {
+          console.log(`[ARRECAD-CHECK] ${i + 1}/${clientes.length} | ${nome} | ${cpfLimpo} | ERRO: ${r.erro}`);
+          continue;
+        }
+        if (!r.linhas) {
+          console.log(`[ARRECAD-CHECK] ${i + 1}/${clientes.length} | ${nome} | ${cpfLimpo} | SEM_REGISTRO | — | —`);
+          continue;
+        }
+        for (const l of r.linhas) {
+          console.log(`[ARRECAD-CHECK] ${i + 1}/${clientes.length} | ${nome} | ${cpfLimpo} | ${l.status} | comp=${l.competencia} | venc=${l.vencimento} | R$ ${l.valor} | bruta=${l.bruta}`);
+        }
+      } catch (err) {
+        console.log(`[ARRECAD-CHECK] ${i + 1}/${clientes.length} | ${nome} | ${cpfLimpo} | EXCECAO: ${err.message}`);
+        await page.goto(MAG_URL, { waitUntil: "domcontentloaded", timeout: 20000 }).catch(() => {});
+      }
+    }
+    console.log(`[ARRECAD-CHECK] Concluído.`);
+    jobEmExecucao = false;
+  })().catch(err => {
+    console.error("[ARRECAD-CHECK] Erro fatal:", err.message);
+    jobEmExecucao = false;
+  });
+});
+
+// ── Checagem pontual de Comissão num período (mes/ano até hoje) ──────────────
+// Não persiste no banco — só imprime no log (formato [COMISSAO-CHECK] | ...)
+// pra conferência manual pontual (ex: "essa competência antiga pagou comissão?").
+app.post("/consultar-comissoes-periodo", (req, res) => {
+  const { clientes, mes, ano } = req.body;
+
+  if (!Array.isArray(clientes) || clientes.length === 0)
+    return res.status(400).json({ erro: "Lista de clientes inválida" });
+  if (!mes || !ano)
+    return res.status(400).json({ erro: "mes e ano são obrigatórios" });
+  if (loginStatus !== "logado")
+    return res.status(400).json({ erro: "sem_sessao" });
+  if (jobEmExecucao)
+    return res.status(409).json({ erro: "Já há um job em execução. Aguarde." });
+
+  jobEmExecucao = true;
+  res.json({ ok: true, total: clientes.length });
+
+  (async () => {
+    const page = mainPage;
+    console.log(`\n[COMISSAO-CHECK] Iniciando — ${clientes.length} cliente(s), ${mes}/${ano} até hoje`);
+    for (let i = 0; i < clientes.length; i++) {
+      const { cpf, nome } = clientes[i];
+      const cpfLimpo = limparCpf(cpf);
+      try {
+        const r = await consultarComissoes(page, cpfLimpo, mes, ano);
+        if (r.erro) {
+          console.log(`[COMISSAO-CHECK] ${i + 1}/${clientes.length} | ${nome} | ${cpfLimpo} | ERRO: ${r.erro}`);
+          continue;
+        }
+        console.log(`[COMISSAO-CHECK] ${i + 1}/${clientes.length} | ${nome} | ${cpfLimpo} | valor=${r.comissaoValor} | datas=${r.comissaoDatas || "-"} | obs=${r.comissaoObs || "-"}`);
+      } catch (err) {
+        console.log(`[COMISSAO-CHECK] ${i + 1}/${clientes.length} | ${nome} | ${cpfLimpo} | EXCECAO: ${err.message}`);
+        await page.goto(MAG_URL, { waitUntil: "domcontentloaded", timeout: 20000 }).catch(() => {});
+      }
+    }
+    console.log(`[COMISSAO-CHECK] Concluído.`);
+    jobEmExecucao = false;
+  })().catch(err => {
+    console.error("[COMISSAO-CHECK] Erro fatal:", err.message);
+    jobEmExecucao = false;
+  });
+});
+
 // ── Detecção de login ─────────────────────────────────────────────────────────
 
 function monitorarLogin() {
@@ -1101,6 +1230,73 @@ async function consultarArrecadacao(page, cpfLimpo, mes, ano) {
   };
 }
 
+// Mesma lógica de consultarArrecadacao, mas com período arbitrário (inicio/fim
+// em "YYYY-MM-DD") em vez de um mês/ano fixo — usado para checagens pontuais
+// tipo "essa competência antiga já foi paga até hoje?".
+async function consultarArrecadacaoPeriodo(page, cpfLimpo, inicio, fim) {
+  const url = `${MAG_BASE}/s/arrecadacoes?inicio=${inicio}&fim=${fim}&tab=competencias&buscar=${cpfLimpo}`;
+  const ok = await navegarEEsperar(page, url);
+  if (!ok) return { erro: "sessao_expirada" };
+
+  const linhas = linhasDoCliente(await extrairLinhasVarredura(page), cpfLimpo);
+  if (linhas.length === 0) {
+    return { statusArrecadacao: "Sem registro na Arrecadação", valorPrevisto: null, obsArrecadacao: null };
+  }
+
+  const parsed = linhas.map(l => {
+    const c = l.split(" | ");
+    return { competencia: c[1], vencimento: c[2], status: c[c.length - 1], valor: parseValorBR(c[c.length - 2]), formaPagamento: c[c.length - 3], bruta: l };
+  });
+
+  return { linhas: parsed };
+}
+
+// Abre o detalhe da fatura (a partir da lista da Arrecadação já aberta) e lê
+// status, data de pagamento, vencimento, forma e órgão consignante.
+async function consultarDetalheFatura(page, nomeMag) {
+  if (!nomeMag) return null;
+  try {
+    await page.getByText(nomeMag, { exact: false }).first().click({ timeout: 15000 });
+    let texto = "";
+    for (let t = 0; t < 6; t++) {
+      await sleep(2500);
+      texto = await page.evaluate(() => {
+        const coletar = (root, acc) => {
+          acc.push(root.innerText || "");
+          root.querySelectorAll("*").forEach(el => { if (el.shadowRoot) coletar(el.shadowRoot, acc); });
+          return acc;
+        };
+        return coletar(document.body, []).join("\n");
+      }).catch(() => "");
+      if (texto.includes("Detalhes da fatura") && texto.includes("Data de vencimento")) break;
+    }
+    const i = texto.indexOf("Detalhes da fatura");
+    if (i < 0) return null;
+    const bloco = texto.slice(i, texto.indexOf("Se você tiver", i) > 0 ? texto.indexOf("Se você tiver", i) : undefined)
+      .split("\n").map(x => x.trim()).filter(Boolean);
+    const depois = (rot) => { const k = bloco.indexOf(rot); return k >= 0 && bloco[k + 1] ? bloco[k + 1] : null; };
+    const kVal = bloco.indexOf("Valor da fatura");
+    const statusFatura = kVal >= 0 ? bloco[kVal + 1] : null;
+    let dataPag = depois("Data de pagamento");
+    if (dataPag === "-") dataPag = null;
+    return {
+      statusFatura,
+      dataPagamento: dataPag,
+      vencimento: depois("Data de vencimento"),
+      formaPagamento: depois("Forma de pagamento") || (bloco.includes("Desconto em folha") ? "Desconto em folha" : null),
+      orgao: depois("Órgão consignante"),
+    };
+  } catch (e) {
+    console.log(`[MAG] detalhe da fatura falhou: ${e.message}`);
+    return null;
+  }
+}
+
+function addMeses(ano, mes, delta) {
+  const d = new Date(Date.UTC(ano, mes - 1 + delta, 1));
+  return { ano: d.getUTCFullYear(), mes: d.getUTCMonth() + 1 };
+}
+
 async function consultarComissoes(page, cpfLimpo, mes, ano) {
   const mm = String(mes).padStart(2, "0");
   const hoje = new Date().toISOString().slice(0, 10);
@@ -1158,6 +1354,13 @@ async function consultarCancelamentos(page, cpfLimpo) {
   return `Cancelado em ${dataCancelamento} (R$ ${valor?.toFixed(2) ?? "?"})`;
 }
 
+
+// Limite por consulta na varredura: se a página da MAG não responder, desiste
+// desse cliente e segue para o próximo (16/11/2026: travou 1h+ num cliente).
+function comTimeout(p, ms, rotulo) {
+  return Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`timeout ${rotulo} (${ms / 1000}s)`)), ms))]);
+}
+
 async function processarVarreduraComissoes(jobId, mes, ano, clientes, callbackUrl, apiKey) {
   console.log(`\n[MAG] Iniciando varredura de comissões ${jobId} — ${clientes.length} cliente(s), ${mes}/${ano}`);
   const page = mainPage;
@@ -1173,16 +1376,29 @@ async function processarVarreduraComissoes(jobId, mes, ano, clientes, callbackUr
     });
 
     try {
-      const arrec = await consultarArrecadacao(page, cpfLimpo, mes, ano);
+      const arrec = await comTimeout(consultarArrecadacao(page, cpfLimpo, mes, ano), 120000, "consultarArrecadacao");
       if (arrec.erro === "sessao_expirada") throw new Error("Sessão MAG expirada durante a varredura");
 
-      const com = await consultarComissoes(page, cpfLimpo, mes, ano);
+      // Detalhe da fatura (data de pagamento etc.) ou, sem fatura no mês, procura no mês anterior/seguinte
+      let detalhe = null, nomeMag = null, obsPeriodo = null;
+      if (arrec.obsArrecadacao) {
+        nomeMag = (arrec.obsArrecadacao.split(" ; ")[0].split(" | ")[3] || "").trim() || null;
+        detalhe = await comTimeout(consultarDetalheFatura(page, nomeMag), 90000, "consultarDetalheFatura").catch(() => null);
+      } else {
+        const a = addMeses(ano, mes, -1), b = addMeses(ano, mes, 1);
+        const ini = `${a.ano}-${String(a.mes).padStart(2, "0")}-01`;
+        const fim = `${b.ano}-${String(b.mes).padStart(2, "0")}-${String(ultimoDiaMes(b.ano, b.mes)).padStart(2, "0")}`;
+        const per = await comTimeout(consultarArrecadacaoPeriodo(page, cpfLimpo, ini, fim), 120000, "consultarArrecadacaoPeriodo").catch(() => null);
+        if (per && per.linhas) obsPeriodo = per.linhas.map(l => l.bruta).join(" ; ");
+      }
+
+      const com = await comTimeout(consultarComissoes(page, cpfLimpo, mes, ano), 120000, "consultarComissoes");
       if (com.erro === "sessao_expirada") throw new Error("Sessão MAG expirada durante a varredura");
 
       let ondeEstaMag = null;
       if (!com.comissaoValor) {
-        ondeEstaMag = await consultarInadimplentes(page, cpfLimpo, nome);
-        if (ondeEstaMag === null) ondeEstaMag = await consultarCancelamentos(page, cpfLimpo);
+        ondeEstaMag = await comTimeout(consultarInadimplentes(page, cpfLimpo, nome), 120000, "consultarInadimplentes");
+        if (ondeEstaMag === null) ondeEstaMag = await comTimeout(consultarCancelamentos(page, cpfLimpo), 120000, "consultarCancelamentos");
         if (ondeEstaMag === null) ondeEstaMag = "Não localizado em Inadimplentes/Cancelamentos — verificar manualmente";
       }
 
@@ -1191,7 +1407,13 @@ async function processarVarreduraComissoes(jobId, mes, ano, clientes, callbackUr
         resultado: {
           cpf: cpfLimpo,
           nome: nome || "",
-          formaPagamento: arrec.formaPagamento || formaPagamentoDb || null,
+          formaPagamento: (detalhe && detalhe.formaPagamento) || arrec.formaPagamento || formaPagamentoDb || null,
+          statusFatura: detalhe ? detalhe.statusFatura : null,
+          dataPagamentoArrecadacao: detalhe ? detalhe.dataPagamento : null,
+          vencimentoFatura: detalhe ? detalhe.vencimento : null,
+          orgaoConsignante: detalhe ? detalhe.orgao : null,
+          nomeMag,
+          arrecadacaoMesesVizinhos: obsPeriodo,
           valorPrevisto: arrec.valorPrevisto ?? (parseValorBR(valorTotal) || null),
           statusArrecadacao: arrec.statusArrecadacao,
           obsArrecadacao: arrec.obsArrecadacao,
@@ -1237,20 +1459,17 @@ async function processarVarreduraComissoes(jobId, mes, ano, clientes, callbackUr
 const { Tunnel } = require("cloudflared");
 let cfTunnel = null;
 
-app.listen(PORT, () => {
-  console.log("");
-  console.log("╔════════════════════════════════════════════════════════╗");
-  console.log("║     Barcellos Seguros — Buscador de Boletos MAG        ║");
-  console.log("╚════════════════════════════════════════════════════════╝");
-  console.log(`\n✓ Servidor ativo em http://localhost:${PORT}`);
-  console.log(`\n📁 Screenshots salvas em: ${SS_DIR}`);
-  console.log("\n⏳ Abrindo túnel Cloudflare...\n");
+let falhasTunel = 0;
+let reabrindo = false;
 
+function abrirTunel() {
   try {
+    tunnelUrl = null;
     cfTunnel = new Tunnel(["tunnel", "--url", `http://localhost:${PORT}`]);
 
     cfTunnel.on("url", (url) => {
       tunnelUrl = url;
+      falhasTunel = 0;
       console.log("╔════════════════════════════════════════════════════════╗");
       console.log("║  ✓ PRONTO — pode usar o sistema normalmente            ║");
       console.log(`║  ${url.padEnd(54)}║`);
@@ -1260,10 +1479,54 @@ app.listen(PORT, () => {
     cfTunnel.on("error", (err) => {
       console.error("[MAG] Erro no túnel:", err.message);
     });
+
+    cfTunnel.on("exit", (code) => {
+      console.error(`[MAG] Túnel encerrou (código ${code}) — reabrindo em 5s...`);
+      tunnelUrl = null;
+      reabrirTunel();
+    });
   } catch (err) {
     console.error("[MAG] Não foi possível abrir túnel:", err.message);
-    console.log(`\n→ Alternativa: ngrok http ${PORT}`);
+    setTimeout(abrirTunel, 30000);
   }
+}
+
+function reabrirTunel() {
+  if (reabrindo) return;
+  reabrindo = true;
+  try { cfTunnel && cfTunnel.removeAllListeners("exit"); cfTunnel && cfTunnel.stop(); } catch (_) {}
+  setTimeout(() => { reabrindo = false; abrirTunel(); }, 5000);
+}
+
+async function verificarTunel() {
+  if (reabrindo) return;
+  if (!tunnelUrl) { falhasTunel++; if (falhasTunel >= 3) { falhasTunel = 0; reabrirTunel(); } return; }
+  try {
+    const r = await fetch(`${tunnelUrl}/status`, { signal: AbortSignal.timeout(20000) });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    falhasTunel = 0;
+  } catch (e) {
+    falhasTunel++;
+    console.error(`[MAG] Túnel não respondeu (${falhasTunel}/2): ${e.message}`);
+    if (falhasTunel >= 2) { falhasTunel = 0; console.error("[MAG] Reabrindo túnel..."); reabrirTunel(); }
+  }
+}
+
+app.listen(PORT, () => {
+  console.log("");
+  console.log("╔════════════════════════════════════════════════════════╗");
+  console.log("║     Barcellos Seguros — Buscador de Boletos MAG        ║");
+  console.log("╚════════════════════════════════════════════════════════╝");
+  console.log(`\n✓ Servidor ativo em http://localhost:${PORT}`);
+  console.log(`\n📁 Screenshots salvas em: ${SS_DIR}`);
+  console.log("\n⏳ Abrindo túnel Cloudflare...\n");
+
+  abrirTunel();
+  // Abre a sessão MAG sozinho ao iniciar (o login fica salvo no perfil).
+  setTimeout(() => { fetch(`http://localhost:${PORT}/iniciar-sessao`, { method: "POST" }).catch(() => {}); }, 3000);
+  // Testa o túnel a cada 2 min; se não responder 2x seguidas, reabre (16/11/2026:
+  // o túnel caiu e o servidor seguia anunciando a URL morta → "fetch failed").
+  setInterval(verificarTunel, 2 * 60 * 1000);
 });
 
 process.on("SIGINT", async () => {

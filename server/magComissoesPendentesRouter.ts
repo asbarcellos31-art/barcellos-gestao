@@ -28,6 +28,7 @@ import {
   obterResultadoVarredura,
   limparResultadoVarredura,
   atualizarObservacaoVarredura,
+  recalcularMotivosVarredura,
 } from "./varreduraComissoesDb";
 
 // ── Estado dos jobs em memória (mesmo padrão do job de boletos) ──────────────
@@ -92,7 +93,8 @@ magComissoesPendentesExpressRouter.post("/mag/comissoes-resultado", authMag, asy
         cpf: string; nome: string; formaPagamento?: string; valorPrevisto?: number;
         valorPagoArrecadacao?: number; statusArrecadacao?: string; dataPagamentoArrecadacao?: string;
         obsArrecadacao?: string; comissaoValor?: number; comissaoDatas?: string; comissaoObs?: string;
-        ondeEstaMag?: string;
+        ondeEstaMag?: string; statusFatura?: string; vencimentoFatura?: string; orgaoConsignante?: string;
+        nomeMag?: string; arrecadacaoMesesVizinhos?: string;
       };
     };
     if (!jobId || !mes || !ano || !resultado?.cpf) {
@@ -210,7 +212,11 @@ export const magComissoesPendentesTrpcRouter = router({
 
   varreduraResultado: publicProcedure
     .input(z.object({ mes: z.number(), ano: z.number() }))
-    .query(({ input }) => obterResultadoVarredura(input.mes, input.ano)),
+    .query(async ({ input }) => {
+      // Linhas antigas sem motivo ganham o motivo calculado na primeira leitura
+      await recalcularMotivosVarredura(input.mes, input.ano, true).catch(e => console.error("[Varredura] recalcular motivos:", e.message));
+      return obterResultadoVarredura(input.mes, input.ano);
+    }),
 
   atualizarObservacao: publicProcedure
     .input(z.object({ id: z.number(), observacao: z.string() }))
