@@ -1292,6 +1292,76 @@ async function consultarDetalheFatura(page, nomeMag) {
   }
 }
 
+// Situação do cliente na carteira da MAG (Meus clientes): status, cliente desde, prêmio,
+// coberturas (com status) e data do último cancelamento. Usado quando não há fatura no mês.
+async function textoPagina(page) {
+  return page.evaluate(() => {
+    const coletar = (root, acc) => {
+      acc.push(root.innerText || "");
+      root.querySelectorAll("*").forEach(el => { if (el.shadowRoot) coletar(el.shadowRoot, acc); });
+      return acc;
+    };
+    return coletar(document.body, []).join("\n");
+  }).catch(() => "");
+}
+function linhasProdutor(texto) {
+  const L = texto.replace(/ /g, " ").split("\n");
+  const out = [];
+  L.forEach((l, i) => {
+    if (/^\d{6,8}\t/.test(l)) {
+      const cols = l.split("\t").map(x => x.trim()).filter(Boolean);
+      const prox = L.slice(i + 1, i + 4).map(x => x.trim()).find(Boolean) || "";
+      out.push([...cols, prox]);
+    }
+  });
+  return out;
+}
+async function consultarCarteiraCliente(page, cpfLimpo, nome) {
+  const res = { statusClienteMag: null, clienteDesdeMag: null, premioMag: null, coberturasMag: null, cancelamentoMag: null, cpfMag: null };
+  try {
+    let ok = await navegarEEsperar(page, `${MAG_BASE}/s/clientes?buscar=${cpfLimpo}`);
+    if (!ok) return res;
+    await sleep(3000);
+    let linhas = linhasProdutor(await textoPagina(page));
+    if (!linhas.length && nome && nome.trim().split(/\s+/).length > 1) {
+      ok = await navegarEEsperar(page, `${MAG_BASE}/s/clientes?buscar=${encodeURIComponent(nome.toUpperCase())}`);
+      await sleep(3000);
+      linhas = linhasProdutor(await textoPagina(page));
+    }
+    if (!linhas.length) { res.statusClienteMag = "Não encontrado"; return res; }
+    const c = linhas[0];
+    res.cpfMag = c[1]; res.clienteDesdeMag = c[4] || null; res.premioMag = c[5] || null; res.statusClienteMag = c[c.length - 1] || null;
+    // Coberturas
+    await page.getByText(c[2], { exact: false }).first().click({ timeout: 15000 }).catch(() => {});
+    await sleep(5000);
+    await page.getByText("Coberturas", { exact: true }).first().click({ timeout: 15000 }).catch(() => {});
+    await sleep(5000);
+    const t = (await textoPagina(page)).replace(/ /g, " ");
+    const i = t.indexOf("Visualize as coberturas");
+    if (i >= 0) {
+      const L = t.slice(i, t.indexOf("Publicar", i) > 0 ? t.indexOf("Publicar", i) : undefined).split("\n");
+      const cobs = [];
+      L.forEach((l, k) => {
+        if (l.includes("\t") && /R\$/.test(l)) {
+          const cols = l.split("\t").map(x => x.trim()).filter(Boolean);
+          const st = L.slice(k + 1, k + 4).map(x => x.trim()).find(Boolean) || "";
+          cobs.push(`${(cols[1] || "").replace(/ - \d+$/, "")} (${cols[4] || "?"}) ${st}`);
+        }
+      });
+      res.coberturasMag = cobs.join("; ").slice(0, 900) || null;
+    }
+    // Cancelamento
+    ok = await navegarEEsperar(page, `${MAG_BASE}/s/cancelamentos?orderBy=dataUltimoCancelamento&typeOrderBy=DESC&buscar=${cpfLimpo}`);
+    await sleep(3000);
+    const canc = linhasProdutor(await textoPagina(page));
+    const m = canc.length ? canc[0].join(" ").match(/(\d{2}\/\d{2}\/\d{4})/) : null;
+    if (m) res.cancelamentoMag = m[1];
+  } catch (e) {
+    console.log(`[MAG] carteira do cliente falhou: ${e.message}`);
+  }
+  return res;
+}
+
 function addMeses(ano, mes, delta) {
   const d = new Date(Date.UTC(ano, mes - 1 + delta, 1));
   return { ano: d.getUTCFullYear(), mes: d.getUTCMonth() + 1 };
@@ -1391,6 +1461,10 @@ async function processarVarreduraComissoes(jobId, mes, ano, clientes, callbackUr
         const per = await comTimeout(consultarArrecadacaoPeriodo(page, cpfLimpo, ini, fim), 120000, "consultarArrecadacaoPeriodo").catch(() => null);
         if (per && per.linhas) obsPeriodo = per.linhas.map(l => l.bruta).join(" ; ");
       }
+      let carteira = null;
+      if (!arrec.obsArrecadacao && !obsPeriodo) {
+        carteira = await comTimeout(consultarCarteiraCliente(page, cpfLimpo, nome), 150000, "consultarCarteiraCliente").catch(() => null);
+      }
 
       const com = await comTimeout(consultarComissoes(page, cpfLimpo, mes, ano), 120000, "consultarComissoes");
       if (com.erro === "sessao_expirada") throw new Error("Sessão MAG expirada durante a varredura");
@@ -1414,6 +1488,7 @@ async function processarVarreduraComissoes(jobId, mes, ano, clientes, callbackUr
           orgaoConsignante: detalhe ? detalhe.orgao : null,
           nomeMag,
           arrecadacaoMesesVizinhos: obsPeriodo,
+          ...(carteira || {}),
           valorPrevisto: arrec.valorPrevisto ?? (parseValorBR(valorTotal) || null),
           statusArrecadacao: arrec.statusArrecadacao,
           obsArrecadacao: arrec.obsArrecadacao,

@@ -26,6 +26,12 @@ export interface DadosMotivo {
   ondeEstaMag?: string | null;
   nomeMag?: string | null;
   arrecadacaoMesesVizinhos?: string | null;
+  statusClienteMag?: string | null;
+  clienteDesdeMag?: string | null;
+  premioMag?: string | null;
+  coberturasMag?: string | null;
+  cancelamentoMag?: string | null;
+  cpfMag?: string | null;
 }
 
 const MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
@@ -87,6 +93,31 @@ export async function calcularMotivo(d: DadosMotivo): Promise<{ motivo: string; 
 
   if (d.arrecadacaoMesesVizinhos) {
     return { motivo: "SEM PARCELA NO MÊS", motivoDetalhe: `Não há fatura no mês; faturas nos meses vizinhos: ${d.arrecadacaoMesesVizinhos.slice(0, 250)}` };
+  }
+  // Situação na carteira da MAG (quando a varredura consultou)
+  const stc = String(d.statusClienteMag || "");
+  const cpfMagLimpo = String(d.cpfMag || "").replace(/\D/g, "");
+  if (cpfMagLimpo && cpfMagLimpo.replace(/^0+/, "") !== d.cpf.replace(/\D/g, "").replace(/^0+/, "")) {
+    return { motivo: "CPF ERRADO NO CADASTRO", motivoDetalhe: `Na MAG o cliente está com o CPF ${d.cpfMag} (status ${stc || "?"}). Corrigir o CPF no nosso cadastro.` };
+  }
+  if (stc === "Não encontrado") {
+    return { motivo: "SEM COBRANÇA NA MAG", motivoDetalhe: "Cliente NÃO EXISTE na MAG (nem pelo CPF nem pelo nome). Verificar se a apólice foi implantada ou se o cadastro está certo." };
+  }
+  if (stc) {
+    const cobs = String(d.coberturasMag || "");
+    const temAtivaPaga = cobs.split(";").some(c => /ativ/i.test(c) && !/inativ/i.test(c) && !/\(R\$ 0,00\)/.test(c));
+    if (/inativo/i.test(stc) || (cobs && !temAtivaPaga)) {
+      return {
+        motivo: "CANCELADA",
+        motivoDetalhe: `Apólice CANCELADA na MAG${d.cancelamentoMag ? ` em ${d.cancelamentoMag}` : ""} — cliente ${stc.toLowerCase()} na MAG${/inativo/i.test(stc) ? "" : " só com assistência sem prêmio"}. Coberturas: ${cobs || "-"}. Está ATIVO no nosso sistema: dar baixa.`,
+      };
+    }
+    if (d.clienteDesdeMag) {
+      const [dd, mm, aa] = d.clienteDesdeMag.split("/").map(Number);
+      if (aa && (aa > d.ano || (aa === d.ano && mm >= d.mes))) {
+        return { motivo: "SEM PARCELA NO MÊS", motivoDetalhe: `Cliente novo: entrou na MAG em ${d.clienteDesdeMag} (prêmio ${d.premioMag || "?"}). Ainda não teve fatura no mês.` };
+      }
+    }
   }
   const u = await ultimaComissao(d.cpf).catch(() => ({ comp: null, produto: null }));
   if (u.comp && /^\d{6}$/.test(u.comp)) {

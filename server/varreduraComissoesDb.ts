@@ -40,7 +40,8 @@ export async function ensureVarreduraComissoesTable() {
   for (const col of [
     "motivo VARCHAR(80)", "motivoDetalhe TEXT", "statusFatura VARCHAR(50)",
     "vencimentoFatura VARCHAR(20)", "orgaoConsignante VARCHAR(200)", "nomeMag VARCHAR(255)",
-    "arrecadacaoMesesVizinhos TEXT",
+    "arrecadacaoMesesVizinhos TEXT", "statusClienteMag VARCHAR(50)", "clienteDesdeMag VARCHAR(20)",
+    "premioMag VARCHAR(30)", "coberturasMag TEXT", "cancelamentoMag VARCHAR(20)", "cpfMag VARCHAR(20)",
   ]) {
     await getPool().execute(`ALTER TABLE varredura_comissoes_pendentes ADD COLUMN ${col}`).catch(() => {});
   }
@@ -66,6 +67,12 @@ export interface VarreduraResultadoInput {
   orgaoConsignante?: string | null;
   nomeMag?: string | null;
   arrecadacaoMesesVizinhos?: string | null;
+  statusClienteMag?: string | null;
+  clienteDesdeMag?: string | null;
+  premioMag?: string | null;
+  coberturasMag?: string | null;
+  cancelamentoMag?: string | null;
+  cpfMag?: string | null;
   jobId: string;
 }
 
@@ -79,8 +86,9 @@ export async function salvarResultadoVarredura(r: VarreduraResultadoInput) {
        (mes, ano, cpf, nome, formaPagamento, valorPrevisto, valorPagoArrecadacao,
         statusArrecadacao, dataPagamentoArrecadacao, obsArrecadacao,
         comissaoValor, comissaoDatas, comissaoObs, ondeEstaMag, jobId,
-        statusFatura, vencimentoFatura, orgaoConsignante, nomeMag, arrecadacaoMesesVizinhos, motivo, motivoDetalhe)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        statusFatura, vencimentoFatura, orgaoConsignante, nomeMag, arrecadacaoMesesVizinhos, motivo, motivoDetalhe,
+        statusClienteMag, clienteDesdeMag, premioMag, coberturasMag, cancelamentoMag, cpfMag)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE
        nome = VALUES(nome),
        formaPagamento = VALUES(formaPagamento),
@@ -100,7 +108,13 @@ export async function salvarResultadoVarredura(r: VarreduraResultadoInput) {
        nomeMag = VALUES(nomeMag),
        arrecadacaoMesesVizinhos = VALUES(arrecadacaoMesesVizinhos),
        motivo = VALUES(motivo),
-       motivoDetalhe = VALUES(motivoDetalhe)`,
+       motivoDetalhe = VALUES(motivoDetalhe),
+       statusClienteMag = VALUES(statusClienteMag),
+       clienteDesdeMag = VALUES(clienteDesdeMag),
+       premioMag = VALUES(premioMag),
+       coberturasMag = VALUES(coberturasMag),
+       cancelamentoMag = VALUES(cancelamentoMag),
+       cpfMag = VALUES(cpfMag)`,
     [
       r.mes, r.ano, cpfLimpo, r.nome,
       r.formaPagamento ?? null, r.valorPrevisto ?? null, r.valorPagoArrecadacao ?? null,
@@ -109,6 +123,8 @@ export async function salvarResultadoVarredura(r: VarreduraResultadoInput) {
       r.ondeEstaMag ?? null, r.jobId,
       r.statusFatura ?? null, r.vencimentoFatura ?? null, r.orgaoConsignante ?? null, r.nomeMag ?? null,
       r.arrecadacaoMesesVizinhos ?? null, m.motivo, m.motivoDetalhe,
+      r.statusClienteMag ?? null, r.clienteDesdeMag ?? null, r.premioMag ?? null, r.coberturasMag ?? null,
+      r.cancelamentoMag ?? null, r.cpfMag ?? null,
     ]
   );
 }
