@@ -58,7 +58,68 @@ async function ultimaComissao(cpf: string): Promise<{ comp: string | null; produ
   return rows[0] ? { comp: rows[0].comp || null, produto: rows[0].produto || null } : { comp: null, produto: null };
 }
 
+// Histórico de comissão do cliente nos extratos do ano (para "parcela paga sem comissão")
+async function historicoComissao(cpf: string, mes: number, ano: number): Promise<string> {
+  const limpo = cpf.replace(/\D/g, "");
+  const [rows]: any = await getPool().execute(
+    `SELECT competenciaComissionada AS comp, SUM(valorComissaoTotal) AS v, MAX(parcelaComissionada) AS parc,
+            GROUP_CONCAT(DISTINCT proposta) AS prop
+       FROM extrato_comissao
+      WHERE REPLACE(REPLACE(REPLACE(cpfCliente,'.',''),'-',''),'/','') IN (?, ?) AND competenciaComissionada LIKE ?
+      GROUP BY competenciaComissionada ORDER BY competenciaComissionada`,
+    [limpo, limpo.replace(/^0+/, ""), `${ano}%`]
+  );
+  const comValor = (rows as any[]).filter(r => parseFloat(r.v) > 0);
+  if (!comValor.length) {
+    return `Comissão nos extratos ${ano}: NUNCA. O produto não está comissionando para a Barcellos — perguntar à MAG por que essa apólice não gera comissão.`;
+  }
+  const ult = comValor[comValor.length - 1];
+  const fmtComp = (c: string) => `${c.slice(4)}/${c.slice(0, 4)}`;
+  const meses = comValor.map(r => r.comp.slice(4)).join(", ");
+  const anterior = `${ano}${String(mes - 1).padStart(2, "0")}`;
+  const regular = comValor.length >= 3 && ult.comp >= anterior;
+  return `Comissão nos extratos ${ano}: ${regular ? "todo mês" : "meses " + meses} até ${fmtComp(ult.comp)} (última R$ ${parseFloat(ult.v).toFixed(2).replace(".", ",")}, parcela ${ult.parc}, proposta ${ult.prop}). ${String(mes).padStart(2, "0")}/${ano} pago e sem comissão — COBRAR da MAG se não vier no próximo extrato.`;
+}
+
+// Situação do cliente nos Inadimplentes do sistema (importação do mês e do seguinte), conferindo a competência
+async function situacaoInadimplentes(cpf: string, mes: number, ano: number, forma?: string | null): Promise<string> {
+  const limpo = cpf.replace(/\D/g, "").replace(/^0+/, "");
+  const prox = mes === 12 ? { m: 1, a: ano + 1 } : { m: mes + 1, a: ano };
+  const comp = `${String(mes).padStart(2, "0")}/${String(ano).slice(2)}`;
+  const [rows]: any = await getPool().execute(
+    `SELECT mes, ano, mesParcela FROM inadimplentes
+      WHERE TRIM(LEADING '0' FROM REPLACE(REPLACE(cpf,'.',''),'-','')) = ? AND ((mes = ? AND ano = ?) OR (mes = ? AND ano = ?))`,
+    [limpo, mes, ano, prox.m, prox.a]
+  );
+  const MES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+  const desc = (m: number, a: number) => {
+    const r = (rows as any[]).find(x => x.mes === m && x.ano === a);
+    if (!r) return `${MES[m - 1].toUpperCase()} NÃO`;
+    return new RegExp(`\\b${comp.replace("/", "\\/")}\\b`).test(r.mesParcela || "")
+      ? `${MES[m - 1].toUpperCase()} SIM (${r.mesParcela})`
+      : `${MES[m - 1].toUpperCase()} NÃO (só ${r.mesParcela})`;
+  };
+  const a = desc(mes, ano), b = desc(prox.m, prox.a);
+  const nenhum = !a.includes("SIM") && !b.includes("SIM");
+  return `Inadimplentes do sistema (comp. ${comp}): ${a} · ${b}${nenhum && /folha/i.test(forma || "") ? " — desconto em folha não vem na lista de inadimplentes da MAG" : ""}`;
+}
+
 export async function calcularMotivo(d: DadosMotivo): Promise<{ motivo: string; motivoDetalhe: string }> {
+  const r = await calcularMotivoBase(d);
+  try {
+    if (r.motivo === "PARCELA PAGA SEM COMISSÃO") {
+      const extra = [d.clienteDesdeMag ? `Cliente MAG desde ${d.clienteDesdeMag}` : "", d.coberturasMag ? `Produtos: ${d.coberturasMag}` : ""].filter(Boolean).join(" · ");
+      r.motivoDetalhe += (extra ? ` ║ ${extra}` : "") + ` ║ ${await historicoComissao(d.cpf, d.mes, d.ano)}`;
+    } else if (r.motivo.startsWith("NÃO PAGOU")) {
+      r.motivoDetalhe += ` ║ ${await situacaoInadimplentes(d.cpf, d.mes, d.ano, d.formaPagamento)}`;
+    }
+  } catch (e: any) {
+    console.error("[Motivo] enriquecer:", e.message);
+  }
+  return r;
+}
+
+async function calcularMotivoBase(d: DadosMotivo): Promise<{ motivo: string; motivoDetalhe: string }> {
   const cv = parseFloat(String(d.comissaoValor ?? 0)) || 0;
   if (cv > 0) {
     return { motivo: "COMISSÃO RECEBIDA", motivoDetalhe: `R$ ${cv.toFixed(2).replace(".", ",")} em ${d.comissaoDatas || "-"}` };

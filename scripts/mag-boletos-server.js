@@ -1469,6 +1469,11 @@ async function processarVarreduraComissoes(jobId, mes, ano, clientes, callbackUr
       const com = await comTimeout(consultarComissoes(page, cpfLimpo, mes, ano), 120000, "consultarComissoes");
       if (com.erro === "sessao_expirada") throw new Error("Sessão MAG expirada durante a varredura");
 
+      // Paga e sem comissão: pega cliente desde e produtos na carteira da MAG
+      if (!com.comissaoValor && !carteira && detalhe && /^paga/i.test(detalhe.statusFatura || "")) {
+        carteira = await comTimeout(consultarCarteiraCliente(page, cpfLimpo, nome), 150000, "consultarCarteiraCliente").catch(() => null);
+      }
+
       let ondeEstaMag = null;
       if (!com.comissaoValor) {
         ondeEstaMag = await comTimeout(consultarInadimplentes(page, cpfLimpo, nome), 120000, "consultarInadimplentes");
